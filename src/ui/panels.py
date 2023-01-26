@@ -153,9 +153,47 @@ class UVGAMI_PT_main(bpy.types.Panel):
             row = box.row()
             row.prop(props, "maintain_mode", expand=True)
 
+
+class UVGAMI_PT_speed(bpy.types.Panel):
+    bl_label = "Speed"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "UVgami"
+    bl_parent_id = "UVGAMI_PT_main"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        box = self.layout.box()
+        props = context.scene.uvgami
+
+        row = box.row()
+        row.alignment = "CENTER"
+        row.label(text="Speed", icon="SORTTIME")
+
         split = box.split(factor=0.7)
         split.label(icon="CON_ROTLIKE", text="Concurrent")
         split.prop(props, "concurrent")
+
+        row = box.row()
+        row.label(text="Finish", icon="TEMP")
+        row.prop(props, "early_stop")
+
+        split = box.split(factor=0.7)
+        if props.use_symmetry:
+            split.active = False
+        split.label(text="Cuts", icon="MESH_GRID")
+        split.prop(props, "use_cuts")
+
+        if props.use_cuts:
+            row = box.row()
+            row.prop(props, "cut_type",expand=True)
+
+        if props.use_cuts and props.cut_type == "EVEN":
+            split = box.split()
+            if props.use_symmetry:
+                split.active = False
+            split.prop(props, "cuts", slider=True)
+            split.row().prop(props, "cut_axes")
 
 
 class UVGAMI_PT_guides(bpy.types.Panel):
@@ -216,7 +254,7 @@ class UVGAMI_PT_symmetry(bpy.types.Panel):
         row.prop(props, "sym_axes")
 
         row = box.row()
-        row.operator("uvgami.preview_symmetry")
+        row.operator("uvgami.preview_symmetry", icon="EMPTY_AXIS")
         row.prop(props, "sym_merge")
 
 
@@ -304,6 +342,8 @@ class UVGAMI_PT_uv(bpy.types.Panel):
         row.prop(context.scene.uvgami, "preview_unwrap_sharp")
 
         box.operator("uvgami.mark_seams_sharp", icon="SHARPCURVE")
+
+        box.operator("uvgami.view_uvs", icon="VIEWZOOM")
 
 
 class UVGAMI_PT_info(bpy.types.Panel):

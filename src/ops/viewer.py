@@ -11,7 +11,36 @@ from ..utils import (
 )
 from ..manager import manager
 
-old_workspace = None
+old_ui = None
+
+
+def enter_viewer():
+    # switch to UV editor
+    viewer_workspace = get_preferences().viewer_workspace
+    global old_ui
+    is_ws_valid = viewer_workspace in bpy.data.workspaces
+    if viewer_workspace != "" and is_ws_valid:
+        vw = bpy.data.workspaces[viewer_workspace]
+        # only update old workspace if it's different
+        if vw != bpy.context.window.workspace:
+            old_ui = bpy.context.window.workspace
+            bpy.context.window.workspace = vw
+
+        # fit uv editor to screen
+        for screen in bpy.data.screens:
+            for area in screen.areas:
+                if area.type == "IMAGE_EDITOR":
+                    bpy.ops.image.view_all({"area": area}, fit_view=True)
+                    break
+    else:
+        # if the workspace doesn't exist
+        if viewer_workspace != "" and not is_ws_valid:
+            pass
+            # self.report({"WARNING"}, f"Workspace '{viewer_workspace}' not found")
+        if bpy.context.area.ui_type != "UV":
+            old_ui = bpy.context.area.ui_type
+            bpy.context.area.ui_type = "UV"
+        bpy.ops.image.view_all(fit_view=True)
 
 
 class UVGAMI_OT_view_unwrap(bpy.types.Operator):
@@ -43,31 +72,7 @@ class UVGAMI_OT_view_unwrap(bpy.types.Operator):
         elif viewer.users_collection[0] != context.scene.collection:
             move_to_collection(viewer, context.scene.collection)
 
-        # switch to UV editor
-        viewer_workspace = get_preferences().viewer_workspace
-        global old_workspace
-        is_ws_valid = viewer_workspace in bpy.data.workspaces
-        if viewer_workspace != "" and is_ws_valid:
-            vw = bpy.data.workspaces[viewer_workspace]
-            # only update old workspace if it's different
-            if vw != context.window.workspace:
-                old_workspace = context.window.workspace
-                context.window.workspace = vw
-
-            # fit uv editor to screen
-            for screen in bpy.data.screens:
-                for area in screen.areas:
-                    if area.type == "IMAGE_EDITOR":
-                        bpy.ops.image.view_all({"area": area}, fit_view=True)
-                        break
-        else:
-            # if the workspace doesn't exist
-            if viewer_workspace != "" and not is_ws_valid:
-                self.report({"WARNING"}, f"Workspace '{viewer_workspace}' not found")
-            if context.area.ui_type != "UV":
-                old_workspace = context.area.ui_type
-                context.area.ui_type = "UV"
-            bpy.ops.image.view_all(fit_view=True)
+        enter_viewer()
 
         # make uvs visible by going into edit mode
         deselect_all()
@@ -78,21 +83,25 @@ class UVGAMI_OT_view_unwrap(bpy.types.Operator):
 
         manager.current_viewer = unwrap
         unwrap.viewing = True
-        self.report({"INFO"}, "Press ESC to exit viewer")
+        self.report({"INFO"}, "Click to exit viewer")
         context.window_manager.modal_handler_add(self)
         return {"RUNNING_MODAL"}
 
     def modal(self, context, event):
-        if event.type == "ESC" or manager.exit_viewer:
+        if (
+            event.type == "LEFTMOUSE"
+            or event.type == "RIGHTMOUSE"
+            or manager.exit_viewer
+        ):
             manager.is_viewer_active = False
             if manager.current_viewer is not None:
                 manager.current_viewer.viewing = False
 
-            if old_workspace is not None:
-                if isinstance(old_workspace, str):
-                    context.area.ui_type = old_workspace
+            if old_ui is not None:
+                if isinstance(old_ui, str):
+                    context.area.ui_type = old_ui
                 else:
-                    context.window.workspace = old_workspace
+                    context.window.workspace = old_ui
 
             # unlink current viewer mesh
             current = manager.current_viewer.viewer_obj
@@ -102,4 +111,34 @@ class UVGAMI_OT_view_unwrap(bpy.types.Operator):
 
             return {"FINISHED"}
 
+        return {"RUNNING_MODAL"}
+
+
+class UVGAMI_OT_view_uvs(bpy.types.Operator):
+    bl_idname = "uvgami.view_uvs"
+    bl_label = "View UVs"
+    bl_description = "View UVs of selected object. Click to exit viewer"
+
+    def execute(self, context):
+        if context.view_layer.objects.active is not None:
+            enter_viewer()
+            deselect_all()
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            self.report({"INFO"}, "Click to exit viewer")
+            context.window_manager.modal_handler_add(self)
+            return {"RUNNING_MODAL"}
+        else:
+            return {"FINISHED"}
+
+    def modal(self, context, event):
+        if event.type == "LEFTMOUSE" or event.type == "RIGHTMOUSE":
+            if old_ui is not None:
+                if isinstance(old_ui, str):
+                    context.area.ui_type = old_ui
+                else:
+                    context.window.workspace = old_ui
+            # exit edit mode
+            bpy.ops.object.mode_set(mode="OBJECT")
+            return {"FINISHED"}
         return {"RUNNING_MODAL"}

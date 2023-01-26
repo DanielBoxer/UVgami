@@ -3,11 +3,11 @@
 
 import bpy
 import bmesh
-import mathutils
 import pathlib
 import platform
 import shutil
 import subprocess
+import numpy
 from ..manager import manager
 from ..unwrap import Unwrap
 from ..utils import (
@@ -20,6 +20,8 @@ from ..utils import (
     set_bmesh,
     get_linux_path,
     calc_center,
+    apply_transforms,
+    cut,
 )
 from ..ui.panels import expand
 from ..job import Preserve, Join, Cleanup, Symmetrise
@@ -37,6 +39,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
         try:
             logger.new_info()
             prefs = get_preferences()
+            props = context.scene.uvgami
             engine_path = pathlib.Path(prefs.engine_path)
             if prefs.autosave:
                 if bpy.data.is_saved:
@@ -149,6 +152,43 @@ class UVGAMI_OT_start(bpy.types.Operator):
                         # if the modifier is disabled, don't apply
                         pass
 
+                # cuts
+                if props.use_cuts and not props.use_symmetry:
+                    bm = new_bmesh(copy_object)
+
+                    if props.cut_type == "EVEN":
+                        # make even cuts on axes
+                        apply_transforms(copy_object)
+                        props = context.scene.uvgami
+                        axes = props.cut_axes
+                        cuts = props.cuts
+
+                        a_length = len(axes) if len(axes) != 0 else 3
+                        d = cuts // a_length
+                        r = cuts % a_length
+
+                        # distribute cuts
+                        x_num = d if r == 0 else d + 1
+                        y_num = d if r != 2 else d + 1
+                        z_num = d
+
+                        center = calc_center(obj)
+                        if not axes or "X" in axes:
+                            cut(x_num, center, copy_object.dimensions.x, 0, bm)
+                        if not axes or "Y" in axes:
+                            cut(y_num, center, copy_object.dimensions.y, 1, bm)
+                        if not axes or "Z" in axes:
+                            cut(z_num, center, copy_object.dimensions.z, 2, bm)
+
+                    else:
+                        # cut on seams
+                        seams = numpy.zeros(len(bm.edges), dtype=numpy.bool)
+                        obj.data.edges.foreach_get("use_seam", seams)
+                        bm_seams = numpy.array(bm.edges)[seams]
+                        bmesh.ops.split_edges(bm, edges=bm_seams)
+
+                    set_bmesh(bm, copy_object)
+
                 # save name, format: input name, unwrap name
                 names[copy_object.name] = [obj.name, obj.name]
                 objects.append(copy_object)
@@ -166,7 +206,6 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 self.report({"ERROR"}, report_msg)
                 return {"CANCELLED"}
             else:
-                props = context.scene.uvgami
                 input_path = get_dir_path() / "input"
                 input_path.mkdir(exist_ok=True)
                 output_path = input_path.parent / "output"
@@ -194,17 +233,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                     # bisect if symmetry on
                     axes = props.sym_axes
                     if props.use_symmetry:
-                        # apply all transforms
-                        location, _, scale = obj.matrix_basis.decompose()
-                        actual = (
-                            mathutils.Matrix.Translation(location)
-                            @ obj.matrix_basis.to_3x3().normalized().to_4x4()
-                            @ mathutils.Matrix.Diagonal(scale).to_4x4()
-                        )
-                        obj.data.transform(actual)
-                        for c in obj.children:
-                            c.matrix_local = actual @ c.matrix_local
-                        obj.matrix_basis = mathutils.Matrix()
+                        apply_transforms(obj)
 
                         bm = new_bmesh(obj)
                         obj_center = calc_center(obj)
@@ -227,8 +256,9 @@ class UVGAMI_OT_start(bpy.types.Operator):
                                 plane_no=direction,
                                 clear_inner=True,
                             )
-                        # if the object already had vertices down it's center plane, there will be duplicates
-                        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
+                        # if the object already had vertices down it's center plane
+                        # there will be duplicates
+                        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
                         set_bmesh(bm, obj)
 
                     # separate objects
@@ -240,11 +270,11 @@ class UVGAMI_OT_start(bpy.types.Operator):
                         join_job = Join(len(s))
                         cleanup_job = None
 
-                        # the delete job can come after join because it doesn't depend on
-                        # the unwrapped objects
+                        # the delete job can come after join because it doesn't depend
+                        # on the unwrapped objects
                         if prefs.cleanup == "HIDE" or prefs.cleanup == "DELETE":
-                            # the count is > 1 because all the separated objs need to finish
-                            # before deleting the original
+                            # the count is > 1 because all the separated objs need to
+                            # finish before deleting the original
                             cleanup_job = Cleanup(len(s), prefs.cleanup)
                             manager.input[cleanup_job] = input[object_idx]
 
@@ -444,6 +474,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                         len(obj.data.vertices),
                         shade_smooth,
                         angle,
+                        props.use_cuts and not props.use_symmetry,
                     )
                     manager.active.append(unwrap)
 

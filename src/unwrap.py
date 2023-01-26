@@ -43,6 +43,7 @@ class Unwrap:
         vertex_count,
         shade_smooth,
         auto_smooth,
+        merge_cuts
     ):
         self.name = name
         self.input_name = input_name
@@ -61,6 +62,7 @@ class Unwrap:
         self.vertex_count = vertex_count
         self.shade_smooth = shade_smooth
         self.auto_smooth = auto_smooth
+        self.merge_cuts = merge_cuts
         self.is_active = False
         self.progress = (0, 0, 1)
         self.poll = None
@@ -208,8 +210,11 @@ class Unwrap:
                 manager.start_next()
 
             # update progress bar
-            if prefs.show_progress_bar:
-                self.update_progress()
+            self.update_progress()
+
+            early_stop = bpy.context.scene.uvgami.early_stop
+            if early_stop != 100 and self.progress[0] >= early_stop / 100:
+                self.is_stopped = True
 
             # update viewer
             if self.viewing:
@@ -276,19 +281,20 @@ class Unwrap:
                 return
             self.progress_data.clear()
 
-            # go through all unwraps to calculate total progress
-            progress = [numpy.array(unwrap.progress) for unwrap in manager.active]
-            # fill up progress bar with finished unwraps
-            for _ in range(manager.starting_count - len(progress)):
-                progress.append(numpy.array((1, 0, 0)))
-            # average
-            new_progress = sum(progress) / manager.starting_count
+            if get_preferences().show_progress_bar:
+                # go through all unwraps to calculate total progress
+                progress = [numpy.array(unwrap.progress) for unwrap in manager.active]
+                # fill up progress bar with finished unwraps
+                for _ in range(manager.starting_count - len(progress)):
+                    progress.append(numpy.array((1, 0, 0)))
+                # average
+                new_progress = sum(progress) / manager.starting_count
 
-            progress_bar.update(new_progress)
-            # force redraw of view3D
-            bpy.context.view_layer.objects.active = (
-                bpy.context.view_layer.objects.active
-            )
+                progress_bar.update(new_progress)
+                # force redraw of view3D
+                bpy.context.view_layer.objects.active = (
+                    bpy.context.view_layer.objects.active
+                )
 
     def update_viewer(self):
         print_stdin(self.process, "snapshot")

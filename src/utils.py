@@ -5,6 +5,8 @@ import bpy
 import bmesh
 import mathutils
 import pathlib
+import math
+import numpy
 
 
 def get_preferences():
@@ -205,3 +207,37 @@ def print_stdin(process, msg):
     except OSError:
         return False
     return True
+
+
+def apply_transforms(obj):
+    location, _, scale = obj.matrix_basis.decompose()
+    actual = (
+        mathutils.Matrix.Translation(location)
+        @ obj.matrix_basis.to_3x3().normalized().to_4x4()
+        @ mathutils.Matrix.Diagonal(scale).to_4x4()
+    )
+    obj.data.transform(actual)
+    for c in obj.children:
+        c.matrix_local = actual @ c.matrix_local
+    obj.matrix_basis = mathutils.Matrix()
+
+
+def cut(num, center, length, dim, bm):
+    start = center[dim] - length / 2
+    end = center[dim] + length / 2
+    rot = [0, 0, 0]
+    rot[dim] = math.radians(90)
+    # n + 2 for endpoints, 1:-1 to remove endpoints
+    for s in numpy.linspace(start, end, num + 2)[1:-1]:
+        loc = center.copy()
+        loc[dim] = s
+        cut = bmesh.ops.bisect_plane(
+            bm,
+            geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
+            plane_co=loc,
+            plane_no=rot,
+            dist=1e-7,
+        )["geom_cut"]
+        bmesh.ops.split_edges(
+            bm, edges=[e for e in cut if isinstance(e, bmesh.types.BMEdge)]
+        )

@@ -5,6 +5,7 @@ import bpy
 import pathlib
 import platform
 from ..utils import get_dir_path, get_preferences
+from ..updater import addon_updater_ops
 
 
 class UVGAMI_PG_properties(bpy.types.PropertyGroup):
@@ -45,6 +46,7 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
             ("PARTIAL", "Partial", "Untriangulate all areas except for the seams"),
         ),
     )
+    # speed
     concurrent: bpy.props.BoolProperty(
         name="",
         description=(
@@ -53,6 +55,50 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
             "or if the mesh is made up of multiple joined meshes"
         ),
     )
+    early_stop: bpy.props.IntProperty(
+        name="",
+        description=(
+            "When to stop the unwrap."
+            " This is based on the amount of stretching in the UV map"
+        ),
+        min=1,
+        max=100,
+        default=100,
+        subtype="PERCENTAGE",
+    )
+    use_cuts: bpy.props.BoolProperty(
+        name="",
+        description=("Cut the input mesh into pieces. This will speed up the unwrap"),
+    )
+    cut_type: bpy.props.EnumProperty(
+        name="Cut Type",
+        description="Where the mesh will be cut",
+        items=(
+            ("EVEN", "Even", "Make even cuts on the chosen axes"),
+            ("SEAMS", "Seams", "Make cuts on the seams"),
+        ),
+    )
+    cuts: bpy.props.IntProperty(
+        name="",
+        description="The amount of cuts to make in the mesh",
+        min=1,
+        max=15,
+        default=1,
+    )
+    cut_axes: bpy.props.EnumProperty(
+        name="Axes",
+        description=(
+            "Limit cuts to specific axes."
+            " Hold down Shift to select or deselect multiple axes"
+        ),
+        items=(
+            ("X", "X", "X axis"),
+            ("Y", "Y", "Y axis"),
+            ("Z", "Z", "Z axis"),
+        ),
+        options={"ENUM_FLAG"},
+    )
+    # seam restrictions
     use_guided_mode: bpy.props.BoolProperty(
         name="", description="Avoid placing seams on parts of the mesh"
     )
@@ -196,6 +242,38 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
     )
     # non ui
     is_wsl_setup: bpy.props.BoolProperty()
+    # addon updater preferences
+    auto_check_update: bpy.props.BoolProperty(
+        name="Auto-check for Update",
+        description="If enabled, auto-check for updates using an interval",
+        default=False,
+    )
+    updater_interval_months: bpy.props.IntProperty(
+        name="Months",
+        description="Number of months between checking for updates",
+        default=0,
+        min=0,
+    )
+    updater_interval_days: bpy.props.IntProperty(
+        name="Days",
+        description="Number of days between checking for updates",
+        default=7,
+        min=0,
+    )
+    updater_interval_hours: bpy.props.IntProperty(
+        name="Hours",
+        description="Number of hours between checking for updates",
+        default=0,
+        min=0,
+        max=23,
+    )
+    updater_interval_minutes: bpy.props.IntProperty(
+        name="Minutes",
+        description="Number of minutes between checking for updates",
+        default=0,
+        min=0,
+        max=59,
+    )
 
     def draw(self, context):
         layout = self.layout
@@ -267,3 +345,5 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
         row = box.row()
         row.label(icon="WORKSPACE")
         row.prop(self, "viewer_workspace")
+
+        addon_updater_ops.update_settings_ui(self, context)

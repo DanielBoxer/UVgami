@@ -2,6 +2,7 @@
 # See __init__.py and LICENSE for more information
 
 import bpy
+import bmesh
 import multiprocessing
 from .utils import (
     get_preferences,
@@ -11,6 +12,8 @@ from .utils import (
     set_active_any,
     switch_shading,
     set_origin,
+    new_bmesh,
+    set_bmesh,
 )
 from . import progress_bar
 from .logger import logger
@@ -125,6 +128,11 @@ class UnwrapManager:
 
                 if unwrap.symmetrize_job is not None:
                     unwrap.symmetrize_job.finish(output)
+
+                if unwrap.merge_cuts:
+                    bm = new_bmesh(output)
+                    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+                    set_bmesh(bm, output)
 
                 # automatically add grid material to final object
                 if props.auto_grid:

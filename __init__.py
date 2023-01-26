@@ -43,13 +43,17 @@ from .src.ops.grid import (
     UVGAMI_OT_add_grid,
     UVGAMI_OT_remove_grid,
 )
-from .src.ops.viewer import UVGAMI_OT_view_unwrap
+from .src.ops.viewer import (
+    UVGAMI_OT_view_unwrap,
+    UVGAMI_OT_view_uvs,
+)
 from .src.ops.info import (
     UVGAMI_OT_clear_logs,
     UVGAMI_OT_copy_logs,
 )
 from .src.ui.panels import (
     UVGAMI_PT_main,
+    UVGAMI_PT_speed,
     UVGAMI_PT_guides,
     UVGAMI_PT_symmetry,
     UVGAMI_PT_grid,
@@ -62,6 +66,7 @@ from .src.ui.props import (
     UVGAMI_PG_properties,
     UVGAMI_AP_preferences,
 )
+from .src.updater import addon_updater_ops
 
 
 bl_info = {
@@ -69,10 +74,10 @@ bl_info = {
     "author": "Daniel Boxer",
     "description": "Automatic UV unwrapping",
     "blender": (2, 90, 0),
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "location": "View3D > Sidebar > UVgami",
     "category": "UV",
-    "doc_url": "https://github.com/DanielBoxer/UVgami/blob/main/documentation.md",
+    "doc_url": "",
     "tracker_url": "https://github.com/DanielBoxer/UVgami/issues",
 }
 
@@ -99,9 +104,11 @@ classes = (
     UVGAMI_OT_clear_logs,
     UVGAMI_OT_copy_logs,
     UVGAMI_OT_setup_wsl,
+    UVGAMI_OT_view_uvs,
     UVGAMI_PT_main,
     UVGAMI_PT_guides,
     UVGAMI_PT_symmetry,
+    UVGAMI_PT_speed,
     UVGAMI_PT_grid,
     UVGAMI_PT_pack,
     UVGAMI_PT_uv,
@@ -113,6 +120,10 @@ classes = (
 
 
 def register():
+    try:
+        addon_updater_ops.register(bl_info)
+    except ValueError:
+        pass
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.uvgami = bpy.props.PointerProperty(type=UVGAMI_PG_properties)
