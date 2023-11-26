@@ -74,7 +74,7 @@ bl_info = {
     "author": "Daniel Boxer",
     "description": "Automatic UV unwrapping",
     "blender": (2, 90, 0),
-    "version": (1, 1, 0),
+    "version": (1, 1, 1),
     "location": "View3D > Sidebar > UVgami",
     "category": "UV",
     "doc_url": "",
