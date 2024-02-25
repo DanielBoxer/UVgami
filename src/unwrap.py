@@ -11,7 +11,6 @@ import platform
 import collections
 import threading
 import numpy
-import datetime
 from .utils import (
     check_collection,
     check_exists,
@@ -43,7 +42,7 @@ class Unwrap:
         vertex_count,
         shade_smooth,
         auto_smooth,
-        merge_cuts
+        merge_cuts,
     ):
         self.name = name
         self.input_name = input_name
@@ -109,9 +108,8 @@ class Unwrap:
         elif s_weight == 1:
             s = "25"
 
-        k = prefs.license_key
         args = []
-        shared_args = f"-u {u} -s {s} -k {k} -r uvgami.com:5000"
+        shared_args = f"-u {u} -s {s}"
 
         if platform.system() == "Windows" and engine_path.suffix == "":
             input_path = get_linux_path(self.path)
@@ -163,16 +161,8 @@ class Unwrap:
                 elif ret_code == 107:
                     msg = "Invalid UV Input"
                     move_to_invalid = True
-                elif ret_code == 108:
-                    manager.license_error = "Invalid License"
-                elif ret_code == 109:
-                    manager.license_error = "Can't Connect To License Server"
-                elif ret_code == 110:
-                    manager.license_error = "License Already Registered"
-                elif ret_code == 500:
-                    manager.license_error = "License Server Error"
                 else:
-                    manager.unknown_error = True
+                    manager.error_code = ret_code
 
                 if move_to_invalid:
                     if prefs.invalid_collection:

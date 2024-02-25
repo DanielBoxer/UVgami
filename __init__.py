@@ -66,7 +66,6 @@ from .src.ui.props import (
     UVGAMI_PG_properties,
     UVGAMI_AP_preferences,
 )
-from .src.updater import addon_updater_ops
 
 
 bl_info = {
@@ -74,7 +73,7 @@ bl_info = {
     "author": "Daniel Boxer",
     "description": "Automatic UV unwrapping",
     "blender": (2, 90, 0),
-    "version": (1, 1, 1),
+    "version": (1, 1, 2),
     "location": "View3D > Sidebar > UVgami",
     "category": "UV",
     "doc_url": "",
@@ -120,10 +119,6 @@ classes = (
 
 
 def register():
-    try:
-        addon_updater_ops.register(bl_info)
-    except ValueError:
-        pass
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.uvgami = bpy.props.PointerProperty(type=UVGAMI_PG_properties)

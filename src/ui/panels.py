@@ -146,6 +146,10 @@ class UVGAMI_PT_main(bpy.types.Panel):
         row.prop(props, "quality", text="")
 
         split = box.split(factor=0.7)
+        split.label(icon="IMPORT", text="Import UVs")
+        split.prop(props, "import_uvs")
+
+        split = box.split(factor=0.7)
         split.label(icon="MOD_TRIANGULATE", text="Preserve Mesh")
         split.prop(props, "untriangulate")
 
@@ -174,6 +178,11 @@ class UVGAMI_PT_speed(bpy.types.Panel):
         split.label(icon="CON_ROTLIKE", text="Concurrent")
         split.prop(props, "concurrent")
 
+        if props.concurrent:
+            split = box.split()
+            split.label(icon="SYSTEM", text="Cores")
+            split.prop(props, "max_cores", slider=True)
+
         row = box.row()
         row.label(text="Finish", icon="TEMP")
         row.prop(props, "early_stop")
@@ -186,7 +195,7 @@ class UVGAMI_PT_speed(bpy.types.Panel):
 
         if props.use_cuts:
             row = box.row()
-            row.prop(props, "cut_type",expand=True)
+            row.prop(props, "cut_type", expand=True)
 
         if props.use_cuts and props.cut_type == "EVEN":
             split = box.split()
@@ -370,9 +379,11 @@ class UVGAMI_PT_info(bpy.types.Panel):
             row = box.row()
             row.alignment = "CENTER"
             row.label(
-                text="No previous unwraps"
-                if get_preferences().show_info
-                else "Info is off"
+                text=(
+                    "No previous unwraps"
+                    if get_preferences().show_info
+                    else "Info is off"
+                )
             )
 
 

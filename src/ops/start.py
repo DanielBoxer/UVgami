@@ -73,13 +73,6 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 )
                 return {"CANCELLED"}
 
-            if not prefs.license_key:
-                self.report(
-                    {"ERROR"},
-                    "License is not set. Set the license in the add-on preferences",
-                )
-                return {"CANCELLED"}
-
             # platform check
             if (
                 platform.system() == "Windows"
@@ -388,7 +381,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                             "filepath": str(path),
                             "export_selected_objects": True,
                             "export_normals": False,
-                            "export_uv": False,
+                            "export_uv": props.import_uvs,
                             "export_materials": False,
                             "apply_modifiers": False,
                             "forward_axis": "Y",
@@ -413,7 +406,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                             filepath=str(path),
                             use_selection=True,
                             use_normals=False,
-                            use_uvs=False,
+                            use_uvs=props.import_uvs,
                             use_materials=False,
                             use_blen_objects=False,
                             use_mesh_modifiers=False,

@@ -4,8 +4,8 @@
 import bpy
 import pathlib
 import platform
+import multiprocessing
 from ..utils import get_dir_path, get_preferences
-from ..updater import addon_updater_ops
 
 
 class UVGAMI_PG_properties(bpy.types.PropertyGroup):
@@ -23,6 +23,9 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
             ("LOW", "Low", ""),
         ),
         default="MEDIUM",
+    )
+    import_uvs: bpy.props.BoolProperty(
+        name="", description="Use the UV map on the mesh as input"
     )
     # preserve mesh
     untriangulate: bpy.props.BoolProperty(
@@ -54,6 +57,13 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
             " This only has an effect if you are unwrapping multiple meshes, "
             "or if the mesh is made up of multiple joined meshes"
         ),
+    )
+    max_cores: bpy.props.IntProperty(
+        name="",
+        description="The maximum number of processor cores to use for concurrent mode",
+        default=int(multiprocessing.cpu_count() / 2 - 1),
+        max=multiprocessing.cpu_count(),
+        min=1,
     )
     early_stop: bpy.props.IntProperty(
         name="",
@@ -173,6 +183,7 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
     fix_scale: bpy.props.BoolProperty(
         name="Average Islands Scale",
         description="Scale UV islands based on their actual size",
+        default=True,
     )
     preview_unwrap_sharp: bpy.props.BoolProperty(
         name="",
@@ -232,7 +243,6 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
         description="Show information about previous unwraps in the info panel",
         default=True,
     )
-    license_key: bpy.props.StringProperty(name="", description="Enter your license key")
     viewer_workspace: bpy.props.StringProperty(
         name="Viewer Workspace",
         description=(
@@ -297,10 +307,6 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
         ):
             row.operator("uvgami.setup_wsl")
 
-        split = box.split(factor=0.2)
-        split.label(text="License Key")
-        split.prop(self, "license_key")
-
         box = layout.box()
 
         cf = box.column_flow(columns=3)
@@ -345,5 +351,3 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
         row = box.row()
         row.label(icon="WORKSPACE")
         row.prop(self, "viewer_workspace")
-
-        addon_updater_ops.update_settings_ui(self, context)

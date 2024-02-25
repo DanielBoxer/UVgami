@@ -35,9 +35,10 @@ class UnwrapManager:
 
     def start(self):
         self.starting_count = len(self.active)
-        if bpy.context.scene.uvgami.concurrent:
+        props = bpy.context.scene.uvgami
+        if props.concurrent:
             active_copy = self.active.copy()
-            for unwrap_idx in range(int(multiprocessing.cpu_count() / 2 - 1)):
+            for unwrap_idx in range(props.max_cores):
                 # if there are more cores than meshes
                 if unwrap_idx == len(active_copy):
                     break
@@ -50,7 +51,7 @@ class UnwrapManager:
         self.found_invalid_objects = False
         self.finished_count = 0
         self.cancelled_count = 0
-        self.unknown_error = False
+        self.error_code = 0
         self.license_error = None
         self.current_viewer = None
         self.is_viewer_active = False
@@ -186,9 +187,15 @@ class UnwrapManager:
                             "errors", "Some meshes were not able to be unwrapped"
                         )
 
-                    if self.unknown_error:
-                        msg.append("An unknown error occurred.")
-                        logger.add_data("errors", "An unknown error occurred")
+                    if self.error_code != 0:
+                        # convert unsigned int
+                        THRESHOLD = 2147483648
+                        ADJUSTMENT = 4294967296
+                        if self.error_code >= THRESHOLD:
+                            self.error_code -= ADJUSTMENT
+                        err_msg = f"An unknown error occurred: {self.error_code}"
+                        msg.append(err_msg)
+                        logger.add_data("errors", err_msg)
 
                     if self.license_error is not None:
                         msg.append(self.license_error)
