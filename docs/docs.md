@@ -78,7 +78,7 @@ Download the add-on [here](https://github.com/DanielBoxer/UVgami/releases/latest
 - Download `Engine.zip`
 - Unzip the folder
 - Move the `Windows` or the `Linux` folder to a place where you keep applications. This can be anywhere on your filesystem
-- In Blender, open UVgami preferences and select the engine path
+- In Blender, open UVgami preferences and select the engine path using the button on the right of the input field. The `uvgami` app inside the `Windows` or `Linux` folder is what should be selected
 
 ![Engine Path](engine_path.jpg)
 
