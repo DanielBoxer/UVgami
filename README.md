@@ -11,3 +11,5 @@
 ![Ostrich](https://github.com/DanielBoxer/UVgami/assets/65575771/44f181df-7d06-4b35-aa32-3ef380a5c986)
 
 ![Rhino](https://github.com/DanielBoxer/UVgami/assets/65575771/12b691fc-4ff6-4462-9dbc-b615a85bf7fc)
+
+Check the [user guide](/docs/docs.md) for installation instructions and more detailed documentation
