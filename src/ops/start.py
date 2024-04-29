@@ -1,32 +1,34 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
-import bmesh
 import pathlib
 import platform
 import shutil
 import subprocess
+
+import bmesh
+import bpy
 import numpy
+
+from ..handler import handle_error
+from ..job import Cleanup, Join, Preserve, Symmetrise
+from ..logger import logger
 from ..manager import manager
+from ..ui.panels import expand
 from ..unwrap import Unwrap
 from ..utils import (
+    apply_transforms,
+    calc_center,
     check_collection,
-    get_preferences,
+    cut,
     deselect_all,
     get_dir_path,
+    get_linux_path,
+    get_preferences,
     move_to_collection,
     new_bmesh,
     set_bmesh,
-    get_linux_path,
-    calc_center,
-    apply_transforms,
-    cut,
 )
-from ..ui.panels import expand
-from ..job import Preserve, Join, Cleanup, Symmetrise
-from ..logger import logger
-from ..handler import handle_error
 
 
 class UVGAMI_OT_start(bpy.types.Operator):
@@ -450,24 +452,24 @@ class UVGAMI_OT_start(bpy.types.Operator):
                     )
 
                     unwrap = Unwrap(
-                        unwrap_name,
-                        names[obj.name][0],
-                        path,
-                        guide_path,
-                        edge_path,
-                        (
+                        name=unwrap_name,
+                        input_name=names[obj.name][0],
+                        path=path,
+                        guide_path=guide_path,
+                        edge_path=edge_path,
+                        jobs=(
                             jobs[obj]["preserve"],
                             jobs[obj]["join"],
                             jobs[obj]["cleanup"],
                             jobs[obj]["symmetrize"],
                         ),
-                        obj.matrix_world.translation,
-                        materials,
-                        new_edges,
-                        len(obj.data.vertices),
-                        shade_smooth,
-                        angle,
-                        props.use_cuts and not props.use_symmetry,
+                        origin=obj.matrix_world.translation,
+                        materials=materials,
+                        added_edges=new_edges,
+                        vertex_count=len(obj.data.vertices),
+                        shade_smooth=shade_smooth,
+                        auto_smooth=angle,
+                        merge_cuts=props.use_cuts and not props.use_symmetry,
                     )
                     manager.active.append(unwrap)
 

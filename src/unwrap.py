@@ -1,71 +1,89 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
-import bmesh
-import mathutils
-import pathlib
-import subprocess
-import functools
-import platform
 import collections
+import functools
+import pathlib
+import platform
+import subprocess
 import threading
+
+import bmesh
+import bpy
+import mathutils
 import numpy
+
+from . import progress_bar
+from .handler import handle_error
+from .logger import logger
+from .manager import manager
 from .utils import (
     check_collection,
     check_exists,
+    get_dir_path,
     get_linux_path,
     get_preferences,
     import_obj,
     move_to_collection,
-    get_dir_path,
     print_stdin,
 )
-from .handler import handle_error
-from .manager import manager
-from .logger import logger
-from . import progress_bar
 
 
 class Unwrap:
     def __init__(
         self,
-        name,
-        input_name,
-        path,
-        guide_path,
-        edge_path,
-        jobs,
-        origin,
-        materials,
-        added_edges,
-        vertex_count,
-        shade_smooth,
-        auto_smooth,
-        merge_cuts,
+        name: str,
+        input_name: str,
+        path: pathlib.Path,
+        guide_path: pathlib.Path,
+        edge_path: pathlib.Path,
+        jobs: tuple,
+        origin: mathutils.Vector,
+        materials: list,
+        added_edges: list,
+        vertex_count: int,
+        shade_smooth: bool,
+        auto_smooth: int,
+        merge_cuts: bool,
     ):
+        # unwrap name
         self.name = name
         self.input_name = input_name
+
+        # paths
         self.path = path
         self.output_path = get_dir_path() / "output" / f"{self.path.stem}.obj"
+        # seam restrictions
         self.guide_path = guide_path
+        # for untriangulation (added edges)
         self.edge_path = edge_path
+
+        # jobs
         self.jobs = [j for j in jobs if j is not None]
         self.preserve_job = jobs[0]
         self.join_job = jobs[1]
         self.cleanup_job = jobs[2]
         self.symmetrize_job = jobs[3]
+
+        # object info
         self.origin = mathutils.Vector(origin)
         self.materials = materials
         self.added_edges = added_edges
         self.vertex_count = vertex_count
         self.shade_smooth = shade_smooth
         self.auto_smooth = auto_smooth
+
+        # other
         self.merge_cuts = merge_cuts
+
+        # unwrap state
         self.is_active = False
         self.progress = (0, 0, 1)
+        # poll function
         self.poll = None
+        # unwrap process
         self.process = None
+        # copy of input obj used for viewing
         self.viewer_obj = None
         self.viewing = False
         self.view_update_count = 0

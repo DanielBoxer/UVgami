@@ -1,28 +1,24 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
 import bmesh
-import multiprocessing
-from .utils import (
-    get_preferences,
-    import_obj,
-    popup,
-    get_dir_path,
-    set_active_any,
-    switch_shading,
-    set_origin,
-    new_bmesh,
-    set_bmesh,
-)
+import bpy
+
 from . import progress_bar
 from .logger import logger
-from .ops.grid import (
-    make_grid_img,
-    make_grid_mat,
-    add_grid,
-)
+from .ops.grid import add_grid, make_grid_img, make_grid_mat
 from .reroute_seams import reroute_seams
+from .utils import (
+    get_dir_path,
+    get_preferences,
+    import_obj,
+    new_bmesh,
+    popup,
+    set_active_any,
+    set_bmesh,
+    set_origin,
+    switch_shading,
+)
 
 
 class UnwrapManager:
@@ -148,6 +144,24 @@ class UnwrapManager:
                     if unwrap.auto_smooth != -1:
                         output.data.use_auto_smooth = True
                         output.data.auto_smooth_angle = unwrap.auto_smooth
+
+                # copy vertex groups from input
+                if unwrap.input_name in bpy.data.objects:
+                    input_obj = bpy.data.objects[unwrap.input_name]
+
+                    for group in input_obj.vertex_groups:
+                        new_group = output.vertex_groups.new(name=group.name)
+                        for v_idx in range(unwrap.vertex_count):
+                            try:
+                                weight = group.weight(v_idx)
+                                new_group.add([v_idx], weight, "REPLACE")
+                            except RuntimeError:
+                                # vertex not in group
+                                continue
+                else:
+                    logger.add_data(
+                        "errors", "Input object not found, couldn't copy vertex groups"
+                    )
 
                 logger.add_data("objects", unwrap.input_name)
 
