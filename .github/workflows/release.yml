@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      increment:
+        description: "Which part of the version to increment"
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+        default: "patch"
+        required: true
+
+      use_old_engine:
+        description: "Upload previous engine"
+        type: boolean
+        default: "true"
+        required: true
+
+      version:
+        description: "Override version increment"
+        required: false
+
+jobs:
+  calculate_version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.get_version.outputs.new_version }}
+
+    steps:
+      - name: Check version input
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            echo "new_version=${{ github.event.inputs.version }}" >> "$GITHUB_ENV"
+            echo "new_version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: env.new_version == ''
+        uses: actions/checkout@v4
+        # needed for finding tag
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        if: env.new_version == ''
+        id: previous_tag
+        uses: "WyriHaximus/github-action-get-previous-tag@v1"
+
+      - name: Get next versions
+        if: env.new_version == ''
+        id: semvers
+        uses: "WyriHaximus/github-action-next-semvers@v1"
+        with:
+          version: ${{ steps.previous_tag.outputs.tag }}
+
+      - name: Set new version tag
+        if: env.new_version == ''
+        id: get_version
+        run: |
+          if [[ "${{ github.event.inputs.increment }}" == "major" ]]; then
+            new_version=${{ steps.semvers.outputs.v_major }}
+          elif [[ "${{ github.event.inputs.increment }}" == "minor" ]]; then
+            new_version=${{ steps.semvers.outputs.v_minor }}
+          else
+            new_version=${{ steps.semvers.outputs.v_patch }}
+          fi
+
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+
+  package:
+    runs-on: ubuntu-latest
+    needs: calculate_version
+    permissions:
+      contents: write
+    env:
+      ADDON_NAME: "UVgami"
+      INCLUDED_FILES: "src LICENSE __init__.py"
+      ENGINE_NAME: "Engine"
+      TAG: ${{ needs.calculate_version.outputs.new_version }}
+
+    steps:
+      # this needs to be before engine download
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. get engine.zip (from previous release)
+      - name: Download engine
+        if: ${{ github.event.inputs.use_old_engine }}
+        uses: robinraju/release-downloader@v1.10
+        with:
+          latest: true
+          fileName: ${{ env.ENGINE_NAME }}.zip
+
+      # 2. package add-on
+      - name: Move to nested folder
+        run: |
+          mkdir $ADDON_NAME
+          mv $INCLUDED_FILES $ADDON_NAME
+
+      - name: Zip folder
+        run: zip -r ${ADDON_NAME}.zip $ADDON_NAME
+
+      # 3. create new release
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: ${{ env.ADDON_NAME }}.zip
+          body: "Engine is updated"
+
+      # 4. upload engine if not new (also change body)
+      - name: Upload engine
+        if: ${{ github.event.inputs.use_old_engine }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          files: ${{ env.ENGINE_NAME }}.zip
+          body: "Engine is unchanged"
