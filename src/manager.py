@@ -142,8 +142,11 @@ class UnwrapManager:
                         "use_smooth", [True] * len(output.data.polygons)
                     )
                     if unwrap.auto_smooth != -1:
-                        output.data.use_auto_smooth = True
-                        output.data.auto_smooth_angle = unwrap.auto_smooth
+                        if bpy.app.version >= (4, 1, 0):
+                            pass
+                        else:
+                            output.data.use_auto_smooth = True
+                            output.data.auto_smooth_angle = unwrap.auto_smooth
 
                 # copy vertex groups from input
                 if unwrap.input_name in bpy.data.objects:

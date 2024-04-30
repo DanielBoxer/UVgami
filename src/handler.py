@@ -1,10 +1,12 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
 import traceback
-from .manager import manager
+
+import bpy
+
 from .logger import logger
+from .manager import manager
 from .utils import popup
 
 
@@ -21,6 +23,7 @@ def handle_error(error, location, **kwargs):
     error_list = traceback.format_exc().split("\n")[:-1]
     for line in error_list:
         logger.add_data("errors", line)
+        print(line)
     logger.change_status("Error")
 
     popup(error_list, msg + str(error), "ERROR")

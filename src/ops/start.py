@@ -141,6 +141,13 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 # apply all modifiers
                 context.view_layer.objects.active = copy_object
                 for modifier in copy_object.modifiers:
+                    if (
+                        bpy.app.version >= (4, 1, 0)
+                        and "Smooth by Angle" in modifier.name
+                    ):
+                        # don't apply auto smooth modifier
+                        continue
+
                     try:
                         bpy.ops.object.modifier_apply(modifier=modifier.name)
                     except:
@@ -177,7 +184,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
 
                     else:
                         # cut on seams
-                        seams = numpy.zeros(len(bm.edges), dtype=numpy.bool)
+                        seams = numpy.zeros(len(bm.edges), dtype=bool)
                         obj.data.edges.foreach_get("use_seam", seams)
                         bm_seams = numpy.array(bm.edges)[seams]
                         bmesh.ops.split_edges(bm, edges=bm_seams)
@@ -447,9 +454,19 @@ class UVGAMI_OT_start(bpy.types.Operator):
 
                     # check smooth and auto smooth shading
                     shade_smooth = True if obj.data.polygons[0].use_smooth else False
-                    angle = (
-                        obj.data.auto_smooth_angle if obj.data.use_auto_smooth else -1
-                    )
+
+                    angle = -1
+                    if bpy.app.version >= (4, 1, 0):
+                        for modifier in obj.modifiers:
+                            # Input_1 is the angle input
+                            if (
+                                "Smooth by Angle" in modifier.name
+                                and "Input_1" in modifier
+                            ):
+                                angle = modifier["Input_1"]
+                    else:
+                        if obj.data.use_auto_smooth:
+                            angle = obj.data.auto_smooth_angle
 
                     unwrap = Unwrap(
                         name=unwrap_name,
