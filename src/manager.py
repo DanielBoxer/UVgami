@@ -128,7 +128,7 @@ class UnwrapManager:
 
                 if unwrap.merge_cuts:
                     bm = new_bmesh(output)
-                    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+                    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
                     set_bmesh(bm, output)
 
                 # automatically add grid material to final object
@@ -205,11 +205,6 @@ class UnwrapManager:
                         )
 
                     if self.error_code != 0:
-                        # convert unsigned int
-                        THRESHOLD = 2147483648
-                        ADJUSTMENT = 4294967296
-                        if self.error_code >= THRESHOLD:
-                            self.error_code -= ADJUSTMENT
                         err_msg = f"An unknown error occurred: {self.error_code}"
                         msg.append(err_msg)
                         logger.add_data("errors", err_msg)

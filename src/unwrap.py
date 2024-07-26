@@ -166,8 +166,17 @@ class Unwrap:
                 # mesh is invalid
                 msg = ""
 
+                # convert unsigned int
+                THRESHOLD = 2147483648
+                ADJUSTMENT = 4294967296
+                if ret_code >= THRESHOLD:
+                    ret_code -= ADJUSTMENT
+
                 move_to_invalid = False
-                if ret_code == 101:
+                if ret_code == -1:
+                    msg = "Mesh needs cleanup"
+                    move_to_invalid = True
+                elif ret_code == 101:
                     msg = "Non Manifold Edges"
                     move_to_invalid = True
                 elif ret_code == 102:

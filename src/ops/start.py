@@ -21,6 +21,7 @@ from ..utils import (
     calc_center,
     check_collection,
     cut,
+    cut_on_axes,
     deselect_all,
     export_obj,
     get_dir_path,
@@ -286,34 +287,13 @@ class UVGAMI_OT_start(bpy.types.Operator):
             obj.select_set(True)
 
             symmetrize_job = None
-            # bisect if symmetry on
-            axes = props.sym_axes
             if props.use_symmetry:
+                # bisect if symmetry on
+                axes = props.sym_axes
                 apply_transforms(obj)
-
-                bm = new_bmesh(obj)
                 obj_center = calc_center(obj)
                 symmetrize_job = Symmetrise(1, axes, obj_center, props.sym_merge)
-                cuts = []
-                if "X" in axes:
-                    cuts.append((1, 0, 0))
-                if "Y" in axes:
-                    cuts.append((0, 1, 0))
-                if "Z" in axes:
-                    cuts.append((0, 0, 1))
-
-                for direction in cuts:
-                    bmesh.ops.bisect_plane(
-                        bm,
-                        geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
-                        plane_co=obj_center,
-                        plane_no=direction,
-                        clear_inner=True,
-                    )
-                # if the object already had vertices down it's center plane
-                # there will be duplicates
-                bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-                set_bmesh(bm, obj)
+                cut_on_axes(obj, obj_center, axes)
 
             # separate objects
             bpy.ops.mesh.separate(type="LOOSE")

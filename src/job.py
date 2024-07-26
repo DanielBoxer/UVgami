@@ -70,7 +70,7 @@ class Preserve(Job):
                 uvvert_to_meshvert[uv_v] = mesh_verts[uv_v_idx]
 
             # the faces will all be separate, so merging by distance joins them
-            bmesh.ops.remove_doubles(uvbm, verts=uvbm.verts, dist=1e-7)
+            bmesh.ops.remove_doubles(uvbm, verts=uvbm.verts, dist=0.0001)
 
             # find boundary edges of uv bmesh which are seams of original bmesh
             seams = []

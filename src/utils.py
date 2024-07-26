@@ -287,3 +287,27 @@ def cut(num, center, length, dim, bm):
         bmesh.ops.split_edges(
             bm, edges=[e for e in cut if isinstance(e, bmesh.types.BMEdge)]
         )
+
+
+def cut_on_axes(obj, obj_center, axes):
+    bm = new_bmesh(obj)
+    cuts = []
+    if "X" in axes:
+        cuts.append((1, 0, 0))
+    if "Y" in axes:
+        cuts.append((0, 1, 0))
+    if "Z" in axes:
+        cuts.append((0, 0, 1))
+
+    for direction in cuts:
+        bmesh.ops.bisect_plane(
+            bm,
+            geom=bm.verts[:] + bm.edges[:] + bm.faces[:],
+            plane_co=obj_center,
+            plane_no=direction,
+            clear_inner=True,
+        )
+    # if the object already had vertices down its center plane
+    # there will be duplicates
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
+    set_bmesh(bm, obj)
