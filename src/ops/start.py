@@ -38,7 +38,8 @@ class UVGAMI_OT_start(bpy.types.Operator):
     bl_label = "Unwrap"
     bl_description = "Start UV unwrap process"
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.reset_variables()
 
     def reset_variables(self):
