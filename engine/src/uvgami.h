@@ -1,0 +1,17 @@
+#pragma once
+
+#include "uvgami_exceptions.h"
+#include "ChronoTimer.h"
+
+const char *pathSeparator();
+
+enum UVGAMI_RETURN_CODES {
+    UVGAMI_RC_SUCCESS = 0,
+    UVGAMI_RC_NON_MANIFOLD_EDGES = 101,
+    UVGAMI_RC_NON_MANIFOLD_VERTICES = 102,
+    UVGAMI_RC_FAILED_TO_LOAD_MESH = 103,
+    UVGAMI_RC_UNKNOWN_MESH_FORMAT = 104,
+    UVGAMI_RC_ELEMENT_INVERSION = 105,
+    UVGAMI_RC_NON_TRIANGULATED = 106,
+    UVGAMI_RC_INVALID_UV = 107
+};

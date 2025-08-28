@@ -1,0 +1,58 @@
+name: Engine build
+
+on: workflow_dispatch
+
+permissions:
+  contents: write
+
+env:
+  BUILD_TYPE: Release
+  PACKAGE_PREFIX: uvgami-engine
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Ubuntu dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y xorg-dev libglu1-mesa-dev
+
+      - name: Install dependencies
+        run: |
+          cmake -E make_directory ${{ github.workspace }}/build
+
+      - name: Build and package engine
+        working-directory: ${{ github.workspace }}/build
+        shell: bash
+        run: |
+          cmake $GITHUB_WORKSPACE/engine -Wno-dev -DBUILD_SHARED_LIBS=OFF \
+            -DCPACK_GENERATOR:STRING=ZIP \
+            -DCPACK_PACKAGE_FILE_NAME:STRING=${PACKAGE_PREFIX}-${{ matrix.os }}
+
+          cmake --build . --config $BUILD_TYPE --target package
+
+      - name: Upload engine artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_PREFIX }}-${{ matrix.os }}
+          path: ${{ github.workspace }}/build/${{ env.PACKAGE_PREFIX }}-${{ matrix.os }}.zip
+
+      - name: Get latest tag
+        id: previous_tag
+        uses: "WyriHaximus/github-action-get-previous-tag@v1"
+
+      - name: Upload binaries to latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.previous_tag.outputs.tag }}
+          files: build/${{ env.PACKAGE_PREFIX }}-${{ matrix.os }}.zip

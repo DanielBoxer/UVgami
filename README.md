@@ -12,4 +12,6 @@
 
 ![Rhino](https://github.com/DanielBoxer/UVgami/assets/65575771/12b691fc-4ff6-4462-9dbc-b615a85bf7fc)
 
-Check the [user guide](/docs/docs.md) for installation instructions and more detailed documentation
+The unwrapping engine is from [Optcuts](https://github.com/liminchen/OptCuts) by Minchen Li, licensed under the MIT License, and has been modified to work in Blender.
+
+Check the [user guide](/docs/docs.md) for installation instructions and more detailed documentation.

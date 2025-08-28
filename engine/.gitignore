@@ -1,0 +1,9 @@
+build*/
+*.xc*
+*.DS_Store
+*.dylib
+*.vscode/
+output/
+ext/tbb/
+ext/.cache
+.vs/
