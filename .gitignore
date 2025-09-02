@@ -1,0 +1,10 @@
+__pycache__/
+.venv/
+
+.vscode/
+
+# io folders
+input/
+output/
+
+.todo
