@@ -164,10 +164,6 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 self.report({"ERROR"}, ("Unknown error configuring engine in WSL"))
                 return {"CANCELLED"}
 
-        elif platform.system() == "Darwin":
-            self.report({"ERROR"}, "Mac is not supported")
-            return {"CANCELLED"}
-
         return None
 
     def prepare_meshes(self, context):

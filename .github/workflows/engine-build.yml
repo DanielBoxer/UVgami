@@ -8,12 +8,23 @@ permissions:
 env:
   BUILD_TYPE: Release
   PACKAGE_PREFIX: uvgami-engine
+  ENGINE_VERSION_MAJOR: 1
+  ENGINE_VERSION_MINOR: 1
+  ENGINE_VERSION_PATCH: 2
 
 jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        include:
+          - os: ubuntu-22.04
+            pkg_name: linux
+          - os: windows-latest
+            pkg_name: windows
+          - os: macos-13
+            pkg_name: macos-x64
+          - os: macos-latest
+            pkg_name: macos-arm64
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -31,21 +42,24 @@ jobs:
         run: |
           cmake -E make_directory ${{ github.workspace }}/build
 
+      - name: Set package name
+        shell: bash
+        run: |
+          PACKAGE_NAME="${PACKAGE_PREFIX}-${ENGINE_VERSION_MAJOR}.${ENGINE_VERSION_MINOR}.${ENGINE_VERSION_PATCH}-${{ matrix.pkg_name }}"
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
+
       - name: Build and package engine
         working-directory: ${{ github.workspace }}/build
         shell: bash
         run: |
           cmake $GITHUB_WORKSPACE/engine -Wno-dev -DBUILD_SHARED_LIBS=OFF \
             -DCPACK_GENERATOR:STRING=ZIP \
-            -DCPACK_PACKAGE_FILE_NAME:STRING=${PACKAGE_PREFIX}-${{ matrix.os }}
+            -DCPACK_PACKAGE_FILE_NAME:STRING=$PACKAGE_NAME \
+            -DUVGAMI_VERSION_MAJOR=${ENGINE_VERSION_MAJOR} \
+            -DUVGAMI_VERSION_MINOR=${ENGINE_VERSION_MINOR} \
+            -DUVGAMI_VERSION_BUILD=${ENGINE_VERSION_PATCH}
 
           cmake --build . --config $BUILD_TYPE --target package
-
-      - name: Upload engine artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.PACKAGE_PREFIX }}-${{ matrix.os }}
-          path: ${{ github.workspace }}/build/${{ env.PACKAGE_PREFIX }}-${{ matrix.os }}.zip
 
       - name: Get latest tag
         id: previous_tag
@@ -55,4 +69,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.previous_tag.outputs.tag }}
-          files: build/${{ env.PACKAGE_PREFIX }}-${{ matrix.os }}.zip
+          files: build/${{ env.PACKAGE_NAME }}.zip
