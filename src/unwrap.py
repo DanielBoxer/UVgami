@@ -20,7 +20,7 @@ from .manager import manager
 from .utils import (
     check_collection,
     check_exists,
-    get_dir_path,
+    get_extension_dir_path,
     get_linux_path,
     get_preferences,
     import_obj,
@@ -52,7 +52,7 @@ class Unwrap:
 
         # paths
         self.path = path
-        self.output_path = get_dir_path() / "output" / f"{self.path.stem}.obj"
+        self.output_path = get_extension_dir_path() / "output" / f"{self.path.stem}.obj"
         # seam restrictions
         self.guide_path = guide_path
         # for untriangulation (added edges)
@@ -131,7 +131,7 @@ class Unwrap:
 
         if platform.system() == "Windows" and engine_path.suffix == "":
             input_path = get_linux_path(self.path)
-            output_path = get_linux_path(get_dir_path() / "output")
+            output_path = get_linux_path(get_extension_dir_path() / "output")
             args = [
                 "bash",
                 "-c",

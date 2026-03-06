@@ -1,21 +1,21 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
+import multiprocessing
 import pathlib
 import platform
-import multiprocessing
-from ..utils import get_dir_path, get_preferences
+
+import bpy
+
+from ..utils import get_addon_id, get_preferences
 
 
 class UVGAMI_PG_properties(bpy.types.PropertyGroup):
     quality: bpy.props.EnumProperty(
         name="Unwrap Quality",
         description=(
-            (
-                "A higher quality unwrap will have less stretching, "
-                "but it will take longer to finish"
-            )
+            "A higher quality unwrap will have less stretching, "
+            "but it will take longer to finish"
         ),
         items=(
             ("HIGH", "High", ""),
@@ -147,8 +147,7 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
     sym_merge: bpy.props.BoolProperty(
         name="Merge",
         description=(
-            "Overlap and combine symmetrical UVs."
-            " This will remove the seam on the axis"
+            "Overlap and combine symmetrical UVs. This will remove the seam on the axis"
         ),
         default=True,
     )
@@ -194,7 +193,7 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
 
 
 class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
-    bl_idname = get_dir_path().stem
+    bl_idname = get_addon_id()
 
     autosave: bpy.props.BoolProperty(
         name="Autosave",

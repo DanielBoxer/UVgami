@@ -9,7 +9,7 @@ from .logger import logger
 from .ops.grid import add_grid, make_grid_img, make_grid_mat
 from .reroute_seams import reroute_seams
 from .utils import (
-    get_dir_path,
+    get_extension_dir_path,
     get_preferences,
     import_obj,
     new_bmesh,
@@ -62,9 +62,9 @@ class UnwrapManager:
             switch_shading("MATERIAL")
 
         # clean up io folders
-        for file in (get_dir_path() / "input").iterdir():
+        for file in (get_extension_dir_path() / "input").iterdir():
             file.unlink()
-        for file in (get_dir_path() / "output").iterdir():
+        for file in (get_extension_dir_path() / "output").iterdir():
             file.unlink()
 
     def finish_unwrap(self, unwrap, invalid_pass=False):

@@ -1,0 +1,19 @@
+# https://developer.blender.org/docs/features/extensions/schema/1.0.0/
+schema_version = "1.0.0"
+
+maintainer = "Daniel Boxer <dani3lb0x3r@gmail.com>"
+type = "add-on"
+license = ["SPDX:GPL-3.0-or-later"]
+
+id = "uvgami"
+name = "UVgami"
+version = "1.2.0"
+blender_version_min = "4.2.0"
+tagline = "Automatic UV unwrapping"
+website = "https://github.com/DanielBoxer/UVgami"
+
+# https://docs.blender.org/manual/en/dev/advanced/extensions/tags.html
+tags = ["UV"]
+
+[permissions]
+files = "Import/export OBJ and access engine path"

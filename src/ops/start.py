@@ -24,7 +24,7 @@ from ..utils import (
     cut_on_axes,
     deselect_all,
     export_obj,
-    get_dir_path,
+    get_extension_dir_path,
     get_linux_path,
     get_preferences,
     move_to_collection,
@@ -198,7 +198,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
 
                 try:
                     bpy.ops.object.modifier_apply(modifier=modifier.name)
-                except:
+                except RuntimeError:
                     # if the modifier is disabled, don't apply
                     pass
 
@@ -254,7 +254,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
         return objects, names, report_msg
 
     def prepare_io_folders(self):
-        input_path = get_dir_path() / "input"
+        input_path = get_extension_dir_path() / "input"
         input_path.mkdir(exist_ok=True)
         output_path = input_path.parent / "output"
         output_path.mkdir(exist_ok=True)
