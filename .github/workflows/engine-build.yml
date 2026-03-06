@@ -21,14 +21,14 @@ jobs:
             pkg_name: linux
           - os: windows-latest
             pkg_name: windows
-          - os: macos-13
+          - os: macos-26-intel
             pkg_name: macos-x64
-          - os: macos-latest
+          - os: macos-26-arm64
             pkg_name: macos-arm64
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -63,7 +63,7 @@ jobs:
 
       - name: Get latest tag
         id: previous_tag
-        uses: "WyriHaximus/github-action-get-previous-tag@v1"
+        uses: "WyriHaximus/github-action-get-previous-tag@v2"
 
       - name: Upload binaries to latest release
         uses: softprops/action-gh-release@v2
