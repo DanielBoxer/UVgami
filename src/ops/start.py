@@ -360,97 +360,13 @@ class UVGAMI_OT_start(bpy.types.Operator):
             while path.is_file():
                 path = path.parent / (f"{path.stem}1.obj")
 
-            # make sure the mesh is triangulated
-            new_edges = []
-            bm = new_bmesh(obj)
-
-            must_triangulate = False
-            ngon_dict = {}
-            for face_idx, face in enumerate(bm.faces):
-                if len(face.edges) > 3:
-                    must_triangulate = True
-                    # n-gon vertices are only needed in full mode
-                    if props.maintain_mode == "PARTIAL":
-                        break
-
-                if len(face.edges) > 4:
-                    # found n-gon
-                    for vert in face.verts:
-                        if vert.index not in ngon_dict:
-                            ngon_dict[vert.index] = set()
-                        ngon_dict[vert.index].add(face_idx)
-
-            edge_path = None
-            if must_triangulate:
-                if props.untriangulate:
-                    self.jobs[obj]["preserve"] = Preserve(1)
-                    old_edges = set(bm.edges)
-
-                bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="BEAUTY")
-
-                if props.untriangulate:
-                    # write added edges to file
-                    edge_path = path.parent / f"{path.stem}_edges"
-                    with edge_path.open("w") as f:
-                        for bm_e in set(bm.edges).difference(old_edges):
-                            edge = (bm_e.verts[0].index, bm_e.verts[1].index)
-                            if (
-                                # if both vertices are ngon vertices
-                                edge[0] in ngon_dict
-                                and edge[1] in ngon_dict
-                                # and they are from the same ngon
-                                and len(
-                                    ngon_dict[edge[0]].intersection(ngon_dict[edge[1]])
-                                )
-                                > 0
-                            ):
-                                # edge is inside ngon, don't dissolve
-                                # because ngons aren't rerouted
-                                continue
-                            new_edges.append(edge)
-                            f.write(f"{edge[0]} {edge[1]}\n")
-
-                set_bmesh(bm, obj)
+            edge_path, new_edges = self._triangulate_mesh(obj, path, props)
 
             export_obj(obj, path, props.import_uvs)
 
-            guide_path = None
-            if (
-                props.use_guided_mode
-                and "UVgami_seam_restrictions" in obj.vertex_groups
-            ):
-                # get seam guide
-                guide = ""
-                group_idx = obj.vertex_groups["UVgami_seam_restrictions"].index
-                for v in obj.data.vertices:
-                    for g in v.groups:
-                        if g.group == group_idx:
-                            guide += f"{v.index},{g.weight},"
-                            break
-                # remove last comma
-                guide = guide[:-1]
+            guide_path = self._create_guide_file(obj, path, props)
 
-                guide_path = path.parent / f"{path.stem}_weights"
-                with guide_path.open("w") as f:
-                    f.write(f"{guide}\n")
-
-            # get materials
-            materials = [
-                slot.material.name for slot in obj.material_slots if slot.material
-            ]
-
-            # check smooth and auto smooth shading
-            shade_smooth = True if obj.data.polygons[0].use_smooth else False
-
-            angle = -1
-            if bpy.app.version >= (4, 1, 0):
-                for modifier in obj.modifiers:
-                    # Input_1 is the angle input
-                    if "Smooth by Angle" in modifier.name and "Input_1" in modifier:
-                        angle = modifier["Input_1"]
-            else:
-                if obj.data.use_auto_smooth:
-                    angle = obj.data.auto_smooth_angle
+            materials, shade_smooth, auto_smooth = self._get_mesh_metadata(obj)
 
             unwrap = Unwrap(
                 name=unwrap_name,
@@ -469,7 +385,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 added_edges=new_edges,
                 vertex_count=len(obj.data.vertices),
                 shade_smooth=shade_smooth,
-                auto_smooth=angle,
+                auto_smooth=auto_smooth,
                 merge_cuts=props.use_cuts and not props.use_symmetry,
             )
             manager.add(unwrap)
@@ -490,3 +406,97 @@ class UVGAMI_OT_start(bpy.types.Operator):
             self.report({"INFO"}, "UV unwrap in progress")
         else:
             self.report({"WARNING"}, f"UV unwrap in progress. {self.report_msg}")
+
+    def _triangulate_mesh(self, obj, path, props):
+        """Triangulate the mesh if needed, tracking added edges for untriangulation."""
+        new_edges = []
+        bm = new_bmesh(obj)
+
+        must_triangulate = False
+        ngon_dict = {}
+        for face_idx, face in enumerate(bm.faces):
+            if len(face.edges) > 3:
+                must_triangulate = True
+                # n-gon vertices are only needed in full mode
+                if props.maintain_mode == "PARTIAL":
+                    break
+
+            if len(face.edges) > 4:
+                # found n-gon
+                for vert in face.verts:
+                    if vert.index not in ngon_dict:
+                        ngon_dict[vert.index] = set()
+                    ngon_dict[vert.index].add(face_idx)
+
+        edge_path = None
+        if must_triangulate:
+            if props.untriangulate:
+                self.jobs[obj]["preserve"] = Preserve(1)
+                old_edges = set(bm.edges)
+
+            bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="BEAUTY")
+
+            if props.untriangulate:
+                # write added edges to file
+                edge_path = path.parent / f"{path.stem}_edges"
+                with edge_path.open("w") as f:
+                    for bm_e in set(bm.edges).difference(old_edges):
+                        edge = (bm_e.verts[0].index, bm_e.verts[1].index)
+                        if (
+                            # if both vertices are ngon vertices
+                            edge[0] in ngon_dict
+                            and edge[1] in ngon_dict
+                            # and they are from the same ngon
+                            and len(ngon_dict[edge[0]].intersection(ngon_dict[edge[1]]))
+                            > 0
+                        ):
+                            # edge is inside ngon, don't dissolve
+                            # because ngons aren't rerouted
+                            continue
+                        new_edges.append(edge)
+                        f.write(f"{edge[0]} {edge[1]}\n")
+
+            set_bmesh(bm, obj)
+
+        return edge_path, new_edges
+
+    def _create_guide_file(self, obj, path, props):
+        """Create seam restriction guide file if guided mode is active."""
+        guide_path = None
+        if props.use_guided_mode and "UVgami_seam_restrictions" in obj.vertex_groups:
+            # get seam guide
+            guide = ""
+            group_idx = obj.vertex_groups["UVgami_seam_restrictions"].index
+            for v in obj.data.vertices:
+                for g in v.groups:
+                    if g.group == group_idx:
+                        guide += f"{v.index},{g.weight},"
+                        break
+            # remove last comma
+            guide = guide[:-1]
+
+            guide_path = path.parent / f"{path.stem}_weights"
+            with guide_path.open("w") as f:
+                f.write(f"{guide}\n")
+
+        return guide_path
+
+    def _get_mesh_metadata(self, obj):
+        """Gather materials and shading info from the mesh."""
+        # get materials
+        materials = [slot.material.name for slot in obj.material_slots if slot.material]
+
+        # check smooth and auto smooth shading
+        shade_smooth = True if obj.data.polygons[0].use_smooth else False
+
+        angle = -1
+        if bpy.app.version >= (4, 1, 0):
+            for modifier in obj.modifiers:
+                # Input_1 is the angle input
+                if "Smooth by Angle" in modifier.name and "Input_1" in modifier:
+                    angle = modifier["Input_1"]
+        else:
+            if obj.data.use_auto_smooth:
+                angle = obj.data.auto_smooth_angle
+
+        return materials, shade_smooth, angle
