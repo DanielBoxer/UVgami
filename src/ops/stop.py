@@ -2,6 +2,7 @@
 # See __init__.py and LICENSE for more information
 
 import bpy
+
 from ..manager import manager
 from ..ui.panels import expand
 from ..utils import print_stdin
@@ -48,7 +49,7 @@ class UVGAMI_OT_cancel(bpy.types.Operator):
                     manager.finished_count -= len(job.unwrapped)
                     manager.cancelled_count += len(job.unwrapped)
 
-            unwrap.cancel_unwrap(start_next=True)
+            manager.cancel_unwrap(unwrap)
 
         self.report({"INFO"}, "UV unwrap cancelled")
         return {"FINISHED"}
@@ -60,9 +61,7 @@ class UVGAMI_OT_cancel_all(bpy.types.Operator):
     bl_description = "Cancel all active UV unwraps"
 
     def execute(self, context):
-        for unwrap in manager.active.copy():
-            unwrap.cancel_unwrap()
-
+        manager.stop_all()
         manager.finish()
         self.report({"INFO"}, "UV unwrap cancelled")
         return {"FINISHED"}

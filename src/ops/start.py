@@ -472,7 +472,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 auto_smooth=angle,
                 merge_cuts=props.use_cuts and not props.use_symmetry,
             )
-            manager.active.append(unwrap)
+            manager.add(unwrap)
 
             bpy.data.objects.remove(obj, do_unlink=True)
 
