@@ -9,10 +9,10 @@ import bmesh
 import bpy
 import numpy
 
-from . import progress_bar
 from .job import Join
 from .logger import logger
 from .ops.grid import add_grid, make_grid_img, make_grid_mat
+from .progress_bar import progress_bar
 from .reroute_seams import reroute_seams
 from .utils.geometry import set_origin
 from .utils.io import import_obj, print_stdin
