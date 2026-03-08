@@ -319,6 +319,9 @@ class UnwrapManager:
 
         logger.add_data("objects", unwrap.input_name)
 
+        collection = check_collection("UVgami Unwrapped", bpy.context.scene.collection)
+        move_to_collection(output, collection)
+
     def _copy_vertex_groups(self, unwrap, output):
         """Copy vertex groups from the input object to the output."""
         if unwrap.input_name in bpy.data.objects:
