@@ -457,6 +457,7 @@ class UnwrapManager:
         self._queue.clear()
         self._unregister_dispatch()
         progress_bar.remove()
+        self.is_active = False
 
 
 manager = UnwrapManager()

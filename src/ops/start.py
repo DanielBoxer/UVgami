@@ -464,6 +464,8 @@ class UVGAMI_OT_start(bpy.types.Operator):
                         f.write(f"{edge[0]} {edge[1]}\n")
 
             set_bmesh(bm, obj)
+        else:
+            bm.free()
 
         return edge_path, new_edges
 

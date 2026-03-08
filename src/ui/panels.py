@@ -78,12 +78,12 @@ class UVGAMI_PT_main(bpy.types.Panel):
     def _draw_unwrap_groups(self, box, groups, active_groups):
         """Draw all unwrap groups with their buttons."""
         cancel_index = 0
-        for id, group in groups.items():
+        for group_id, group in groups.items():
             display_box = box.box()
             row = display_box.row()
             label_text = ""
             # if the key isn't an int, it's part of a group, and can be expanded
-            expand_layout = not isinstance(id, int)
+            expand_layout = not isinstance(group_id, int)
 
             # draw active icon and name
             is_active = False
@@ -91,11 +91,11 @@ class UVGAMI_PT_main(bpy.types.Panel):
                 row.operator(
                     "uvgami.expand",
                     text="",
-                    icon=f"DISCLOSURE_TRI_{'DOWN' if id.is_expanded else 'RIGHT'}",
+                    icon=f"DISCLOSURE_TRI_{'DOWN' if group_id.is_expanded else 'RIGHT'}",
                     emboss=False,
                 ).index = manager.active.index(group[0])
                 label_text = group[0].input_name
-                is_active = id in active_groups
+                is_active = group_id in active_groups
             else:
                 label_text = group[0].name
                 is_active = group[0].is_active
@@ -115,7 +115,7 @@ class UVGAMI_PT_main(bpy.types.Panel):
                 cancel_op.end_idx = cancel_index + len(group)
 
             # draw buttons
-            if not expand_layout or id.is_expanded:
+            if not expand_layout or group_id.is_expanded:
                 # if the group is expanded, show all items
 
                 for item in group:
@@ -142,7 +142,7 @@ class UVGAMI_PT_main(bpy.types.Panel):
                     cancel_op.end_idx = cancel_index + 1
 
                     cancel_index += 1
-            elif expand_layout and not id.is_expanded:
+            elif expand_layout and not group_id.is_expanded:
                 # the length of the group needs to be added
                 cancel_index += len(group)
 
