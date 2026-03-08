@@ -119,7 +119,7 @@ class UnwrapManager:
                     # force kill if process doesn't respond within 10 seconds
                     elif time.monotonic() - unwrap.stop_requested_at > 10:
                         unwrap.stop_process()
-                        failed.append((unwrap, -1))
+                        failed.append((unwrap, -3))
 
                 # check if unwrap has exceeded the timeout
                 timeout_minutes = bpy.context.scene.uvgami.unwrap_timeout
@@ -359,6 +359,9 @@ class UnwrapManager:
         elif ret_code == -2:
             elapsed = (time.monotonic() - unwrap.started_at) / 60
             msg = f"Timed out after {elapsed:.1f} minutes"
+            move_to_invalid = True
+        elif ret_code == -3:
+            msg = "Stop timed out (force killed)"
             move_to_invalid = True
         elif ret_code == 101:
             msg = "Non Manifold Edges"

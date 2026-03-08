@@ -5,7 +5,9 @@ import bpy
 
 from ..job import Join
 from ..manager import manager
-from ..utils.io import print_stdin
+from ..utils.io import import_obj, print_stdin
+from ..utils.mesh import check_collection, move_to_collection
+from ..utils.paths import get_preferences
 
 
 class UVGAMI_OT_stop(bpy.types.Operator):
@@ -38,7 +40,28 @@ class UVGAMI_OT_cancel(bpy.types.Operator):
     end_idx: bpy.props.IntProperty()
 
     def execute(self, context):
-        for unwrap in manager.active[self.start_idx : self.end_idx]:
+        unwraps = manager.active[self.start_idx : self.end_idx]
+        cancel_count = len(unwraps)
+
+        for unwrap in unwraps:
+            # individual cancel from a group: move to invalid collection
+            is_individual_from_group = (
+                cancel_count == 1
+                and unwrap.join_job is not None
+                and unwrap.join_job.count > 1
+            )
+            if is_individual_from_group and get_preferences().invalid_collection:
+                if unwrap.path.is_file():
+                    invalid_obj = import_obj(unwrap.path)
+                    collection = check_collection(
+                        "UVgami Invalid Input", context.scene.collection
+                    )
+                    move_to_collection(invalid_obj, collection)
+                    invalid_name = f"{invalid_obj.name}: Cancelled (group)"
+                    invalid_obj.name = invalid_name
+                    invalid_obj.hide_set(True)
+                    manager.found_invalid_objects = True
+
             for job in unwrap.jobs:
                 job.count = job.count - 1
                 # if it was the last one
