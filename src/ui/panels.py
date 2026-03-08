@@ -101,10 +101,10 @@ class UVGAMI_PT_main(bpy.types.Panel):
                     emboss=False,
                 ).index = expand_idx
                 label_text = group[0].input_name
-                is_active = True if id in active_groups else False
+                is_active = id in active_groups
             else:
                 label_text = group[0].name
-                is_active = True if group[0].is_active else False
+                is_active = group[0].is_active
             row.label(
                 text=label_text,
                 icon=f"RADIOBUT_{'ON' if is_active else 'OFF'}",
