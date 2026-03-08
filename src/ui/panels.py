@@ -320,6 +320,7 @@ class UVGAMI_PT_pack(bpy.types.Panel):
 
         box.prop(props, "combine_uvs")
         box.prop(props, "fix_scale")
+        box.prop(props, "pack_after_unwrap")
 
 
 class UVGAMI_PT_uv(bpy.types.Panel):

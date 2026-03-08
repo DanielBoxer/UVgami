@@ -195,6 +195,10 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
         description="Scale UV islands based on their actual size",
         default=True,
     )
+    pack_after_unwrap: bpy.props.BoolProperty(
+        name="Pack After Unwrap",
+        description="Automatically pack UVs after each unwrap finishes",
+    )
     preview_unwrap_sharp: bpy.props.BoolProperty(
         name="",
         description=(

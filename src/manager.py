@@ -13,12 +13,15 @@ import numpy
 from .job import Join
 from .logger import logger
 from .ops.grid import add_grid, make_grid_img, make_grid_mat
+from .ops.uv import pack
 from .progress_bar import progress_bar
 from .reroute_seams import reroute_seams
 from .utils.geometry import set_origin
 from .utils.io import import_obj, print_stdin
 from .utils.mesh import (
     check_collection,
+    check_exists,
+    edit_restore,
     move_to_collection,
     new_bmesh,
     set_active_any,
@@ -32,6 +35,7 @@ class UnwrapManager:
     def __init__(self):
         self._queue = deque()
         self._running = []
+        self._pack_output_objects = []
         self.input = {}
         self.engine_path = None
         self.is_active = False
@@ -69,6 +73,7 @@ class UnwrapManager:
         self.current_viewer = None
         self.is_viewer_active = False
         self.exit_viewer = False
+        self._pack_output_objects = []
         # register central dispatch timer
         self._dispatch_handle = functools.partial(self._dispatch)
         bpy.app.timers.register(self._dispatch_handle)
@@ -292,6 +297,9 @@ class UnwrapManager:
             grid_img = make_grid_img()
             add_grid(output, make_grid_mat(grid_img))
 
+        if props.pack_after_unwrap:
+            self._pack_output_objects.append(output)
+
         # shade smooth
         if unwrap.shade_smooth:
             output.data.polygons.foreach_set(
@@ -400,6 +408,16 @@ class UnwrapManager:
 
     def _finish_batch(self):
         """Called when all unwraps are done (completed, failed, or cancelled)."""
+        props = bpy.context.scene.uvgami
+        if props.pack_after_unwrap and self._pack_output_objects:
+            valid_objects = [o for o in self._pack_output_objects if check_exists(o)]
+            if valid_objects:
+                if props.combine_uvs:
+                    edit_restore(valid_objects, pack)
+                else:
+                    for obj in valid_objects:
+                        edit_restore([obj], pack)
+
         self.finish()
 
         # don't show popup if all unwraps were cancelled
@@ -445,6 +463,7 @@ class UnwrapManager:
         self.is_active = False
         self._running.clear()
         self._queue.clear()
+        self._pack_output_objects.clear()
 
         if (
             bpy.context.scene.uvgami.auto_grid
