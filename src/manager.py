@@ -187,13 +187,30 @@ class UnwrapManager:
 
     def _process_completion(self, unwrap, invalid_pass=False):
         """Process a successfully completed unwrap."""
-        props = bpy.context.scene.uvgami
-        path = unwrap.output_path
-        is_import_ready = True
-        added_edges = []
-        edge_path = unwrap.edge_path
         if not invalid_pass:
             self.finished_count += 1
+
+        path, edge_path, added_edges, is_import_ready = self._resolve_join(
+            unwrap, invalid_pass
+        )
+
+        if is_import_ready:
+            self._import_and_finalize(unwrap, path, edge_path, added_edges)
+
+        self.exit_viewer = True
+
+        if not invalid_pass:
+            # remove from running and clean up files
+            if unwrap in self._running:
+                self._running.remove(unwrap)
+            unwrap.cleanup()
+
+    def _resolve_join(self, unwrap, invalid_pass):
+        """Resolve join job state and return final import paths."""
+        path = unwrap.output_path
+        edge_path = unwrap.edge_path
+        added_edges = []
+        is_import_ready = True
 
         if unwrap.join_job is not None:
             if not invalid_pass:
@@ -209,88 +226,88 @@ class UnwrapManager:
                 # in all other cases, wait until last unwrap finishes before importing
                 is_import_ready = False
 
-        if is_import_ready:
-            # reroute seams before importing
-            if unwrap.preserve_job is not None and props.maintain_mode == "FULL":
-                reroute_seams(path, edge_path)
+        return path, edge_path, added_edges, is_import_ready
 
-            old_active = bpy.context.view_layer.objects.active
-            if old_active is None:
-                old_active = set_active_any()
-            output = import_obj(path, f"{unwrap.input_name}_unwrapped")
-            # the new obj importer changes the active object
-            if bpy.app.version >= (3, 2, 0):
-                bpy.context.view_layer.objects.active = old_active
+    def _import_and_finalize(self, unwrap, path, edge_path, added_edges):
+        """Import the unwrapped OBJ and apply all post-processing."""
+        props = bpy.context.scene.uvgami
 
-            set_origin(output, unwrap.origin)
+        # reroute seams before importing
+        if unwrap.preserve_job is not None and props.maintain_mode == "FULL":
+            reroute_seams(path, edge_path)
 
-            # set materials
-            materials = [
-                bpy.data.materials.get(m_name)
-                for m_name in unwrap.materials
-                if m_name is not None
-            ]
-            for m in materials:
-                output.data.materials.append(m)
+        old_active = bpy.context.view_layer.objects.active
+        if old_active is None:
+            old_active = set_active_any()
+        output = import_obj(path, f"{unwrap.input_name}_unwrapped")
+        # the new obj importer changes the active object
+        if bpy.app.version >= (3, 2, 0):
+            bpy.context.view_layer.objects.active = old_active
 
-            if unwrap.preserve_job is not None:
-                unwrap.preserve_job.finish(unwrap, output, added_edges)
+        set_origin(output, unwrap.origin)
 
-            if unwrap.cleanup_job is not None:
-                unwrap.cleanup_job.finish(self.input[unwrap.cleanup_job])
+        # set materials
+        materials = [
+            bpy.data.materials.get(m_name)
+            for m_name in unwrap.materials
+            if m_name is not None
+        ]
+        for m in materials:
+            output.data.materials.append(m)
 
-            if unwrap.symmetrize_job is not None:
-                unwrap.symmetrize_job.finish(output)
+        if unwrap.preserve_job is not None:
+            unwrap.preserve_job.finish(unwrap, output, added_edges)
 
-            if unwrap.merge_cuts:
-                bm = new_bmesh(output)
-                bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
-                set_bmesh(bm, output)
+        if unwrap.cleanup_job is not None:
+            unwrap.cleanup_job.finish(self.input[unwrap.cleanup_job])
 
-            # automatically add grid material to final object
-            if props.auto_grid:
-                grid_img = make_grid_img()
-                add_grid(output, make_grid_mat(grid_img))
+        if unwrap.symmetrize_job is not None:
+            unwrap.symmetrize_job.finish(output)
 
-            # shade smooth
-            if unwrap.shade_smooth:
-                output.data.polygons.foreach_set(
-                    "use_smooth", [True] * len(output.data.polygons)
-                )
-                if unwrap.auto_smooth != -1:
-                    if bpy.app.version >= (4, 1, 0):
-                        pass
-                    else:
-                        output.data.use_auto_smooth = True
-                        output.data.auto_smooth_angle = unwrap.auto_smooth
+        if unwrap.merge_cuts:
+            bm = new_bmesh(output)
+            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
+            set_bmesh(bm, output)
 
-            # copy vertex groups from input
-            if unwrap.input_name in bpy.data.objects:
-                input_obj = bpy.data.objects[unwrap.input_name]
+        # automatically add grid material to final object
+        if props.auto_grid:
+            grid_img = make_grid_img()
+            add_grid(output, make_grid_mat(grid_img))
 
-                for group in input_obj.vertex_groups:
-                    new_group = output.vertex_groups.new(name=group.name)
-                    for v_idx in range(unwrap.vertex_count):
-                        try:
-                            weight = group.weight(v_idx)
-                            new_group.add([v_idx], weight, "REPLACE")
-                        except RuntimeError:
-                            # vertex not in group
-                            continue
-            else:
-                logger.add_data(
-                    "errors", "Input object not found, couldn't copy vertex groups"
-                )
+        # shade smooth
+        if unwrap.shade_smooth:
+            output.data.polygons.foreach_set(
+                "use_smooth", [True] * len(output.data.polygons)
+            )
+            if unwrap.auto_smooth != -1:
+                if bpy.app.version >= (4, 1, 0):
+                    pass
+                else:
+                    output.data.use_auto_smooth = True
+                    output.data.auto_smooth_angle = unwrap.auto_smooth
 
-            logger.add_data("objects", unwrap.input_name)
+        self._copy_vertex_groups(unwrap, output)
 
-        self.exit_viewer = True
+        logger.add_data("objects", unwrap.input_name)
 
-        if not invalid_pass:
-            # remove from running and clean up files
-            if unwrap in self._running:
-                self._running.remove(unwrap)
-            unwrap.cleanup()
+    def _copy_vertex_groups(self, unwrap, output):
+        """Copy vertex groups from the input object to the output."""
+        if unwrap.input_name in bpy.data.objects:
+            input_obj = bpy.data.objects[unwrap.input_name]
+
+            for group in input_obj.vertex_groups:
+                new_group = output.vertex_groups.new(name=group.name)
+                for v_idx in range(unwrap.vertex_count):
+                    try:
+                        weight = group.weight(v_idx)
+                        new_group.add([v_idx], weight, "REPLACE")
+                    except RuntimeError:
+                        # vertex not in group
+                        continue
+        else:
+            logger.add_data(
+                "errors", "Input object not found, couldn't copy vertex groups"
+            )
 
     def _handle_failure(self, unwrap, ret_code):
         """Handle an unwrap process that exited with a non-zero code."""
