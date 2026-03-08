@@ -2,6 +2,7 @@
 # See __init__.py and LICENSE for more information
 
 import functools
+import time
 import traceback
 from collections import deque
 
@@ -107,6 +108,13 @@ class UnwrapManager:
                 # if part of batch unwrap, hasn't started and stop button pressed
                 if unwrap.is_stopped:
                     print_stdin(unwrap.process, "stop")
+                    # track when stop was first requested
+                    if unwrap.stop_requested_at is None:
+                        unwrap.stop_requested_at = time.monotonic()
+                    # force kill if process doesn't respond within 10 seconds
+                    elif time.monotonic() - unwrap.stop_requested_at > 10:
+                        unwrap.stop_process()
+                        failed.append((unwrap, -1))
 
                 # check process status
                 ret_code = unwrap.process.poll()

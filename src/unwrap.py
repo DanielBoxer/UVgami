@@ -79,6 +79,7 @@ class Unwrap:
         self.uv_indices = collections.deque()
         self.is_uv_data_ready = False
         self.is_stopped = False
+        self.stop_requested_at = None
 
     def start_unwrap(self):
         prefs = get_preferences()
