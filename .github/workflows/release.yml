@@ -43,14 +43,14 @@ jobs:
         id: get_version
         uses: danielboxer/next-version-action@v1
         with:
-          increment: ${{ github.event.inputs.increment }}
-          version: ${{ github.event.inputs.version }}
+          increment: ${{ inputs.increment }}
+          version: ${{ inputs.version }}
           use_v_prefix: true
 
       # 1. get engine zips from previous release
       - name: Download engines
         id: download_engines
-        if: ${{ github.event.inputs.use_old_engine == 'true' }}
+        if: ${{ inputs.use_old_engine }}
         uses: robinraju/release-downloader@v1
         with:
           latest: true
@@ -75,7 +75,7 @@ jobs:
 
       # 4. upload engine if not new
       - name: Upload engine
-        if: ${{ github.event.inputs.use_old_engine == 'true' && fromJSON(steps.download_engines.outputs.downloaded_files || '[]').length > 0 }}
+        if: ${{ inputs.use_old_engine && fromJSON(steps.download_engines.outputs.downloaded_files || '[]')[0] != null }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_version.outputs.new_version }}
