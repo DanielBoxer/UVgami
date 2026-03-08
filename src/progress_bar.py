@@ -12,54 +12,55 @@ WIDTH = 150
 TOP = Y + 5
 SHADER_NAME = "UNIFORM_COLOR" if bpy.app.version >= (4, 0, 0) else "2D_UNIFORM_COLOR"
 SHADER = gpu.shader.from_builtin(SHADER_NAME)
-batch = [None, None, None]
-handle = [None, None, None]
-is_active = False
 
 
-def draw(index):
-    SHADER.bind()
-    SHADER.uniform_float("color", COLOUR[index])
-    batch[index].draw(SHADER)
+class ProgressBar:
+    def __init__(self):
+        self._batch = [None, None, None]
+        self._handle = [None, None, None]
+        self.is_active = False
 
+    def _draw(self, index):
+        SHADER.bind()
+        SHADER.uniform_float("color", COLOUR[index])
+        self._batch[index].draw(SHADER)
 
-def start():
-    global is_active
-    is_active = True
-    update((0, 0, 1))
-    for idx in range(3):
-        handle[idx] = bpy.types.SpaceView3D.draw_handler_add(
-            draw, (idx,), "WINDOW", "POST_PIXEL"
-        )
-
-
-def update(percentages):
-    start = X
-    vertices = []
-    for idx in range(3):
-        end = (WIDTH * percentages[idx]) + start
-        vertices.append(
-            (
-                (start, Y),
-                (end, Y),
-                (start, TOP),
-                (end, TOP),
-            )
-        )
-        start = end
-
-    for idx in range(3):
-        batch[idx] = batch_for_shader(
-            SHADER,
-            "TRIS",
-            {"pos": vertices[idx]},
-            indices=((0, 1, 2), (2, 1, 3)),
-        )
-
-
-def remove():
-    global is_active
-    if is_active:
-        is_active = False
+    def start(self):
+        self.is_active = True
+        self.update((0, 0, 1))
         for idx in range(3):
-            bpy.types.SpaceView3D.draw_handler_remove(handle[idx], "WINDOW")
+            self._handle[idx] = bpy.types.SpaceView3D.draw_handler_add(
+                self._draw, (idx,), "WINDOW", "POST_PIXEL"
+            )
+
+    def update(self, percentages):
+        start = X
+        vertices = []
+        for idx in range(3):
+            end = (WIDTH * percentages[idx]) + start
+            vertices.append(
+                (
+                    (start, Y),
+                    (end, Y),
+                    (start, TOP),
+                    (end, TOP),
+                )
+            )
+            start = end
+
+        for idx in range(3):
+            self._batch[idx] = batch_for_shader(
+                SHADER,
+                "TRIS",
+                {"pos": vertices[idx]},
+                indices=((0, 1, 2), (2, 1, 3)),
+            )
+
+    def remove(self):
+        if self.is_active:
+            self.is_active = False
+            for idx in range(3):
+                bpy.types.SpaceView3D.draw_handler_remove(self._handle[idx], "WINDOW")
+
+
+progress_bar = ProgressBar()

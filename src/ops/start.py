@@ -14,23 +14,17 @@ from ..handler import handle_error
 from ..job import Cleanup, Join, Preserve, Symmetrise
 from ..logger import logger
 from ..manager import manager
-from ..ui.panels import expand
 from ..unwrap import Unwrap
-from ..utils import (
-    apply_transforms,
-    calc_center,
+from ..utils.geometry import apply_transforms, calc_center, cut, cut_on_axes
+from ..utils.io import export_obj
+from ..utils.mesh import (
     check_collection,
-    cut,
-    cut_on_axes,
     deselect_all,
-    export_obj,
-    get_extension_dir_path,
-    get_linux_path,
-    get_preferences,
     move_to_collection,
     new_bmesh,
     set_bmesh,
 )
+from ..utils.paths import get_extension_dir_path, get_linux_path, get_preferences
 
 
 class UVGAMI_OT_start(bpy.types.Operator):
@@ -67,29 +61,8 @@ class UVGAMI_OT_start(bpy.types.Operator):
 
             if self.check_for_errors() is not None:
                 return {"CANCELLED"}
-
-            self.old_active = context.active_object
-            self.old_mode = self.old_active.mode
-            self.input_objs = context.selected_objects
-
-            # check if there is an active object selected
-            if not (self.old_active and self.old_active in self.input_objs):
-                self.report({"ERROR"}, "No active object selected")
+            if self._prepare_unwrap_session(context) is not None:
                 return {"CANCELLED"}
-
-            self.objects, self.names, self.report_msg = self.prepare_meshes(context)
-
-            if len(self.objects) == 0:
-                # there are no valid meshes
-                self.report({"ERROR"}, self.report_msg)
-                return {"CANCELLED"}
-
-            self.input_path, _ = self.prepare_io_folders()
-
-            self.jobs, self.separated_objects = self.create_jobs(context)
-
-            deselect_all()
-
             self.start_unwraps(context)
 
         except Exception as e:
@@ -99,20 +72,55 @@ class UVGAMI_OT_start(bpy.types.Operator):
         self.reset_variables()
         return {"FINISHED"}
 
+    def _prepare_unwrap_session(self, context):
+        self.old_active = context.active_object
+        self.input_objs = context.selected_objects
+
+        # check if there is an active object selected
+        if not (self.old_active and self.old_active in self.input_objs):
+            self.report({"ERROR"}, "No active object selected")
+            return {"CANCELLED"}
+
+        self.old_mode = self.old_active.mode
+        self.objects, self.names, self.report_msg = self.prepare_meshes(context)
+        if len(self.objects) == 0:
+            # there are no valid meshes
+            self.report({"ERROR"}, self.report_msg)
+            return {"CANCELLED"}
+
+        self.input_path, _ = self.prepare_io_folders()
+        self.jobs, self.separated_objects = self.create_jobs(context)
+        deselect_all()
+        return None
+
     def check_for_errors(self):
         prefs = get_preferences()
 
-        if prefs.autosave:
-            if bpy.data.is_saved:
-                bpy.ops.wm.save_mainfile()
-            else:
-                bpy.ops.wm.save_as_mainfile("INVOKE_DEFAULT")
-                self.report(
-                    {"WARNING"},
-                    "Autosave is turned on. Save the file before starting UVgami",
-                )
-                return {"CANCELLED"}
+        if self._run_autosave_check(prefs) is not None:
+            return {"CANCELLED"}
+        if self._validate_engine_path() is not None:
+            return {"CANCELLED"}
+        if self._setup_wsl_engine_if_needed(prefs) is not None:
+            return {"CANCELLED"}
 
+        return None
+
+    def _run_autosave_check(self, prefs):
+        if not prefs.autosave:
+            return None
+
+        if bpy.data.is_saved:
+            bpy.ops.wm.save_mainfile()
+            return None
+
+        bpy.ops.wm.save_as_mainfile("INVOKE_DEFAULT")
+        self.report(
+            {"WARNING"},
+            "Autosave is turned on. Save the file before starting UVgami",
+        )
+        return {"CANCELLED"}
+
+    def _validate_engine_path(self):
         if str(self.engine_path) == ".":
             self.report(
                 {"ERROR"},
@@ -121,48 +129,41 @@ class UVGAMI_OT_start(bpy.types.Operator):
             return {"CANCELLED"}
 
         if not self.engine_path.is_file():
-            self.report(
-                {"ERROR"},
-                "Engine path doesn't exist",
-            )
+            self.report({"ERROR"}, "Engine path doesn't exist")
             return {"CANCELLED"}
 
         if self.engine_path.stem != "uvgami":
+            self.report({"ERROR"}, "Engine path is incorrect")
+            return {"CANCELLED"}
+
+        return None
+
+    def _setup_wsl_engine_if_needed(self, prefs):
+        if (
+            platform.system() != "Windows"
+            or self.engine_path.suffix != ""
+            or prefs.is_wsl_setup
+        ):
+            return None
+
+        # wsl check
+        if shutil.which("wsl") is None:
             self.report(
                 {"ERROR"},
-                "Engine path is incorrect",
+                "WSL is not installed. Either install WSL or use UVgami for Windows",
             )
             return {"CANCELLED"}
 
-        # platform check
-        if (
-            platform.system() == "Windows"
-            and self.engine_path.suffix == ""
-            and not prefs.is_wsl_setup
-        ):
-            # wsl check
-            if shutil.which("wsl") is None:
-                self.report(
-                    {"ERROR"},
-                    (
-                        "WSL is not installed."
-                        " Either install WSL or use UVgami for Windows"
-                    ),
-                )
-                return {"CANCELLED"}
-
-            r = subprocess.run(["bash", "-c", "test -e ~/uvgami"]).returncode
-            if r == 1:
-                # copy uvgami to wsl
-                subprocess.run(
-                    ["bash", "-c", f"cp {get_linux_path(self.engine_path)} ~/"]
-                )
-                prefs.is_wsl_setup = True
-            elif r == 0:
-                prefs.is_wsl_setup = True
-            else:
-                self.report({"ERROR"}, ("Unknown error configuring engine in WSL"))
-                return {"CANCELLED"}
+        r = subprocess.run(["bash", "-c", "test -e ~/uvgami"]).returncode
+        if r == 1:
+            # copy uvgami to wsl
+            subprocess.run(["bash", "-c", f"cp {get_linux_path(self.engine_path)} ~/"])
+            prefs.is_wsl_setup = True
+        elif r == 0:
+            prefs.is_wsl_setup = True
+        else:
+            self.report({"ERROR"}, "Unknown error configuring engine in WSL")
+            return {"CANCELLED"}
 
         return None
 
@@ -189,55 +190,8 @@ class UVGAMI_OT_start(bpy.types.Operator):
             object_collection = obj.users_collection[0]
             object_collection.objects.link(copy_object)
 
-            # apply all modifiers
-            context.view_layer.objects.active = copy_object
-            for modifier in copy_object.modifiers:
-                if bpy.app.version >= (4, 1, 0) and "Smooth by Angle" in modifier.name:
-                    # don't apply auto smooth modifier
-                    continue
-
-                try:
-                    bpy.ops.object.modifier_apply(modifier=modifier.name)
-                except RuntimeError:
-                    # if the modifier is disabled, don't apply
-                    pass
-
-            # cuts
-            if props.use_cuts and not props.use_symmetry:
-                bm = new_bmesh(copy_object)
-
-                if props.cut_type == "EVEN":
-                    # make even cuts on axes
-                    apply_transforms(copy_object)
-
-                    axes = props.cut_axes
-                    cuts = props.cuts
-
-                    a_length = len(axes) if len(axes) != 0 else 3
-                    d = cuts // a_length
-                    r = cuts % a_length
-
-                    # distribute cuts
-                    x_num = d if r == 0 else d + 1
-                    y_num = d if r != 2 else d + 1
-                    z_num = d
-
-                    center = calc_center(obj)
-                    if not axes or "X" in axes:
-                        cut(x_num, center, copy_object.dimensions.x, 0, bm)
-                    if not axes or "Y" in axes:
-                        cut(y_num, center, copy_object.dimensions.y, 1, bm)
-                    if not axes or "Z" in axes:
-                        cut(z_num, center, copy_object.dimensions.z, 2, bm)
-
-                else:
-                    # cut on seams
-                    seams = numpy.zeros(len(bm.edges), dtype=bool)
-                    obj.data.edges.foreach_get("use_seam", seams)
-                    bm_seams = numpy.array(bm.edges)[seams]
-                    bmesh.ops.split_edges(bm, edges=bm_seams)
-
-                set_bmesh(bm, copy_object)
+            self._apply_modifiers(context, copy_object)
+            self._apply_cuts_if_needed(copy_object, obj, props)
 
             # save name, format: input name, unwrap name
             names[copy_object.name] = [obj.name, obj.name]
@@ -252,6 +206,60 @@ class UVGAMI_OT_start(bpy.types.Operator):
         report_msg = report_msg[:-1]
 
         return objects, names, report_msg
+
+    def _apply_modifiers(self, context, obj):
+        context.view_layer.objects.active = obj
+        for modifier in obj.modifiers:
+            if bpy.app.version >= (4, 1, 0) and "Smooth by Angle" in modifier.name:
+                # don't apply auto smooth modifier
+                continue
+
+            try:
+                bpy.ops.object.modifier_apply(modifier=modifier.name)
+            except RuntimeError:
+                # if the modifier is disabled, don't apply
+                pass
+
+    def _apply_cuts_if_needed(self, target_obj, source_obj, props):
+        if not (props.use_cuts and not props.use_symmetry):
+            return
+
+        bm = new_bmesh(target_obj)
+        if props.cut_type == "EVEN":
+            self._apply_even_cuts(source_obj, target_obj, bm, props)
+        else:
+            self._apply_seam_cuts(source_obj, bm)
+        set_bmesh(bm, target_obj)
+
+    def _apply_even_cuts(self, source_obj, target_obj, bm, props):
+        # make even cuts on axes
+        apply_transforms(target_obj)
+
+        axes = props.cut_axes
+        cuts = props.cuts
+
+        axis_count = len(axes) if len(axes) != 0 else 3
+        d = cuts // axis_count
+        r = cuts % axis_count
+
+        # distribute cuts
+        x_num = d if r == 0 else d + 1
+        y_num = d if r != 2 else d + 1
+        z_num = d
+
+        center = calc_center(source_obj)
+        if not axes or "X" in axes:
+            cut(x_num, center, target_obj.dimensions.x, 0, bm)
+        if not axes or "Y" in axes:
+            cut(y_num, center, target_obj.dimensions.y, 1, bm)
+        if not axes or "Z" in axes:
+            cut(z_num, center, target_obj.dimensions.z, 2, bm)
+
+    def _apply_seam_cuts(self, source_obj, bm):
+        seams = numpy.zeros(len(bm.edges), dtype=bool)
+        source_obj.data.edges.foreach_get("use_seam", seams)
+        bm_seams = numpy.array(bm.edges)[seams]
+        bmesh.ops.split_edges(bm, edges=bm_seams)
 
     def prepare_io_folders(self):
         input_path = get_extension_dir_path() / "input"
@@ -360,97 +368,13 @@ class UVGAMI_OT_start(bpy.types.Operator):
             while path.is_file():
                 path = path.parent / (f"{path.stem}1.obj")
 
-            # make sure the mesh is triangulated
-            new_edges = []
-            bm = new_bmesh(obj)
-
-            must_triangulate = False
-            ngon_dict = {}
-            for face_idx, face in enumerate(bm.faces):
-                if len(face.edges) > 3:
-                    must_triangulate = True
-                    # n-gon vertices are only needed in full mode
-                    if props.maintain_mode == "PARTIAL":
-                        break
-
-                if len(face.edges) > 4:
-                    # found n-gon
-                    for vert in face.verts:
-                        if vert.index not in ngon_dict:
-                            ngon_dict[vert.index] = set()
-                        ngon_dict[vert.index].add(face_idx)
-
-            edge_path = None
-            if must_triangulate:
-                if props.untriangulate:
-                    self.jobs[obj]["preserve"] = Preserve(1)
-                    old_edges = set(bm.edges)
-
-                bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="BEAUTY")
-
-                if props.untriangulate:
-                    # write added edges to file
-                    edge_path = path.parent / f"{path.stem}_edges"
-                    with edge_path.open("w") as f:
-                        for bm_e in set(bm.edges).difference(old_edges):
-                            edge = (bm_e.verts[0].index, bm_e.verts[1].index)
-                            if (
-                                # if both vertices are ngon vertices
-                                edge[0] in ngon_dict
-                                and edge[1] in ngon_dict
-                                # and they are from the same ngon
-                                and len(
-                                    ngon_dict[edge[0]].intersection(ngon_dict[edge[1]])
-                                )
-                                > 0
-                            ):
-                                # edge is inside ngon, don't dissolve
-                                # because ngons aren't rerouted
-                                continue
-                            new_edges.append(edge)
-                            f.write(f"{edge[0]} {edge[1]}\n")
-
-                set_bmesh(bm, obj)
+            edge_path, new_edges = self._triangulate_mesh(obj, path, props)
 
             export_obj(obj, path, props.import_uvs)
 
-            guide_path = None
-            if (
-                props.use_guided_mode
-                and "UVgami_seam_restrictions" in obj.vertex_groups
-            ):
-                # get seam guide
-                guide = ""
-                group_idx = obj.vertex_groups["UVgami_seam_restrictions"].index
-                for v in obj.data.vertices:
-                    for g in v.groups:
-                        if g.group == group_idx:
-                            guide += f"{v.index},{g.weight},"
-                            break
-                # remove last comma
-                guide = guide[:-1]
+            guide_path = self._create_guide_file(obj, path, props)
 
-                guide_path = path.parent / f"{path.stem}_weights"
-                with guide_path.open("w") as f:
-                    f.write(f"{guide}\n")
-
-            # get materials
-            materials = [
-                slot.material.name for slot in obj.material_slots if slot.material
-            ]
-
-            # check smooth and auto smooth shading
-            shade_smooth = True if obj.data.polygons[0].use_smooth else False
-
-            angle = -1
-            if bpy.app.version >= (4, 1, 0):
-                for modifier in obj.modifiers:
-                    # Input_1 is the angle input
-                    if "Smooth by Angle" in modifier.name and "Input_1" in modifier:
-                        angle = modifier["Input_1"]
-            else:
-                if obj.data.use_auto_smooth:
-                    angle = obj.data.auto_smooth_angle
+            materials, shade_smooth, auto_smooth = self._get_mesh_metadata(obj)
 
             unwrap = Unwrap(
                 name=unwrap_name,
@@ -469,15 +393,14 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 added_edges=new_edges,
                 vertex_count=len(obj.data.vertices),
                 shade_smooth=shade_smooth,
-                auto_smooth=angle,
+                auto_smooth=auto_smooth,
                 merge_cuts=props.use_cuts and not props.use_symmetry,
             )
-            manager.active.append(unwrap)
+            manager.add(unwrap)
 
             bpy.data.objects.remove(obj, do_unlink=True)
 
         if not manager.is_active:
-            expand.clear()
             manager.engine_path = self.engine_path
             manager.start()
         else:
@@ -490,3 +413,99 @@ class UVGAMI_OT_start(bpy.types.Operator):
             self.report({"INFO"}, "UV unwrap in progress")
         else:
             self.report({"WARNING"}, f"UV unwrap in progress. {self.report_msg}")
+
+    def _triangulate_mesh(self, obj, path, props):
+        """Triangulate the mesh if needed, tracking added edges for untriangulation."""
+        new_edges = []
+        bm = new_bmesh(obj)
+
+        must_triangulate = False
+        ngon_dict = {}
+        for face_idx, face in enumerate(bm.faces):
+            if len(face.edges) > 3:
+                must_triangulate = True
+                # n-gon vertices are only needed in full mode
+                if props.maintain_mode == "PARTIAL":
+                    break
+
+            if len(face.edges) > 4:
+                # found n-gon
+                for vert in face.verts:
+                    if vert.index not in ngon_dict:
+                        ngon_dict[vert.index] = set()
+                    ngon_dict[vert.index].add(face_idx)
+
+        edge_path = None
+        if must_triangulate:
+            if props.untriangulate:
+                self.jobs[obj]["preserve"] = Preserve(1)
+                old_edges = set(bm.edges)
+
+            bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="BEAUTY")
+
+            if props.untriangulate:
+                # write added edges to file
+                edge_path = path.parent / f"{path.stem}_edges"
+                with edge_path.open("w") as f:
+                    for bm_e in set(bm.edges).difference(old_edges):
+                        edge = (bm_e.verts[0].index, bm_e.verts[1].index)
+                        if (
+                            # if both vertices are ngon vertices
+                            edge[0] in ngon_dict
+                            and edge[1] in ngon_dict
+                            # and they are from the same ngon
+                            and len(ngon_dict[edge[0]].intersection(ngon_dict[edge[1]]))
+                            > 0
+                        ):
+                            # edge is inside ngon, don't dissolve
+                            # because ngons aren't rerouted
+                            continue
+                        new_edges.append(edge)
+                        f.write(f"{edge[0]} {edge[1]}\n")
+
+            set_bmesh(bm, obj)
+        else:
+            bm.free()
+
+        return edge_path, new_edges
+
+    def _create_guide_file(self, obj, path, props):
+        """Create seam restriction guide file if guided mode is active."""
+        guide_path = None
+        if props.use_guided_mode and "UVgami_seam_restrictions" in obj.vertex_groups:
+            # get seam guide
+            guide = ""
+            group_idx = obj.vertex_groups["UVgami_seam_restrictions"].index
+            for v in obj.data.vertices:
+                for g in v.groups:
+                    if g.group == group_idx:
+                        guide += f"{v.index},{g.weight},"
+                        break
+            # remove last comma
+            guide = guide[:-1]
+
+            guide_path = path.parent / f"{path.stem}_weights"
+            with guide_path.open("w") as f:
+                f.write(f"{guide}\n")
+
+        return guide_path
+
+    def _get_mesh_metadata(self, obj):
+        """Gather materials and shading info from the mesh."""
+        # get materials
+        materials = [slot.material.name for slot in obj.material_slots if slot.material]
+
+        # check smooth and auto smooth shading
+        shade_smooth = True if obj.data.polygons[0].use_smooth else False
+
+        angle = -1
+        if bpy.app.version >= (4, 1, 0):
+            for modifier in obj.modifiers:
+                # Input_1 is the angle input
+                if "Smooth by Angle" in modifier.name and "Input_1" in modifier:
+                    angle = modifier["Input_1"]
+        else:
+            if obj.data.use_auto_smooth:
+                angle = obj.data.auto_smooth_angle
+
+        return materials, shade_smooth, angle

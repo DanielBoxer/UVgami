@@ -7,7 +7,7 @@ import bpy
 
 from .logger import logger
 from .manager import manager
-from .utils import popup
+from .utils.ui import popup
 
 
 def handle_error(error, location, **kwargs):

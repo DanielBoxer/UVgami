@@ -2,7 +2,8 @@
 # See __init__.py and LICENSE for more information
 
 import bpy
-from ..utils import validate_obj
+
+from ..utils.mesh import validate_obj
 
 _old_mode = None
 _old_active_group = None

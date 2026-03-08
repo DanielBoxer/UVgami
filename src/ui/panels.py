@@ -2,12 +2,11 @@
 # See __init__.py and LICENSE for more information
 
 import bpy
-from ..manager import manager
+
 from ..logger import logger
-from ..utils import get_preferences, newline_label
-
-
-expand = []
+from ..manager import manager
+from ..utils.paths import get_preferences
+from ..utils.ui import newline_label
 
 
 class UVGAMI_PT_main(bpy.types.Panel):
@@ -25,8 +24,6 @@ class UVGAMI_PT_main(bpy.types.Panel):
         row.operator("uvgami.start", icon="UV")
 
         active_unwraps = manager.active
-        groups = {}
-        active_groups = []
         if active_unwraps:
             row = box.box().row()
             row.alignment = "CENTER"
@@ -37,108 +34,8 @@ class UVGAMI_PT_main(bpy.types.Panel):
                 viewer_ui.alignment = "CENTER"
                 viewer_ui.label(text="Press ESC to exit viewer")
 
-            for unwrap_idx, unwrap in enumerate(active_unwraps):
-                # check for join jobs
-                # meshes with matching join jobs will be grouped together
-                found = False
-                if unwrap.join_job is not None:
-                    job = unwrap.join_job
-                    if not job in groups:
-                        groups[job] = []
-                    groups[job].append(unwrap)
-                    found = True
-                    if unwrap.is_active and job not in active_groups:
-                        active_groups.append(job)
-                if not found:
-                    # add to dictionary with unique int key
-                    groups[unwrap_idx] = [unwrap]
-
-            expand_idx = 0
-            cancel_index = 0
-            for id, group in groups.items():
-                display_box = box.box()
-                row = display_box.row()
-                label_text = ""
-                # if the key isn't an int, it's part of a group, and can be expanded
-                expand_layout = not isinstance(id, int)
-                # make sure there are enough items in the expand list
-                if len(expand) < expand_idx + 1:
-                    expand.append(False)
-
-                # draw active icon and name
-                is_active = False
-                if expand_layout:
-                    row.operator(
-                        "uvgami.expand",
-                        text="",
-                        icon=f"DISCLOSURE_TRI_{'DOWN' if expand[expand_idx] else 'RIGHT'}",
-                        emboss=False,
-                    ).index = expand_idx
-                    label_text = group[0].input_name
-                    is_active = True if id in active_groups else False
-                else:
-                    label_text = group[0].name
-                    is_active = True if group[0].is_active else False
-                row.label(
-                    text=label_text,
-                    icon=f"RADIOBUT_{'ON' if is_active else 'OFF'}",
-                )
-
-                # group stop and cancel button
-                if expand_layout:
-                    if is_active:
-                        stop_op = row.operator("uvgami.stop", text="", icon="SNAP_FACE")
-                        stop_op.start_idx = cancel_index
-                        stop_op.end_idx = cancel_index + len(group)
-                    cancel_op = row.operator("uvgami.cancel", text="", icon="CANCEL")
-                    cancel_op.start_idx = cancel_index
-                    cancel_op.end_idx = cancel_index + len(group)
-                    cancel_op.expand_idx = expand_idx
-
-                # draw buttons
-                if not expand_layout or expand[expand_idx]:
-                    # if the group is expanded, show all items
-
-                    for item in group:
-                        if expand_layout:
-                            row = display_box.row()
-                            row.label(
-                                text=item.name,
-                                icon=f"LAYER_{'ACTIVE' if item.is_active else 'USED'}",
-                            )
-
-                        if item.progress != (0, 0, 1):
-                            # viewer button
-                            view_op = row.operator(
-                                "uvgami.view_unwrap", text="", icon="HIDE_OFF"
-                            )
-                            view_op.index = manager.active.index(item)
-                            # stop button
-                            stop_op = row.operator(
-                                "uvgami.stop", text="", icon="SNAP_FACE"
-                            )
-                            stop_op.start_idx = cancel_index
-                            stop_op.end_idx = cancel_index + 1
-                        # cancel button
-                        cancel_op = row.operator(
-                            "uvgami.cancel", text="", icon="CANCEL"
-                        )
-                        cancel_op.start_idx = cancel_index
-                        cancel_op.end_idx = cancel_index + 1
-                        if expand_layout:
-                            cancel_op.expand_idx = expand_idx
-
-                        cancel_index += 1
-                elif expand_layout and not expand[expand_idx]:
-                    # the length of the group needs to be added
-                    cancel_index += len(group)
-
-                expand_idx += 1
-
-            if len(groups) > 1:
-                row = box.row()
-                row.operator("uvgami.cancel_all", icon="TRASH")
-
+            groups, active_groups = self._build_unwrap_groups(active_unwraps)
+            self._draw_unwrap_groups(box, groups, active_groups)
             box.separator()
 
         row = box.row()
@@ -156,6 +53,102 @@ class UVGAMI_PT_main(bpy.types.Panel):
         if props.untriangulate:
             row = box.row()
             row.prop(props, "maintain_mode", expand=True)
+
+    def _build_unwrap_groups(self, active_unwraps):
+        """Group unwraps by their join jobs."""
+        groups = {}
+        active_groups = []
+        for unwrap_idx, unwrap in enumerate(active_unwraps):
+            # check for join jobs
+            # meshes with matching join jobs will be grouped together
+            found = False
+            if unwrap.join_job is not None:
+                job = unwrap.join_job
+                if job not in groups:
+                    groups[job] = []
+                groups[job].append(unwrap)
+                found = True
+                if unwrap.is_active and job not in active_groups:
+                    active_groups.append(job)
+            if not found:
+                # add to dictionary with unique int key
+                groups[unwrap_idx] = [unwrap]
+        return groups, active_groups
+
+    def _draw_unwrap_groups(self, box, groups, active_groups):
+        """Draw all unwrap groups with their buttons."""
+        cancel_index = 0
+        for group_id, group in groups.items():
+            display_box = box.box()
+            row = display_box.row()
+            label_text = ""
+            # if the key isn't an int, it's part of a group, and can be expanded
+            expand_layout = not isinstance(group_id, int)
+
+            # draw active icon and name
+            is_active = False
+            if expand_layout:
+                row.operator(
+                    "uvgami.expand",
+                    text="",
+                    icon=f"DISCLOSURE_TRI_{'DOWN' if group_id.is_expanded else 'RIGHT'}",
+                    emboss=False,
+                ).index = manager.active.index(group[0])
+                label_text = group[0].input_name
+                is_active = group_id in active_groups
+            else:
+                label_text = group[0].name
+                is_active = group[0].is_active
+            row.label(
+                text=label_text,
+                icon=f"RADIOBUT_{'ON' if is_active else 'OFF'}",
+            )
+
+            # group stop and cancel button
+            if expand_layout:
+                if is_active:
+                    stop_op = row.operator("uvgami.stop", text="", icon="SNAP_FACE")
+                    stop_op.start_idx = cancel_index
+                    stop_op.end_idx = cancel_index + len(group)
+                cancel_op = row.operator("uvgami.cancel", text="", icon="CANCEL")
+                cancel_op.start_idx = cancel_index
+                cancel_op.end_idx = cancel_index + len(group)
+
+            # draw buttons
+            if not expand_layout or group_id.is_expanded:
+                # if the group is expanded, show all items
+
+                for item in group:
+                    if expand_layout:
+                        row = display_box.row()
+                        row.label(
+                            text=item.name,
+                            icon=f"LAYER_{'ACTIVE' if item.is_active else 'USED'}",
+                        )
+
+                    if item.progress != (0, 0, 1):
+                        # viewer button
+                        view_op = row.operator(
+                            "uvgami.view_unwrap", text="", icon="HIDE_OFF"
+                        )
+                        view_op.index = manager.active.index(item)
+                        # stop button
+                        stop_op = row.operator("uvgami.stop", text="", icon="SNAP_FACE")
+                        stop_op.start_idx = cancel_index
+                        stop_op.end_idx = cancel_index + 1
+                    # cancel button
+                    cancel_op = row.operator("uvgami.cancel", text="", icon="CANCEL")
+                    cancel_op.start_idx = cancel_index
+                    cancel_op.end_idx = cancel_index + 1
+
+                    cancel_index += 1
+            elif expand_layout and not group_id.is_expanded:
+                # the length of the group needs to be added
+                cancel_index += len(group)
+
+        if len(groups) > 1:
+            row = box.row()
+            row.operator("uvgami.cancel_all", icon="TRASH")
 
 
 class UVGAMI_PT_speed(bpy.types.Panel):

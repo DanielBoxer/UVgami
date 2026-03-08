@@ -2,9 +2,10 @@
 # See __init__.py and LICENSE for more information
 
 import bpy
+
+from ..job import Join
 from ..manager import manager
-from ..ui.panels import expand
-from ..utils import print_stdin
+from ..utils.io import print_stdin
 
 
 class UVGAMI_OT_stop(bpy.types.Operator):
@@ -35,20 +36,18 @@ class UVGAMI_OT_cancel(bpy.types.Operator):
 
     start_idx: bpy.props.IntProperty()
     end_idx: bpy.props.IntProperty()
-    expand_idx: bpy.props.IntProperty()
 
     def execute(self, context):
         for unwrap in manager.active[self.start_idx : self.end_idx]:
             for job in unwrap.jobs:
                 job.count = job.count - 1
                 # if it was the last one
-                if job.type == "JOIN" and job.count - len(job.unwrapped) == 0:
-                    del expand[self.expand_idx]
+                if isinstance(job, Join) and job.count - len(job.unwrapped) == 0:
                     # this makes it so the popup doesn't show if all cancelled
                     manager.finished_count -= len(job.unwrapped)
                     manager.cancelled_count += len(job.unwrapped)
 
-            unwrap.cancel_unwrap(start_next=True)
+            manager.cancel_unwrap(unwrap)
 
         self.report({"INFO"}, "UV unwrap cancelled")
         return {"FINISHED"}
@@ -60,9 +59,7 @@ class UVGAMI_OT_cancel_all(bpy.types.Operator):
     bl_description = "Cancel all active UV unwraps"
 
     def execute(self, context):
-        for unwrap in manager.active.copy():
-            unwrap.cancel_unwrap()
-
+        manager.stop_all()
         manager.finish()
         self.report({"INFO"}, "UV unwrap cancelled")
         return {"FINISHED"}

@@ -1,18 +1,20 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
-import bmesh
 import re
-from .utils import new_bmesh, set_bmesh, check_exists
-from .ui.panels import expand
+
+import bmesh
+import bpy
+
 from .logger import logger
+from .utils.mesh import check_exists, new_bmesh, set_bmesh
 
 
 class Job:
     def __init__(self, count):
         self.count = count
         self.unwrapped = []
+        self.is_expanded = False
 
     def is_completed(self):
         return len(self.unwrapped) == self.count
@@ -21,7 +23,6 @@ class Job:
 class Preserve(Job):
     def __init__(self, count):
         super().__init__(count)
-        self.type = "PRESERVE"
 
     def finish(self, unwrap, output, added_edges):
         # return mesh to original state
@@ -122,7 +123,6 @@ class Preserve(Job):
 class Join(Job):
     def __init__(self, count):
         super().__init__(count)
-        self.type = "JOIN"
 
     def finish(self, unwrap):
         paths = [u.path.parents[1] / "output" / u.path.name for u in self.unwrapped]
@@ -193,7 +193,6 @@ class Join(Job):
             v_count = unwraps[0].vertex_count
             e_paths = [u.edge_path for u in unwraps]
             with e_paths[0].open("a") as f:
-
                 for e_idx, e_path in enumerate(e_paths[1:], 1):
                     with e_path.open() as f2:
                         for line in f2:
@@ -203,19 +202,12 @@ class Join(Job):
                             )
                     v_count += unwraps[e_idx].vertex_count
 
-        # if the last unwrap of group is cancelled and there are > 1 unwrapped in group
-        # expand could be length 0 if there are no other groups
-        if len(expand) > 0:
-            # delete expand index 0, which will shift all values down by one
-            del expand[0]
-
         return (path, edge_path, added_edges)
 
 
 class Cleanup(Job):
     def __init__(self, count, action):
         super().__init__(count)
-        self.type = "CLEANUP"
         self.action = action
 
     def finish(self, input_mesh):
@@ -230,10 +222,9 @@ class Cleanup(Job):
 class Symmetrise(Job):
     def __init__(self, count, axes, center, overlap):
         super().__init__(count)
-        self.type = "SYMMETRISE"
-        self.x = True if "X" in axes else False
-        self.y = True if "Y" in axes else False
-        self.z = True if "Z" in axes else False
+        self.x = "X" in axes
+        self.y = "Y" in axes
+        self.z = "Z" in axes
         self.center = center
         self.overlap = overlap
 

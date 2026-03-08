@@ -2,14 +2,11 @@
 # See __init__.py and LICENSE for more information
 
 import bpy
-from ..utils import (
-    import_obj,
-    get_preferences,
-    check_exists,
-    move_to_collection,
-    deselect_all,
-)
+
 from ..manager import manager
+from ..utils.io import import_obj
+from ..utils.mesh import check_exists, deselect_all, move_to_collection
+from ..utils.paths import get_preferences
 
 old_ui = None
 

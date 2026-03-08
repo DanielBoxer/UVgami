@@ -1,20 +1,17 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
 import math
 import pathlib
-import subprocess
 import shutil
-from ..ui.panels import expand
-from ..utils import (
-    calc_center,
-    validate_obj,
-    get_linux_path,
-    get_preferences,
-    check_exists,
-    deselect_all,
-)
+import subprocess
+
+import bpy
+
+from ..manager import manager
+from ..utils.geometry import calc_center
+from ..utils.mesh import check_exists, deselect_all, validate_obj
+from ..utils.paths import get_linux_path, get_preferences
 
 sym_planes = {}
 
@@ -27,7 +24,9 @@ class UVGAMI_OT_expand(bpy.types.Operator):
     index: bpy.props.IntProperty()
 
     def execute(self, context):
-        expand[self.index] = not expand[self.index]
+        unwrap = manager.active[self.index]
+        if unwrap.join_job is not None:
+            unwrap.join_job.is_expanded = not unwrap.join_job.is_expanded
         return {"FINISHED"}
 
 
@@ -118,10 +117,7 @@ class UVGAMI_OT_setup_wsl(bpy.types.Operator):
         if shutil.which("wsl") is None:
             self.report(
                 {"ERROR"},
-                (
-                    "WSL is not installed."
-                    " Either install WSL or use UVgami for Windows"
-                ),
+                ("WSL is not installed. Either install WSL or use UVgami for Windows"),
             )
             return {"CANCELLED"}
 

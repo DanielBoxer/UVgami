@@ -2,7 +2,9 @@
 # See __init__.py and LICENSE for more information
 
 import bpy
-from ..utils import validate_obj, switch_shading
+
+from ..utils.mesh import validate_obj
+from ..utils.ui import switch_shading
 
 
 def make_grid_img():

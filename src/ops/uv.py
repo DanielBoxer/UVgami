@@ -1,9 +1,11 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
 import math
-from ..utils import edit_restore, select_uvs, validate_obj
+
+import bpy
+
+from ..utils.mesh import edit_restore, select_uvs, validate_obj
 
 
 def pack():
