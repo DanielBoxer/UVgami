@@ -6,6 +6,7 @@ import pathlib
 import platform
 import subprocess
 import threading
+import time
 
 import bmesh
 import bpy
@@ -140,6 +141,7 @@ class Unwrap:
         thread.start()
 
         self.is_active = True
+        self.started_at = time.monotonic()
 
     def stop_process(self):
         if self.process is not None and self.process.poll() is None:

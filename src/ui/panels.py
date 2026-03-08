@@ -180,6 +180,10 @@ class UVGAMI_PT_speed(bpy.types.Panel):
         row.label(text="Finish", icon="TEMP")
         row.prop(props, "early_stop")
 
+        row = box.row()
+        row.label(text="Timeout", icon="TIME")
+        row.prop(props, "unwrap_timeout")
+
         split = box.split(factor=0.7)
         if props.use_symmetry:
             split.active = False

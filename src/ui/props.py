@@ -76,6 +76,17 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
         default=100,
         subtype="PERCENTAGE",
     )
+    unwrap_timeout: bpy.props.IntProperty(
+        name="",
+        description=(
+            "Maximum time in minutes for each unwrap."
+            " Timed out meshes will be moved to the invalid collection."
+            " Set to 0 to disable"
+        ),
+        min=0,
+        max=120,
+        default=0,
+    )
     use_cuts: bpy.props.BoolProperty(
         name="",
         description=("Cut the input mesh into pieces. This will speed up the unwrap"),

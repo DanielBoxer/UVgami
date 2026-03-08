@@ -116,6 +116,16 @@ class UnwrapManager:
                         unwrap.stop_process()
                         failed.append((unwrap, -1))
 
+                # check if unwrap has exceeded the timeout
+                timeout_minutes = bpy.context.scene.uvgami.unwrap_timeout
+                if (
+                    timeout_minutes > 0
+                    and hasattr(unwrap, "started_at")
+                    and time.monotonic() - unwrap.started_at > timeout_minutes * 60
+                ):
+                    unwrap.stop_process()
+                    failed.append((unwrap, -2))
+
                 # check process status
                 ret_code = unwrap.process.poll()
                 if ret_code is not None:
@@ -331,6 +341,10 @@ class UnwrapManager:
         move_to_invalid = False
         if ret_code == -1:
             msg = "Mesh needs cleanup"
+            move_to_invalid = True
+        elif ret_code == -2:
+            elapsed = (time.monotonic() - unwrap.started_at) / 60
+            msg = f"Timed out after {elapsed:.1f} minutes"
             move_to_invalid = True
         elif ret_code == 101:
             msg = "Non Manifold Edges"
