@@ -27,7 +27,6 @@ from .src.ops.guides import (
     UVGAMI_OT_clear_draw,
 )
 from .src.ops.uv import (
-    UVGAMI_OT_show_seams,
     UVGAMI_OT_unwrap_sharp,
     UVGAMI_OT_mark_seams_sharp,
     UVGAMI_OT_pack,
@@ -89,7 +88,6 @@ classes = (
     UVGAMI_OT_open_preferences,
     UVGAMI_OT_add_grid,
     UVGAMI_OT_draw_guides,
-    UVGAMI_OT_show_seams,
     UVGAMI_OT_exit_draw,
     UVGAMI_OT_clear_draw,
     UVGAMI_OT_pack,

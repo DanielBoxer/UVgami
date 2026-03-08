@@ -13,7 +13,7 @@ import numpy
 from .job import Join
 from .logger import logger
 from .ops.grid import add_grid, make_grid_img, make_grid_mat
-from .ops.uv import pack
+from .ops.uv import pack, show_seams
 from .progress_bar import progress_bar
 from .reroute_seams import reroute_seams
 from .utils.geometry import set_origin
@@ -299,6 +299,9 @@ class UnwrapManager:
 
         if props.pack_after_unwrap:
             self._pack_output_objects.append(output)
+
+        # show seams
+        edit_restore([output], show_seams)
 
         # shade smooth
         if unwrap.shade_smooth:

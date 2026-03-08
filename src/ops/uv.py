@@ -24,20 +24,6 @@ def show_seams():
     bpy.ops.mesh.select_all(action="DESELECT")
 
 
-class UVGAMI_OT_show_seams(bpy.types.Operator):
-    bl_idname = "uvgami.show_seams"
-    bl_label = "Show Seams"
-    bl_description = "Make the UV seams visible"
-    bl_options = {"UNDO"}
-
-    def execute(self, context):
-        for obj in context.selected_objects:
-            if not validate_obj(self, obj, check_uvs=True):
-                continue
-            edit_restore([obj], show_seams)
-        return {"FINISHED"}
-
-
 class UVGAMI_OT_unwrap_sharp(bpy.types.Operator):
     bl_idname = "uvgami.unwrap_sharp"
     bl_label = "Unwrap Sharp"

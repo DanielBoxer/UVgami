@@ -338,8 +338,6 @@ class UVGAMI_PT_uv(bpy.types.Panel):
         row.alignment = "CENTER"
         row.label(text="UV Operations", icon="GROUP_UVS")
 
-        box.operator("uvgami.show_seams", icon="HIDE_OFF")
-
         split = box.split(factor=0.7)
         split.operator("uvgami.unwrap_sharp", icon="EDGESEL")
 
