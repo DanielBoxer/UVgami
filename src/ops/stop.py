@@ -3,6 +3,7 @@
 
 import bpy
 
+from ..job import Join
 from ..manager import manager
 from ..utils.io import print_stdin
 
@@ -41,7 +42,7 @@ class UVGAMI_OT_cancel(bpy.types.Operator):
             for job in unwrap.jobs:
                 job.count = job.count - 1
                 # if it was the last one
-                if job.type == "JOIN" and job.count - len(job.unwrapped) == 0:
+                if isinstance(job, Join) and job.count - len(job.unwrapped) == 0:
                     # this makes it so the popup doesn't show if all cancelled
                     manager.finished_count -= len(job.unwrapped)
                     manager.cancelled_count += len(job.unwrapped)

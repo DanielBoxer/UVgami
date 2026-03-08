@@ -23,7 +23,6 @@ class Job:
 class Preserve(Job):
     def __init__(self, count):
         super().__init__(count)
-        self.type = "PRESERVE"
 
     def finish(self, unwrap, output, added_edges):
         # return mesh to original state
@@ -124,7 +123,6 @@ class Preserve(Job):
 class Join(Job):
     def __init__(self, count):
         super().__init__(count)
-        self.type = "JOIN"
 
     def finish(self, unwrap):
         paths = [u.path.parents[1] / "output" / u.path.name for u in self.unwrapped]
@@ -210,7 +208,6 @@ class Join(Job):
 class Cleanup(Job):
     def __init__(self, count, action):
         super().__init__(count)
-        self.type = "CLEANUP"
         self.action = action
 
     def finish(self, input_mesh):
@@ -225,10 +222,9 @@ class Cleanup(Job):
 class Symmetrise(Job):
     def __init__(self, count, axes, center, overlap):
         super().__init__(count)
-        self.type = "SYMMETRISE"
-        self.x = True if "X" in axes else False
-        self.y = True if "Y" in axes else False
-        self.z = True if "Z" in axes else False
+        self.x = "X" in axes
+        self.y = "Y" in axes
+        self.z = "Z" in axes
         self.center = center
         self.overlap = overlap
 

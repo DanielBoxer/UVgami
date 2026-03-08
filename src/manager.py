@@ -10,6 +10,7 @@ import bpy
 import numpy
 
 from . import progress_bar
+from .job import Join
 from .logger import logger
 from .ops.grid import add_grid, make_grid_img, make_grid_mat
 from .reroute_seams import reroute_seams
@@ -343,7 +344,7 @@ class UnwrapManager:
                 job.count = job.count - 1
                 # found_job can't be a Cleanup job because the unwrapped list
                 # will be empty
-                if job.type == "JOIN":
+                if isinstance(job, Join):
                     found_job = job
 
         # remove from running
