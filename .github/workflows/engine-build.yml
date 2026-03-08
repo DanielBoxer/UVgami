@@ -11,6 +11,8 @@ env:
   ENGINE_VERSION_MAJOR: 1
   ENGINE_VERSION_MINOR: 1
   ENGINE_VERSION_PATCH: 2
+  ADDON_NAME: "UVgami"
+  BUNDLED_NAME: "UVgami-bundled-with-engines"
 
 jobs:
   build:
@@ -70,3 +72,48 @@ jobs:
         with:
           tag_name: ${{ steps.previous_tag.outputs.tag }}
           files: build/${{ env.PACKAGE_NAME }}.zip
+
+      - name: Upload engine artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.pkg_name }}
+          path: build/${{ env.PACKAGE_NAME }}.zip
+
+  rebuild-bundled:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get latest tag
+        id: previous_tag
+        uses: "WyriHaximus/github-action-get-previous-tag@v2"
+
+      - name: Download all engine artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          merge-multiple: true
+
+      # download the existing addon zip from the release
+      - name: Download addon zip
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ steps.previous_tag.outputs.tag }}
+          fileName: "${{ env.ADDON_NAME }}.zip"
+
+      - name: Create bundled addon with engines
+        run: |
+          unzip -o ${ADDON_NAME}.zip
+          bash .github/scripts/bundle-engines.sh $ADDON_NAME $PACKAGE_PREFIX
+          zip -r ${BUNDLED_NAME}.zip $ADDON_NAME
+
+      # remove old bundled zip and upload new one
+      - name: Upload bundled addon
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.previous_tag.outputs.tag }}
+          files: ${{ env.BUNDLED_NAME }}.zip

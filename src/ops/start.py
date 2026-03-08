@@ -24,7 +24,12 @@ from ..utils.mesh import (
     new_bmesh,
     set_bmesh,
 )
-from ..utils.paths import get_extension_dir_path, get_linux_path, get_preferences
+from ..utils.paths import (
+    get_bundled_engine_path,
+    get_extension_dir_path,
+    get_linux_path,
+    get_preferences,
+)
 
 
 class UVGAMI_OT_start(bpy.types.Operator):
@@ -122,6 +127,11 @@ class UVGAMI_OT_start(bpy.types.Operator):
 
     def _validate_engine_path(self):
         if str(self.engine_path) == ".":
+            # try bundled engine as fallback
+            bundled = get_bundled_engine_path()
+            if bundled is not None:
+                self.engine_path = bundled
+                return None
             self.report(
                 {"ERROR"},
                 "Engine path is not set. Set the path in the add-on preferences",

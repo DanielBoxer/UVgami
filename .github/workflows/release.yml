@@ -27,6 +27,7 @@ env:
   ADDON_NAME: "UVgami"
   INCLUDED_FILES: "src LICENSE __init__.py"
   ENGINE_PREFIX: uvgami-engine
+  BUNDLED_NAME: "UVgami-bundled-with-engines"
 
 jobs:
   package:
@@ -66,14 +67,35 @@ jobs:
       - name: Zip folder
         run: zip -r ${ADDON_NAME}.zip $ADDON_NAME
 
-      # 3. create new release
+      # 3. create bundled variant with engines
+      - name: Create bundled addon with engines
+        id: bundled
+        if: ${{ inputs.use_old_engine }}
+        run: |
+          if ! ls ${ENGINE_PREFIX}-*.zip 1>/dev/null 2>&1; then
+            echo "has_engines=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "has_engines=true" >> $GITHUB_OUTPUT
+          bash .github/scripts/bundle-engines.sh $ADDON_NAME $ENGINE_PREFIX
+          zip -r ${BUNDLED_NAME}.zip $ADDON_NAME
+
+      # 4. create new release
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_version.outputs.new_version }}
           files: ${{ env.ADDON_NAME }}.zip
 
-      # 4. upload engine if not new
+      # 5. upload bundled addon
+      - name: Upload bundled addon
+        if: ${{ steps.bundled.outputs.has_engines == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.new_version }}
+          files: ${{ env.BUNDLED_NAME }}.zip
+
+      # 6. upload engine if not new
       - name: Upload engine
         if: ${{ inputs.use_old_engine && fromJSON(steps.download_engines.outputs.downloaded_files || '[]')[0] != null }}
         uses: softprops/action-gh-release@v2

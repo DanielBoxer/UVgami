@@ -7,7 +7,7 @@ import platform
 
 import bpy
 
-from ..utils.paths import get_addon_id, get_preferences
+from ..utils.paths import get_addon_id, get_bundled_engine_path, get_preferences
 
 
 class UVGAMI_PG_properties(bpy.types.PropertyGroup):
@@ -320,6 +320,10 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
             and platform.system() == "Windows"
         ):
             row.operator("uvgami.setup_wsl")
+
+        if str(engine_path) == "." and get_bundled_engine_path() is not None:
+            row = box.row()
+            row.label(text="Using bundled engine", icon="CHECKMARK")
 
         box = layout.box()
 
