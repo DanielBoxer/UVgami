@@ -13,20 +13,17 @@ from . import progress_bar
 from .logger import logger
 from .ops.grid import add_grid, make_grid_img, make_grid_mat
 from .reroute_seams import reroute_seams
-from .utils import (
+from .utils.geometry import set_origin
+from .utils.io import import_obj, print_stdin
+from .utils.mesh import (
     check_collection,
-    get_extension_dir_path,
-    get_preferences,
-    import_obj,
     move_to_collection,
     new_bmesh,
-    popup,
-    print_stdin,
     set_active_any,
     set_bmesh,
-    set_origin,
-    switch_shading,
 )
+from .utils.paths import get_extension_dir_path, get_preferences
+from .utils.ui import popup, switch_shading
 
 
 class UnwrapManager:

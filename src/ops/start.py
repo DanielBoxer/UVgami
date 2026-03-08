@@ -16,21 +16,16 @@ from ..logger import logger
 from ..manager import manager
 from ..ui.panels import expand
 from ..unwrap import Unwrap
-from ..utils import (
-    apply_transforms,
-    calc_center,
+from ..utils.geometry import apply_transforms, calc_center, cut, cut_on_axes
+from ..utils.io import export_obj
+from ..utils.mesh import (
     check_collection,
-    cut,
-    cut_on_axes,
     deselect_all,
-    export_obj,
-    get_extension_dir_path,
-    get_linux_path,
-    get_preferences,
     move_to_collection,
     new_bmesh,
     set_bmesh,
 )
+from ..utils.paths import get_extension_dir_path, get_linux_path, get_preferences
 
 
 class UVGAMI_OT_start(bpy.types.Operator):

@@ -5,7 +5,7 @@ import bpy
 
 from ..manager import manager
 from ..ui.panels import expand
-from ..utils import print_stdin
+from ..utils.io import print_stdin
 
 
 class UVGAMI_OT_stop(bpy.types.Operator):

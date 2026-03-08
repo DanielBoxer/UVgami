@@ -1,12 +1,14 @@
 # Copyright (C) 2022 Daniel Boxer
 # See __init__.py and LICENSE for more information
 
-import bpy
-import bmesh
 import re
-from .utils import new_bmesh, set_bmesh, check_exists
-from .ui.panels import expand
+
+import bmesh
+import bpy
+
 from .logger import logger
+from .ui.panels import expand
+from .utils.mesh import check_exists, new_bmesh, set_bmesh
 
 
 class Job:
@@ -193,7 +195,6 @@ class Join(Job):
             v_count = unwraps[0].vertex_count
             e_paths = [u.edge_path for u in unwraps]
             with e_paths[0].open("a") as f:
-
                 for e_idx, e_path in enumerate(e_paths[1:], 1):
                     with e_path.open() as f2:
                         for line in f2:

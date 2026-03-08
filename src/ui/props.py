@@ -7,7 +7,7 @@ import platform
 
 import bpy
 
-from ..utils import get_addon_id, get_preferences
+from ..utils.paths import get_addon_id, get_preferences
 
 
 class UVGAMI_PG_properties(bpy.types.PropertyGroup):

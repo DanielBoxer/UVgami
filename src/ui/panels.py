@@ -5,7 +5,8 @@ import bpy
 
 from ..logger import logger
 from ..manager import manager
-from ..utils import get_preferences, newline_label
+from ..utils.paths import get_preferences
+from ..utils.ui import newline_label
 
 expand = []
 

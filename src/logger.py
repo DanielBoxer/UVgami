@@ -2,7 +2,8 @@
 # See __init__.py and LICENSE for more information
 
 import time
-from .utils import get_preferences
+
+from .utils.paths import get_preferences
 
 
 class Info:

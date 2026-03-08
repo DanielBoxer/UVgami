@@ -13,13 +13,9 @@ import mathutils
 
 from .logger import logger
 from .manager import manager
-from .utils import (
-    check_exists,
-    get_extension_dir_path,
-    get_linux_path,
-    get_preferences,
-    print_stdin,
-)
+from .utils.io import print_stdin
+from .utils.mesh import check_exists
+from .utils.paths import get_extension_dir_path, get_linux_path, get_preferences
 
 
 class Unwrap:
