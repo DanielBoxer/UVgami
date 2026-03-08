@@ -7,7 +7,6 @@ import bmesh
 import bpy
 
 from .logger import logger
-from .ui.panels import expand
 from .utils.mesh import check_exists, new_bmesh, set_bmesh
 
 
@@ -15,6 +14,7 @@ class Job:
     def __init__(self, count):
         self.count = count
         self.unwrapped = []
+        self.is_expanded = False
 
     def is_completed(self):
         return len(self.unwrapped) == self.count
@@ -203,12 +203,6 @@ class Join(Job):
                                 f"{int(line[0]) + v_count} {int(line[1]) + v_count}\n"
                             )
                     v_count += unwraps[e_idx].vertex_count
-
-        # if the last unwrap of group is cancelled and there are > 1 unwrapped in group
-        # expand could be length 0 if there are no other groups
-        if len(expand) > 0:
-            # delete expand index 0, which will shift all values down by one
-            del expand[0]
 
         return (path, edge_path, added_edges)
 

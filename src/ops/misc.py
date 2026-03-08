@@ -8,7 +8,7 @@ import subprocess
 
 import bpy
 
-from ..ui.panels import expand
+from ..manager import manager
 from ..utils.geometry import calc_center
 from ..utils.mesh import check_exists, deselect_all, validate_obj
 from ..utils.paths import get_linux_path, get_preferences
@@ -24,7 +24,9 @@ class UVGAMI_OT_expand(bpy.types.Operator):
     index: bpy.props.IntProperty()
 
     def execute(self, context):
-        expand[self.index] = not expand[self.index]
+        unwrap = manager.active[self.index]
+        if unwrap.join_job is not None:
+            unwrap.join_job.is_expanded = not unwrap.join_job.is_expanded
         return {"FINISHED"}
 
 

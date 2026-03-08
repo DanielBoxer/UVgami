@@ -8,8 +8,6 @@ from ..manager import manager
 from ..utils.paths import get_preferences
 from ..utils.ui import newline_label
 
-expand = []
-
 
 class UVGAMI_PT_main(bpy.types.Panel):
     bl_label = "UVgami"
@@ -79,7 +77,6 @@ class UVGAMI_PT_main(bpy.types.Panel):
 
     def _draw_unwrap_groups(self, box, groups, active_groups):
         """Draw all unwrap groups with their buttons."""
-        expand_idx = 0
         cancel_index = 0
         for id, group in groups.items():
             display_box = box.box()
@@ -87,9 +84,6 @@ class UVGAMI_PT_main(bpy.types.Panel):
             label_text = ""
             # if the key isn't an int, it's part of a group, and can be expanded
             expand_layout = not isinstance(id, int)
-            # make sure there are enough items in the expand list
-            if len(expand) < expand_idx + 1:
-                expand.append(False)
 
             # draw active icon and name
             is_active = False
@@ -97,9 +91,9 @@ class UVGAMI_PT_main(bpy.types.Panel):
                 row.operator(
                     "uvgami.expand",
                     text="",
-                    icon=f"DISCLOSURE_TRI_{'DOWN' if expand[expand_idx] else 'RIGHT'}",
+                    icon=f"DISCLOSURE_TRI_{'DOWN' if id.is_expanded else 'RIGHT'}",
                     emboss=False,
-                ).index = expand_idx
+                ).index = manager.active.index(group[0])
                 label_text = group[0].input_name
                 is_active = id in active_groups
             else:
@@ -119,10 +113,9 @@ class UVGAMI_PT_main(bpy.types.Panel):
                 cancel_op = row.operator("uvgami.cancel", text="", icon="CANCEL")
                 cancel_op.start_idx = cancel_index
                 cancel_op.end_idx = cancel_index + len(group)
-                cancel_op.expand_idx = expand_idx
 
             # draw buttons
-            if not expand_layout or expand[expand_idx]:
+            if not expand_layout or id.is_expanded:
                 # if the group is expanded, show all items
 
                 for item in group:
@@ -147,15 +140,11 @@ class UVGAMI_PT_main(bpy.types.Panel):
                     cancel_op = row.operator("uvgami.cancel", text="", icon="CANCEL")
                     cancel_op.start_idx = cancel_index
                     cancel_op.end_idx = cancel_index + 1
-                    if expand_layout:
-                        cancel_op.expand_idx = expand_idx
 
                     cancel_index += 1
-            elif expand_layout and not expand[expand_idx]:
+            elif expand_layout and not id.is_expanded:
                 # the length of the group needs to be added
                 cancel_index += len(group)
-
-            expand_idx += 1
 
         if len(groups) > 1:
             row = box.row()

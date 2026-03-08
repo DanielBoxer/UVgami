@@ -14,7 +14,6 @@ from ..handler import handle_error
 from ..job import Cleanup, Join, Preserve, Symmetrise
 from ..logger import logger
 from ..manager import manager
-from ..ui.panels import expand
 from ..unwrap import Unwrap
 from ..utils.geometry import apply_transforms, calc_center, cut, cut_on_axes
 from ..utils.io import export_obj
@@ -402,7 +401,6 @@ class UVGAMI_OT_start(bpy.types.Operator):
             bpy.data.objects.remove(obj, do_unlink=True)
 
         if not manager.is_active:
-            expand.clear()
             manager.engine_path = self.engine_path
             manager.start()
         else:
