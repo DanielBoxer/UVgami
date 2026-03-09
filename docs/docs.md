@@ -1,27 +1,35 @@
 # UVgami User Guide <!-- omit in toc -->
 
-UVgami is a Blender add-on that allows you to easily unwrap your meshes with a single button click.
+UVgami is a Blender add-on that allows you to automatically unwrap your meshes with a single button click.
 
-Versions:
+Supported Versions:
 
 - Windows
-- Linux (Ubuntu 20.04.6 and higher) RECOMMENDED (FASTER)
+- Linux
+- Intel Mac
+- Apple Silicon Mac
 
 Blender 2.9+
 
-[How to use Linux version on Windows](#linux-faster-version-on-windows)
+> [!NOTE]
+> It's recommended and possible to use the Linux version on Windows since it's much faster.
+> 
+> [See how to use Linux version on Windows](#linux-faster-version-on-windows)
+
+
 
 ## Table of Contents <!-- omit in toc -->
 
 - [Installation](#installation)
-  - [Blender Add-on](#blender-add-on)
-  - [UVgami Engine](#uvgami-engine)
+  - [Option 1: Install Add-on and Engine Separately](#option-1-install-add-on-and-engine-separately)
+  - [Option 2: Install the Bundled Version](#option-2-install-the-bundled-version)
 - [Instructions](#instructions)
   - [Unwrap a Mesh](#unwrap-a-mesh)
   - [Unwrap Buttons](#unwrap-buttons)
     - [Visual Mode](#visual-mode)
     - [Stop](#stop)
     - [Cancel](#cancel)
+    - [Cancel All](#cancel-all)
   - [Batch Unwrap](#batch-unwrap)
   - [Joined Objects](#joined-objects)
   - [Progress Bar](#progress-bar)
@@ -32,21 +40,23 @@ Blender 2.9+
       - [Preserve Mesh: Full](#preserve-mesh-full)
       - [Preserve Mesh: Partial](#preserve-mesh-partial)
   - [Seam Restrictions](#seam-restrictions)
+    - [Weight](#weight)
   - [Symmetry](#symmetry)
   - [Speed](#speed)
     - [Concurrent mode](#concurrent-mode)
     - [Finish percentage](#finish-percentage)
+    - [Timeout](#timeout)
     - [Cuts](#cuts)
       - [Even](#even)
       - [Seams](#seams)
   - [Grid](#grid)
   - [Pack](#pack)
   - [UV Operations](#uv-operations)
-    - [Show Seams](#show-seams)
     - [Unwrap Sharp](#unwrap-sharp)
     - [Mark Seams Sharp](#mark-seams-sharp)
     - [View UVs](#view-uvs)
   - [Info](#info)
+  - [Misc](#misc)
   - [Preferences](#preferences)
     - [Autosave (recommended)](#autosave-recommended)
     - [Show Popup](#show-popup)
@@ -66,21 +76,27 @@ Blender 2.9+
 
 Download the add-on [here](https://github.com/DanielBoxer/UVgami/releases/latest)
 
-### Blender Add-on
+### Option 1: Install Add-on and Engine Separately
 
-- Download `UVgami.zip`
-- In the Blender Preferences menu, go to the Add-ons tab and click Install
-- Select the `UVgami` ZIP folder (make sure not to extract it) and click `Install Add-on`
-- Activate UVgami by checking the box
+1. Install Add-on
+    - Download `UVgami.zip` (don't extract it)
+    - Drag and drop `UVgami.zip` into Blender
 
-### UVgami Engine
-
-- Download `Engine.zip`
-- Unzip the folder
-- Move the `Windows` or the `Linux` folder to a place where you keep applications. This can be anywhere on your filesystem
-- In Blender, open UVgami preferences and select the engine path using the button on the right of the input field. The `uvgami` app inside the `Windows` or `Linux` folder is what should be selected
+2. Setup Engine
+    - Download `uvgami-engine-X.X.X-operating-system.zip` (pick the one based on your operating system)
+    - Unzip the folder
+    - Move the unzipped folder to a place where you keep applications. This can be anywhere on your filesystem
+    - In Blender, open UVgami preferences and select the engine path using the button on the right of the input field. The `uvgami` app inside the engine folder is what should be selected
 
 ![Engine Path](engine_path.jpg)
+
+### Option 2: Install the Bundled Version
+
+- Download the bundle: `UVgami-bundled-with-engines.zip` (don't extract it)
+- Drag and drop the zip file into Blender
+- The add-on will auto detect the engine since it's bundled
+- You can tell that you're using the bundled version if it says `Using bundled engine` in the preferences under the `Engine Path` field
+
 
 ## Instructions
 
@@ -115,6 +131,10 @@ Stop the unwrap and get the partly finished UV map.
 ![Cancel Button](cancel_button.jpg)
 
 Cancel the unwrap and discard the UV map.
+
+#### Cancel All
+
+Cancel all active unwraps at once. This button appears when there are multiple unwraps in the queue.
 
 ### Batch Unwrap
 
@@ -203,13 +223,17 @@ After seam restrictions:
 
 ![UVs After Restrictions](bear_uvs_after.jpg)
 
+#### Weight
+
+Use the `Weight` slider to control how strictly the seam restrictions are followed. A higher weight will avoid the restricted areas more, but will take longer to finish the unwrap.
+
 ### Symmetry
 
 Use symmetry when you have a symmetrical mesh. The more axes selected, the faster the unwrap will be.
 
 - Select multiple axes by holding `Shift`
 - Deselect by holding `Shift`
-- If overlap is turned on, the symmetrical uvs will overlap and merge. This is good if you want your texture mirrored. Unchecking overlap will result in a seam down the set axes.
+- If `Merge` is turned on, the symmetrical UVs will overlap and merge. This is good if you want your texture mirrored. Turning `Merge` off will result in a seam down the set axes.
 - Press preview to add a plane on the set axes. This is only for making sure you have selected the correct axes.
 
 ![Symmetry](symmetry.jpg)
@@ -233,6 +257,10 @@ You can choose the amount of cores to use below. For example, with 8 cores you c
 ![Finish percent](finish_percent.jpg)
 
 Stop the unwrap early based on the amount of stretching.
+
+#### Timeout
+
+Set a maximum time in minutes for each unwrap. If an unwrap exceeds this time, the mesh will be moved to the invalid collection. Set to `0` to disable the timeout. This is useful for when unwrapping multiple things at once so if one times out the rest will still unwrap.
 
 #### Cuts
 
@@ -260,6 +288,8 @@ This is for if you want more control over where the cuts will be. You can manual
 
 - Press `Add Grid` to apply a grid material to all selected objects. The shading mode will be changed to material preview.
 - Press the button to the right of the `Add Grid` button to remove the grid material from selected objects. The shading mode will be changed to solid.
+- Choose the grid type: `UV` for a standard UV grid, or `Colour` for a coloured UV grid.
+- Set the `Resolution` to control the pixel size of the grid texture (default 1024).
 - Turn `Auto Grid` on to automatically add a grid after unwrapping a mesh
 
 ### Pack
@@ -268,16 +298,15 @@ This is for if you want more control over where the cuts will be. You can manual
 
 Packing uses the Blender packing engine. This is just to make packing a bit easier.
 
+- Use the `Margin` slider to set the space between UV islands.
 - Turn `Combine UVs` on if you want to combine UV maps of multiple objects into a single UV map.
 - Turn `Average Islands Scale` on to scale all islands based on their actual space in 3D.
+- Turn `Pack After Unwrap` on to automatically pack UVs after each unwrap finishes.
 
 ### UV Operations
 
 ![UV Operations](uv_operations.jpg)
 
-#### Show Seams
-
-Make the seams of all selected objects follow their UVs. Seams won't automatically be visible after an unwrap so you can use this to see them.
 
 #### Unwrap Sharp
 
@@ -307,6 +336,11 @@ The info panel shows information about past unwraps. Any errors will also be sho
 
 - Press `Copy` to copy all info to the clipboard
 - Press `Clear` to clear all info
+
+### Misc
+
+- Press `Reset Settings` to reset all UVgami properties to their default values.
+- Press `Preferences` to open the UVgami preferences dialog.
 
 ### Preferences
 
