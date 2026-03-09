@@ -49,6 +49,7 @@ class UVGAMI_OT_draw_guides(bpy.types.Operator):
         if SEAM_RESTRICTIONS_GROUP not in vertex_groups:
             vertex_groups.new(name=SEAM_RESTRICTIONS_GROUP)
         vertex_groups.active_index = vertex_groups[SEAM_RESTRICTIONS_GROUP].index
+        context.scene.uvgami.use_guided_mode = True
         return {"FINISHED"}
 
 

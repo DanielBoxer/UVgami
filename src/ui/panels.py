@@ -214,7 +214,9 @@ class UVGAMI_PT_guides(bpy.types.Panel):
         self.layout.prop(context.scene.uvgami, "use_guided_mode")
 
     def draw(self, context):
-        box = self.layout.box()
+        layout = self.layout
+        guided = context.scene.uvgami.use_guided_mode
+        box = layout.box()
 
         row = box.row()
         row.alignment = "CENTER"
@@ -228,10 +230,12 @@ class UVGAMI_PT_guides(bpy.types.Panel):
         row.operator("uvgami.draw_guides", icon="GREASEPENCIL")
 
         row = box.row()
+        row.active = guided
         row.operator("uvgami.clear_draw", icon="FILE_REFRESH")
         row.operator("uvgami.exit_draw", icon="PANEL_CLOSE")
 
         row = box.row()
+        row.active = guided
         row.label(text="Weight", icon="MOD_VERTEX_WEIGHT")
         row.prop(context.scene.uvgami, "weight_value", slider=True)
 
@@ -249,7 +253,9 @@ class UVGAMI_PT_symmetry(bpy.types.Panel):
 
     def draw(self, context):
         props = context.scene.uvgami
-        box = self.layout.box()
+        layout = self.layout
+        layout.active = props.use_symmetry
+        box = layout.box()
 
         row = box.row()
         row.alignment = "CENTER"
