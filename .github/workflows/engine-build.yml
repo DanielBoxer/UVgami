@@ -68,10 +68,11 @@ jobs:
         uses: "WyriHaximus/github-action-get-previous-tag@v2"
 
       - name: Upload binaries to latest release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.previous_tag.outputs.tag }}
-          files: build/${{ env.PACKAGE_NAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.previous_tag.outputs.tag }}
+        shell: bash
+        run: gh release upload "$TAG" "build/${PACKAGE_NAME}.zip" --clobber
 
       - name: Upload engine artifact
         uses: actions/upload-artifact@v4
@@ -113,7 +114,7 @@ jobs:
 
       # remove old bundled zip and upload new one
       - name: Upload bundled addon
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.previous_tag.outputs.tag }}
-          files: ${{ env.BUNDLED_NAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.previous_tag.outputs.tag }}
+        run: gh release upload "$TAG" "${BUNDLED_NAME}.zip" --clobber

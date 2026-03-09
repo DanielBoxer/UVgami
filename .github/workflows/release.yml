@@ -82,23 +82,23 @@ jobs:
 
       # 4. create new release
       - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.get_version.outputs.new_version }}
-          files: ${{ env.ADDON_NAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.get_version.outputs.new_version }}
+        run: gh release create "$TAG" "${ADDON_NAME}.zip" --title "$TAG"
 
       # 5. upload bundled addon
       - name: Upload bundled addon
         if: ${{ steps.bundled.outputs.has_engines == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.get_version.outputs.new_version }}
-          files: ${{ env.BUNDLED_NAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.get_version.outputs.new_version }}
+        run: gh release upload "$TAG" "${BUNDLED_NAME}.zip"
 
       # 6. upload engine if not new
       - name: Upload engine
         if: ${{ inputs.use_old_engine && fromJSON(steps.download_engines.outputs.downloaded_files || '[]')[0] != null }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.get_version.outputs.new_version }}
-          files: "${{ env.ENGINE_PREFIX }}-*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.get_version.outputs.new_version }}
+        run: gh release upload "$TAG" ${ENGINE_PREFIX}-*.zip
