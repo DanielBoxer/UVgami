@@ -30,6 +30,7 @@ from ..utils.paths import (
     get_linux_path,
     get_preferences,
 )
+from .guides import SEAM_RESTRICTIONS_GROUP
 
 
 class UVGAMI_OT_start(bpy.types.Operator):
@@ -486,10 +487,10 @@ class UVGAMI_OT_start(bpy.types.Operator):
     def _create_guide_file(self, obj, path, props):
         """Create seam restriction guide file if guided mode is active."""
         guide_path = None
-        if props.use_guided_mode and "UVgami_seam_restrictions" in obj.vertex_groups:
+        if props.use_guided_mode and SEAM_RESTRICTIONS_GROUP in obj.vertex_groups:
             # get seam guide
             guide = ""
-            group_idx = obj.vertex_groups["UVgami_seam_restrictions"].index
+            group_idx = obj.vertex_groups[SEAM_RESTRICTIONS_GROUP].index
             for v in obj.data.vertices:
                 for g in v.groups:
                     if g.group == group_idx:

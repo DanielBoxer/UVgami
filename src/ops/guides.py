@@ -5,6 +5,8 @@ import bpy
 
 from ..utils.mesh import validate_obj
 
+SEAM_RESTRICTIONS_GROUP = "UVgami_seam_restrictions"
+
 _old_mode = None
 _old_active_group = None
 
@@ -12,12 +14,11 @@ _old_active_group = None
 def is_draw_active():
     active_object = bpy.context.active_object
     vertex_groups = active_object.vertex_groups
-    if "UVgami_seam_restrictions" not in vertex_groups:
+    if SEAM_RESTRICTIONS_GROUP not in vertex_groups:
         return False
     return (
         active_object.mode == "WEIGHT_PAINT"
-        and vertex_groups.active_index
-        == vertex_groups["UVgami_seam_restrictions"].index
+        and vertex_groups.active_index == vertex_groups[SEAM_RESTRICTIONS_GROUP].index
     )
 
 
@@ -45,9 +46,9 @@ class UVGAMI_OT_draw_guides(bpy.types.Operator):
             _old_active_group = vertex_groups.active_index
 
         bpy.ops.object.mode_set(mode="WEIGHT_PAINT")
-        if "UVgami_seam_restrictions" not in vertex_groups:
-            vertex_groups.new(name="UVgami_seam_restrictions")
-        vertex_groups.active_index = vertex_groups["UVgami_seam_restrictions"].index
+        if SEAM_RESTRICTIONS_GROUP not in vertex_groups:
+            vertex_groups.new(name=SEAM_RESTRICTIONS_GROUP)
+        vertex_groups.active_index = vertex_groups[SEAM_RESTRICTIONS_GROUP].index
         return {"FINISHED"}
 
 
@@ -63,7 +64,8 @@ class UVGAMI_OT_exit_draw(bpy.types.Operator):
             return {"CANCELLED"}
 
         if is_draw_active():
-            active_obj.vertex_groups.active_index = _old_active_group
+            if _old_active_group is not None:
+                active_obj.vertex_groups.active_index = _old_active_group
             bpy.ops.object.mode_set(mode=_old_mode)
         return {"FINISHED"}
 
@@ -80,11 +82,14 @@ class UVGAMI_OT_clear_draw(bpy.types.Operator):
                 continue
 
             vertex_groups = obj.vertex_groups
-            if "UVgami_seam_restrictions" in vertex_groups:
-                group_idx = vertex_groups["UVgami_seam_restrictions"].index
-                for v in obj.data.vertices:
-                    for g in v.groups:
-                        if g.group == group_idx:
-                            g.weight = 0
-                            break
+            if SEAM_RESTRICTIONS_GROUP in vertex_groups:
+                if obj.mode == "WEIGHT_PAINT":
+                    group_idx = vertex_groups[SEAM_RESTRICTIONS_GROUP].index
+                    for v in obj.data.vertices:
+                        for g in v.groups:
+                            if g.group == group_idx:
+                                g.weight = 0
+                                break
+                else:
+                    vertex_groups.remove(vertex_groups[SEAM_RESTRICTIONS_GROUP])
         return {"FINISHED"}
