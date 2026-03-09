@@ -4,16 +4,21 @@
 
 ## Quickstart
 
-[Download the add-on here](https://github.com/DanielBoxer/UVgami/releases/latest) and pick one install option:
-1. Download the engine separately
-    - Get the add-on: `UVgami.zip`
-    - Get the correct engine for your operating system: (`uvgami-engine-X.X.X-operating-system.zip`)
-    - Set the engine path in the add-on preferences after installing
-2. Download the engine bundled with the add-on
-    - Get the bundle: `UVgami-bundled-with-engines.zip`
-    - The add-on will auto detect the engine since it's bundled
+> [!NOTE]
+> Check the [user guide](/docs/docs.md) for more detailed documentation.
 
-Check the [user guide](/docs/docs.md) for more detailed documentation.
+[Find the latest release here](https://github.com/DanielBoxer/UVgami/releases/latest) and pick one install option below:
+
+### Download the engine separately
+
+1. Get the add-on: `UVgami.zip`
+2. Get the correct engine for your operating system: (`uvgami-engine-X.X.X-operating-system.zip`)
+3. Set the engine path in the add-on preferences after installing
+
+### Download the engine bundled with the add-on
+
+1. Get the bundle: `UVgami-bundled-with-engines.zip`
+2. The add-on will auto detect the engine since it's bundled
 
 ![Elephant](https://github.com/DanielBoxer/UVgami/assets/65575771/07dd8351-5acb-493d-b35e-422d8da35a7f)
 
