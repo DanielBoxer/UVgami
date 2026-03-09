@@ -7,7 +7,7 @@ license = ["SPDX:GPL-3.0-or-later"]
 
 id = "uvgami"
 name = "UVgami"
-version = "1.2.0"
+version = "1.2.1"
 blender_version_min = "4.2.0"
 tagline = "Automatic UV unwrapping"
 website = "https://github.com/DanielBoxer/UVgami"
