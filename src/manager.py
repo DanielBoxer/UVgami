@@ -327,31 +327,35 @@ class UnwrapManager:
                     output.data.use_auto_smooth = True
                     output.data.auto_smooth_angle = unwrap.auto_smooth
 
-        self._copy_vertex_groups(unwrap, output)
+        self._restore_vertex_groups(unwrap, output)
 
         logger.add_data("objects", unwrap.input_name)
 
         collection = check_collection("UVgami Unwrapped", bpy.context.scene.collection)
         move_to_collection(output, collection)
 
-    def _copy_vertex_groups(self, unwrap, output):
-        """Copy vertex groups from the input object to the output."""
-        if unwrap.input_name in bpy.data.objects:
-            input_obj = bpy.data.objects[unwrap.input_name]
-
-            for group in input_obj.vertex_groups:
-                new_group = output.vertex_groups.new(name=group.name)
-                for v_idx in range(unwrap.vertex_count):
-                    try:
-                        weight = group.weight(v_idx)
-                        new_group.add([v_idx], weight, "REPLACE")
-                    except RuntimeError:
-                        # vertex not in group
-                        continue
+    def _restore_vertex_groups(self, unwrap, output):
+        """Restore pre-captured vertex groups to the output mesh."""
+        if unwrap.join_job is not None and len(unwrap.join_job.unwrapped) > 1:
+            # combine vertex groups from all joined unwraps with offset indices
+            combined_groups = {}
+            v_offset = 0
+            for u in unwrap.join_job.unwrapped:
+                for group_name, weights in u.vertex_groups.items():
+                    if group_name not in combined_groups:
+                        combined_groups[group_name] = {}
+                    for v_idx, weight in weights.items():
+                        combined_groups[group_name][v_idx + v_offset] = weight
+                v_offset += u.vertex_count
+            groups_data = combined_groups
         else:
-            logger.add_data(
-                "errors", "Input object not found, couldn't copy vertex groups"
-            )
+            groups_data = unwrap.vertex_groups
+
+        for group_name, weights in groups_data.items():
+            new_group = output.vertex_groups.new(name=group_name)
+            for v_idx, weight in weights.items():
+                if v_idx < len(output.data.vertices):
+                    new_group.add([v_idx], weight, "REPLACE")
 
     def _handle_failure(self, unwrap, ret_code):
         """Handle an unwrap process that exited with a non-zero code."""

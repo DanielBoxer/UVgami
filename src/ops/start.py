@@ -384,7 +384,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
 
             guide_path = self._create_guide_file(obj, path, props)
 
-            materials, material_indices, shade_smooth, auto_smooth = (
+            materials, material_indices, vertex_groups, shade_smooth, auto_smooth = (
                 self._get_mesh_metadata(obj)
             )
 
@@ -405,6 +405,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 added_edges=new_edges,
                 vertex_count=len(obj.data.vertices),
                 material_indices=material_indices,
+                vertex_groups=vertex_groups,
                 shade_smooth=shade_smooth,
                 auto_smooth=auto_smooth,
                 merge_cuts=props.use_cuts and not props.use_symmetry,
@@ -525,4 +526,15 @@ class UVGAMI_OT_start(bpy.types.Operator):
             if obj.data.use_auto_smooth:
                 angle = obj.data.auto_smooth_angle
 
-        return materials, material_indices, shade_smooth, angle
+        # get vertex groups
+        vertex_groups = {}
+        for group in obj.vertex_groups:
+            weights = {}
+            for v in obj.data.vertices:
+                for g in v.groups:
+                    if g.group == group.index:
+                        weights[v.index] = g.weight
+                        break
+            vertex_groups[group.name] = weights
+
+        return materials, material_indices, vertex_groups, shade_smooth, angle
