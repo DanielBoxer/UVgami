@@ -32,6 +32,7 @@ class Unwrap:
         materials: list,
         added_edges: list,
         vertex_count: int,
+        material_indices: list,
         shade_smooth: bool,
         auto_smooth: int,
         merge_cuts: bool,
@@ -60,6 +61,7 @@ class Unwrap:
         self.materials = materials
         self.added_edges = added_edges
         self.vertex_count = vertex_count
+        self.material_indices = material_indices
         self.shade_smooth = shade_smooth
         self.auto_smooth = auto_smooth
 

@@ -278,6 +278,18 @@ class UnwrapManager:
         for m in materials:
             output.data.materials.append(m)
 
+        # restore per-face material indices
+        if unwrap.join_job is not None and len(unwrap.join_job.unwrapped) > 1:
+            # concatenate material indices from all joined unwraps
+            combined_indices = []
+            for u in unwrap.join_job.unwrapped:
+                combined_indices.extend(u.material_indices)
+            if len(combined_indices) == len(output.data.polygons):
+                output.data.polygons.foreach_set("material_index", combined_indices)
+        elif len(unwrap.material_indices) == len(output.data.polygons):
+            # single object (no join), restore directly
+            output.data.polygons.foreach_set("material_index", unwrap.material_indices)
+
         if unwrap.preserve_job is not None:
             unwrap.preserve_job.finish(unwrap, output, added_edges)
 

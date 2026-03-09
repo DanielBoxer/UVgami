@@ -384,7 +384,9 @@ class UVGAMI_OT_start(bpy.types.Operator):
 
             guide_path = self._create_guide_file(obj, path, props)
 
-            materials, shade_smooth, auto_smooth = self._get_mesh_metadata(obj)
+            materials, material_indices, shade_smooth, auto_smooth = (
+                self._get_mesh_metadata(obj)
+            )
 
             unwrap = Unwrap(
                 name=unwrap_name,
@@ -402,6 +404,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 materials=materials,
                 added_edges=new_edges,
                 vertex_count=len(obj.data.vertices),
+                material_indices=material_indices,
                 shade_smooth=shade_smooth,
                 auto_smooth=auto_smooth,
                 merge_cuts=props.use_cuts and not props.use_symmetry,
@@ -505,6 +508,10 @@ class UVGAMI_OT_start(bpy.types.Operator):
         # get materials
         materials = [slot.material.name for slot in obj.material_slots if slot.material]
 
+        # get per-face material indices so they can be restored after import
+        material_indices = [0] * len(obj.data.polygons)
+        obj.data.polygons.foreach_get("material_index", material_indices)
+
         # check smooth and auto smooth shading
         shade_smooth = True if obj.data.polygons[0].use_smooth else False
 
@@ -518,4 +525,4 @@ class UVGAMI_OT_start(bpy.types.Operator):
             if obj.data.use_auto_smooth:
                 angle = obj.data.auto_smooth_angle
 
-        return materials, shade_smooth, angle
+        return materials, material_indices, shade_smooth, angle
