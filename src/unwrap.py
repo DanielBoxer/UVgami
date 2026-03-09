@@ -91,7 +91,7 @@ class Unwrap:
             or not engine_path.is_file()
             or engine_path.stem != "uvgami"
         ):
-            engine_path = str(manager.engine_path)
+            engine_path = pathlib.Path(manager.engine_path)
 
         quality = bpy.context.scene.uvgami.quality
         u = ""

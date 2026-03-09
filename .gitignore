@@ -8,3 +8,6 @@ input/
 output/
 
 .todo
+
+# bundled engine binaries
+engines/
