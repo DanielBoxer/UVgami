@@ -17,3 +17,4 @@ tags = ["UV"]
 
 [permissions]
 files = "Import/export OBJ and access engine path"
+clipboard = "Copy info logs to the clipboard"
