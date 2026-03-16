@@ -23,6 +23,12 @@ on:
         description: "Override version increment"
         required: false
 
+  push:
+    branches:
+      - master
+    paths:
+      - blender_manifest.toml
+
 env:
   ADDON_NAME: "UVgami"
   INCLUDED_FILES: "src LICENSE __init__.py blender_manifest.toml"
@@ -40,18 +46,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Get Next Version
+      - name: Get Next Version (workflow_dispatch)
         id: get_version
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: danielboxer/next-version-action@v1
         with:
           increment: ${{ inputs.increment }}
           version: ${{ inputs.version }}
           use_v_prefix: true
 
+      - name: Get Version from manifest (push)
+        id: get_version_push
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          version=$(grep '^version' blender_manifest.toml | sed -E 's/version *= *"(.*)"/\1/')
+          echo "new_version=v${version}" >> $GITHUB_OUTPUT
+
+      - name: Check if version tag already exists
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          TAG="${{ steps.get_version_push.outputs.new_version }}"
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "Tag ${TAG} already exists — version was not bumped. Skipping release."
+            exit 1
+          fi
+
       # 1. get engine zips from previous release
       - name: Download engines
         id: download_engines
-        if: ${{ inputs.use_old_engine }}
+        if: ${{ inputs.use_old_engine || github.event_name == 'push' }}
         uses: robinraju/release-downloader@v1
         with:
           latest: true
@@ -70,7 +93,7 @@ jobs:
       # 3. create bundled variant with engines
       - name: Create bundled addon with engines
         id: bundled
-        if: ${{ inputs.use_old_engine }}
+        if: ${{ inputs.use_old_engine || github.event_name == 'push' }}
         run: |
           if ! ls ${ENGINE_PREFIX}-*.zip 1>/dev/null 2>&1; then
             echo "has_engines=false" >> $GITHUB_OUTPUT
@@ -81,10 +104,22 @@ jobs:
           zip -r ${BUNDLED_NAME}.zip $ADDON_NAME
 
       # 4. create new release
+      - name: Determine TAG
+        id: determine_tag
+        env:
+          DISPATCH_TAG: ${{ steps.get_version.outputs.new_version }}
+          PUSH_TAG: ${{ steps.get_version_push.outputs.new_version }}
+        run: |
+          if [ -n "$DISPATCH_TAG" ]; then
+            echo "TAG=$DISPATCH_TAG" >> $GITHUB_ENV
+          else
+            echo "TAG=$PUSH_TAG" >> $GITHUB_ENV
+          fi
+
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.get_version.outputs.new_version }}
+          TAG: ${{ env.TAG }}
         run: gh release create "$TAG" "${ADDON_NAME}.zip" --title "$TAG"
 
       # 5. upload bundled addon
@@ -92,13 +127,13 @@ jobs:
         if: ${{ steps.bundled.outputs.has_engines == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.get_version.outputs.new_version }}
+          TAG: ${{ env.TAG }}
         run: gh release upload "$TAG" "${BUNDLED_NAME}.zip"
 
       # 6. upload engine if not new
       - name: Upload engine
-        if: ${{ inputs.use_old_engine && fromJSON(steps.download_engines.outputs.downloaded_files || '[]')[0] != null }}
+        if: ${{ (inputs.use_old_engine || github.event_name == 'push') && fromJSON(steps.download_engines.outputs.downloaded_files || '[]')[0] != null }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.get_version.outputs.new_version }}
+          TAG: ${{ env.TAG }}
         run: gh release upload "$TAG" ${ENGINE_PREFIX}-*.zip
