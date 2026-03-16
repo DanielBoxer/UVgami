@@ -10,15 +10,14 @@ if(WIN32)
   set(BUILD_SHARED_LIBS FALSE)
 endif()
 
-# default is 0 if not provided by CI
+# read version from VERSION file
 if(NOT DEFINED UVGAMI_VERSION_MAJOR)
-  set(UVGAMI_VERSION_MAJOR 0)
-endif()
-if(NOT DEFINED UVGAMI_VERSION_MINOR)
-  set(UVGAMI_VERSION_MINOR 0)
-endif()
-if(NOT DEFINED UVGAMI_VERSION_BUILD)
-  set(UVGAMI_VERSION_BUILD 0)
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" _version_raw)
+  string(STRIP "${_version_raw}" _version_stripped)
+  string(REPLACE "." ";" _version_list "${_version_stripped}")
+  list(GET _version_list 0 UVGAMI_VERSION_MAJOR)
+  list(GET _version_list 1 UVGAMI_VERSION_MINOR)
+  list(GET _version_list 2 UVGAMI_VERSION_BUILD)
 endif()
 
 set(UVGAMI_VERSION
