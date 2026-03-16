@@ -252,6 +252,16 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
         description="Display a progress bar in the 3D view during an unwrap",
         default=True,
     )
+    stop_timeout: bpy.props.IntProperty(
+        name="Stop Timeout",
+        description=(
+            "Time in minutes to wait after requesting a stop before force killing the engine."
+            " Set to 0 to disable."
+        ),
+        min=0,
+        max=60,
+        default=10,
+    )
     show_info: bpy.props.BoolProperty(
         name="Info",
         description="Show information about previous unwraps in the info panel",
@@ -308,6 +318,10 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
         row = cf.row()
         row.label(icon="SORTTIME")
         row.prop(self, "show_progress_bar")
+
+        row = cf.row()
+        row.label(icon="TIME")
+        row.prop(self, "stop_timeout")
 
         row = cf.row()
         row.label(icon="INFO")

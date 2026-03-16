@@ -94,6 +94,7 @@ class UnwrapManager:
             return None
 
         try:
+            prefs = get_preferences()
             completed = []
             failed = []
 
@@ -116,8 +117,12 @@ class UnwrapManager:
                     # track when stop was first requested
                     if unwrap.stop_requested_at is None:
                         unwrap.stop_requested_at = time.monotonic()
-                    # force kill if process doesn't respond within 10 seconds
-                    elif time.monotonic() - unwrap.stop_requested_at > 10:
+                    # force kill if process doesn't respond within configured minutes
+                    elif (
+                        prefs.stop_timeout > 0
+                        and time.monotonic() - unwrap.stop_requested_at
+                        > prefs.stop_timeout * 60
+                    ):
                         unwrap.stop_process()
                         failed.append((unwrap, -3))
 
