@@ -13,6 +13,10 @@ from ..utils.paths import (
 )
 from . import Engine
 from .install_task import (
+    DELETE_DESCRIPTION,
+    NOT_DOWNLOADED_ERROR,
+    DELETED_MESSAGE,
+    DOWNLOADED_MESSAGE,
     InstallTask,
     draw_online_access,
     draw_progress,
@@ -23,6 +27,8 @@ from .install_task import (
 )
 
 RELEASES_URL = "https://github.com/DanielBoxer/UVgami/releases"
+
+DOWNLOAD_PHASE = "Downloading engine"
 
 
 def engine_install_root(name):
@@ -39,7 +45,6 @@ class EngineRelease:
         self.label = label
         self.version = version
         self.download_size = download_size
-        self.phase = f"Downloading {label}"
         self.install_op = f"uvgami.install_{name}"
 
     def install_dir(self):
@@ -84,7 +89,7 @@ class EngineRelease:
         asset = f"{self.name}-engine-{self.version}-{get_platform_tag()}.zip"
         url = f"{RELEASES_URL}/download/{self.name}-v{self.version}/{asset}"
         archive_path = install_dir / asset
-        task_state["phase"] = self.phase
+        task_state["phase"] = DOWNLOAD_PHASE
         download_file(url, archive_path, progress=report_progress)
 
         binary = install_dir / get_engine_binary_name(self.name)
@@ -111,17 +116,14 @@ class UVGAMI_OT_delete_engine(InstallTask, bpy.types.Operator):
 
     bl_idname = "uvgami.delete_engine"
     bl_label = "Delete Engine"
-    bl_description = "Delete the downloaded engine, so it can be downloaded again"
+    done_message = DELETED_MESSAGE
+    bl_description = DELETE_DESCRIPTION
 
     engine_name: bpy.props.StringProperty(options={"HIDDEN"})
 
     @property
     def owner(self):
         return self.engine_name
-
-    @property
-    def done_message(self):
-        return f"{self.engine_name} engine deleted"
 
     def invoke(self, context, event):
         return context.window_manager.invoke_confirm(self, event)
@@ -139,6 +141,8 @@ class UVGAMI_OT_delete_engine(InstallTask, bpy.types.Operator):
 class InstallEngineTask(InstallTask):
     """Operator body for downloading one engine binary."""
 
+    bl_description = "Download the engine"
+    done_message = DOWNLOADED_MESSAGE
     release = None
 
     def precheck(self):
@@ -175,7 +179,7 @@ class BinaryEngine(Engine):
                 "This update needs a newer engine. Download it in the add-on"
                 " preferences",
             )
-        return None, "Engine not installed. Download it in the add-on preferences"
+        return None, NOT_DOWNLOADED_ERROR
 
     def describe(self):
         if get_local_engine_path(self.release.name) is not None:
@@ -190,7 +194,7 @@ class BinaryEngine(Engine):
         row = draw_update_row(
             layout,
             self.release.name,
-            self.release.phase,
+            DOWNLOAD_PHASE,
             self.update_pending(get_preferences()),
         )
         if row is not None:
@@ -199,7 +203,7 @@ class BinaryEngine(Engine):
     def draw_prefs(self, layout, prefs):
         release = self.release
         if task_state["running"] and task_state["owner"] == release.name:
-            draw_progress(layout, release.phase)
+            draw_progress(layout, DOWNLOAD_PHASE)
             return
 
         _, error = self.validate(prefs)
@@ -208,7 +212,7 @@ class BinaryEngine(Engine):
         if update_pending:
             status = ("Engine update available", "FILE_REFRESH")
         elif needs_download:
-            status = ("Not installed", "X")
+            status = ("Not downloaded", "X")
         elif error is not None:
             status = (error, "ERROR")
         elif get_local_engine_path(release.name) is not None:
@@ -230,7 +234,7 @@ class BinaryEngine(Engine):
             row = layout.row()
             row.scale_y = 1.5
             delete = row.operator(
-                "uvgami.delete_engine", text=f"Delete {release.label}", icon="TRASH"
+                "uvgami.delete_engine", text="Delete Engine", icon="TRASH"
             )
             delete.engine_name = release.name
 

@@ -12,8 +12,6 @@ XATLAS = EngineRelease("xatlas", "xatlas", XATLAS_VERSION, "300 KB")
 class UVGAMI_OT_install_xatlas(InstallEngineTask, bpy.types.Operator):
     bl_idname = "uvgami.install_xatlas"
     bl_label = "Download xatlas Engine"
-    bl_description = "Download the xatlas engine"
-    done_message = "xatlas engine downloaded"
     owner = "xatlas"
     release = XATLAS
 

@@ -12,6 +12,7 @@ from .. import Engine
 from ...utils.paths import get_dir_path, get_extension_dir_path
 from ...utils.ui import is_non_default, only_active
 from ..install_task import (
+    NOT_DOWNLOADED_ERROR,
     draw_online_access,
     draw_progress,
     draw_update_row,
@@ -149,7 +150,7 @@ class PartuvEngine(Engine):
             return PartuvRun("dev", repo), None
         if is_partuv_installed():
             return PartuvRun("installed", get_partuv_venv_path()), None
-        return None, "PartUV is not installed. Download it in the add-on preferences"
+        return None, NOT_DOWNLOADED_ERROR
 
     def invalidate_caches(self):
         get_installed_partuv_version.cache_clear()
@@ -222,13 +223,13 @@ class PartuvEngine(Engine):
         if update_pending:
             row.label(text="Engine update available", icon="FILE_REFRESH")
         elif ai_installed:
-            row.label(text="Installed with AI segmentation", icon="CHECKMARK")
+            row.label(text="Downloaded with AI segmentation", icon="CHECKMARK")
         elif installed:
             row.label(
-                text="Installed with geometric segmentation only", icon="CHECKMARK"
+                text="Downloaded with geometric segmentation only", icon="CHECKMARK"
             )
         else:
-            row.label(text="Not installed", icon="X")
+            row.label(text="Not downloaded", icon="X")
 
         if (update_pending or not ai_installed) and not draw_online_access(layout):
             row = layout.row()
@@ -250,7 +251,7 @@ class PartuvEngine(Engine):
         if installed:
             row = layout.row()
             row.scale_y = 1.5
-            row.operator("uvgami.uninstall_partuv", text="Delete PartUV", icon="TRASH")
+            row.operator("uvgami.uninstall_partuv", text="Delete Engine", icon="TRASH")
 
         if task_state["error"] is not None and task_state["owner"] == "partuv":
             layout.row().label(text=task_state["error"], icon="ERROR")

@@ -15,6 +15,12 @@ task_state = {
 }
 
 
+DOWNLOADED_MESSAGE = "Engine downloaded"
+DELETED_MESSAGE = "Engine deleted"
+DELETE_DESCRIPTION = "Delete the downloaded engine, so it can be downloaded again"
+NOT_DOWNLOADED_ERROR = "Engine not downloaded. Download it in the add-on preferences"
+
+
 def offline_error():
     """Blender requires add-ons to check this before any download."""
     if bpy.app.online_access:

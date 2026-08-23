@@ -10,7 +10,15 @@ import zipfile
 import bpy
 
 from ...utils.download import download_file
-from ..install_task import InstallTask, offline_error, report_progress, task_state
+from ..install_task import (
+    DELETE_DESCRIPTION,
+    DELETED_MESSAGE,
+    DOWNLOADED_MESSAGE,
+    InstallTask,
+    offline_error,
+    report_progress,
+    task_state,
+)
 from .venv_commands import VENV_PYTHON, build_install_commands
 from .paths import (
     get_partuv_checkpoint_path,
@@ -148,7 +156,7 @@ def install_partuv(ai):
 
 
 def uninstall_partuv():
-    task_state["phase"] = "Deleting PartUV"
+    task_state["phase"] = "Deleting engine"
     venv = get_partuv_venv_path()
     if venv.is_dir():
         shutil.rmtree(venv)
@@ -170,7 +178,7 @@ class PartuvTask(InstallTask):
 class UVGAMI_OT_install_partuv(PartuvTask, bpy.types.Operator):
     bl_idname = "uvgami.install_partuv"
     bl_label = "Download PartUV Engine"
-    done_message = "PartUV engine downloaded"
+    done_message = DOWNLOADED_MESSAGE
 
     def precheck(self):
         return super().precheck() or offline_error()
@@ -179,11 +187,11 @@ class UVGAMI_OT_install_partuv(PartuvTask, bpy.types.Operator):
     def description(cls, context, properties):
         if properties.tier == "AI":
             return (
-                f"Download PartUV with AI segmentation, ~{AI_DOWNLOAD_SIZE}. Includes"
-                " geometric. Needs an NVIDIA GPU"
+                f"Download the engine with AI segmentation, ~{AI_DOWNLOAD_SIZE}."
+                " Includes geometric. Needs an NVIDIA GPU"
             )
         return (
-            "Download PartUV with geometric segmentation only, a much smaller"
+            "Download the engine with geometric segmentation only, a much smaller"
             " download. Needs an NVIDIA GPU"
         )
 
@@ -216,10 +224,8 @@ class UVGAMI_OT_install_partuv(PartuvTask, bpy.types.Operator):
 class UVGAMI_OT_uninstall_partuv(PartuvTask, bpy.types.Operator):
     bl_idname = "uvgami.uninstall_partuv"
     bl_label = "Delete PartUV Engine"
-    bl_description = (
-        "Delete the installed PartUV engine, including the AI model if downloaded"
-    )
-    done_message = "PartUV engine deleted"
+    bl_description = DELETE_DESCRIPTION
+    done_message = DELETED_MESSAGE
 
     def invoke(self, context, event):
         return context.window_manager.invoke_confirm(self, event)

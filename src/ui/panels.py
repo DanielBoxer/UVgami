@@ -124,7 +124,7 @@ def draw_missing_engine(layout):
         return
     row = box.row()
     row.alignment = "CENTER"
-    row.label(text="Engine not installed", icon="INFO")
+    row.label(text="Engine not downloaded", icon="INFO")
     if draw_online_access(box):
         return
     row = box.row()
