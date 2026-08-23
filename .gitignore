@@ -12,7 +12,7 @@ output/
 *.todo
 
 # bundled engine binaries
-/engines/
+/engine-builds/
 
 # agent notes
 docs/agents/

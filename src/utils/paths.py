@@ -81,12 +81,12 @@ def get_engine_binary_name(name):
 
 
 def get_local_engine_path(name):
-    """Path to an engine binary in engines/<platform>/, or None. No engines ship
+    """Path to an engine binary in engine-builds/<platform>/, or None. No engines ship
     with the addon, so this only finds a build made in a dev checkout."""
     tag = get_platform_tag()
     if tag is None:
         return None
-    engine_path = get_dir_path() / "engines" / tag / get_engine_binary_name(name)
+    engine_path = get_dir_path() / "engine-builds" / tag / get_engine_binary_name(name)
     if engine_path.is_file():
         return engine_path
     return None

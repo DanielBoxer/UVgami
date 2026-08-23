@@ -52,7 +52,7 @@ explicit = true
 
 [tool.ruff]
 target-version = "py311"
-extend-exclude = ["engine", "src/pyqtree.py"]
+extend-exclude = ["engine", "src/utils/pyqtree.py"]
 
 [tool.pytest.ini_options]
 # pytest skips a testpath that is not there

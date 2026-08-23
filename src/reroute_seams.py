@@ -1,6 +1,6 @@
 import math
 import numpy
-from .pyqtree import Index
+from .utils.pyqtree import Index
 
 
 class Vertex:

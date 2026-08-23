@@ -62,9 +62,9 @@ jobs:
             echo "::error::expected one $BINARY in the zip, found: $FOUND"
             exit 1
           fi
-          mkdir -p engines/${{ matrix.platform.pkg_name }}
-          cp "$FOUND" engines/${{ matrix.platform.pkg_name }}/
-          chmod +x engines/${{ matrix.platform.pkg_name }}/$BINARY
+          mkdir -p engine-builds/${{ matrix.platform.pkg_name }}
+          cp "$FOUND" engine-builds/${{ matrix.platform.pkg_name }}/
+          chmod +x engine-builds/${{ matrix.platform.pkg_name }}/$BINARY
 
       - name: Unwrap a cube
         shell: bash
@@ -137,14 +137,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXE: ${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }}
         run: |
-          mkdir -p engines/$TAG
+          mkdir -p engine-builds/$TAG
           for ENGINE in optcuts xatlas; do
             VERSION=$(tr -d '[:space:]' < engine/$ENGINE/VERSION)
             gh release download "$ENGINE-v$VERSION" --pattern "$ENGINE-engine-*-$TAG.zip" --dir package/$ENGINE
             mkdir -p extracted/$ENGINE
             unzip -q package/$ENGINE/*.zip -d extracted/$ENGINE
-            cp "$(find extracted/$ENGINE -type f -name "$ENGINE$EXE")" engines/$TAG/
-            chmod +x "engines/$TAG/$ENGINE$EXE"
+            cp "$(find extracted/$ENGINE -type f -name "$ENGINE$EXE")" engine-builds/$TAG/
+            chmod +x "engine-builds/$TAG/$ENGINE$EXE"
           done
 
       - name: Run the suite inside blender

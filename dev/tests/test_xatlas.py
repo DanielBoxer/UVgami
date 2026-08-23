@@ -6,7 +6,7 @@ import pytest
 from uvgami_cli import xatlas
 from uvgami_cli.common import REPO_ROOT, UnwrapError, find_engine
 
-BUNDLED = REPO_ROOT / "engines" / "windows" / "xatlas.exe"
+BUNDLED = REPO_ROOT / "engine-builds" / "windows" / "xatlas.exe"
 
 
 class FakeProcess:

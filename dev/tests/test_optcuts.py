@@ -9,7 +9,7 @@ import pytest
 from uvgami_cli import optcuts
 from uvgami_cli.common import REPO_ROOT, UnwrapError, find_engine
 
-BUNDLED = REPO_ROOT / "engines" / "windows" / "optcuts.exe"
+BUNDLED = REPO_ROOT / "engine-builds" / "windows" / "optcuts.exe"
 
 
 class FakeProcess:

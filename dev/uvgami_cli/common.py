@@ -128,7 +128,7 @@ def find_engine(name, label, explicit_path):
     else:
         raise UnwrapError(EXIT_MISSING_RUNTIME, f"unsupported platform: {system}")
 
-    path = REPO_ROOT / "engines" / subdir / binary
+    path = REPO_ROOT / "engine-builds" / subdir / binary
     if not path.is_file():
         raise UnwrapError(
             EXIT_MISSING_RUNTIME,

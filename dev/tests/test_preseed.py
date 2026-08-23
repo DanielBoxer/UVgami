@@ -20,7 +20,7 @@ from seams import (  # noqa: E402
 )
 from seams.preseed import _read_uvs, submesh  # noqa: E402
 
-BUNDLED = Path(__file__).parents[2] / "engines" / "windows" / "optcuts.exe"
+BUNDLED = Path(__file__).parents[2] / "engine-builds" / "windows" / "optcuts.exe"
 
 CUBE_VERTS = [
     (0.0, 0.0, 0.0),
