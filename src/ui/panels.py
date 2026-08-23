@@ -375,11 +375,9 @@ class UVGAMI_PT_main(bpy.types.Panel):
 
 
 def draw_concurrent(layout, props, engine):
-    # hidden instead of grayed out: ai mode batches all meshes into one
-    # process, so concurrency doesn't apply
-    if engine.batches_queue(props):
-        return
     split = layout.split(factor=0.7)
+    # ai mode batches every mesh into one process
+    split.active = not engine.batches_queue(props)
     split.label(icon="MOD_ARRAY", text="Concurrent")
     split.prop(props, "max_cores", slider=True)
 

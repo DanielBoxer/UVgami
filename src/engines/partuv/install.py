@@ -9,7 +9,7 @@ import zipfile
 
 import bpy
 
-from ...utils.download import download_file
+from ...utils.download import download_file, with_retries
 from ..install_task import (
     DELETE_DESCRIPTION,
     DELETED_MESSAGE,
@@ -65,11 +65,14 @@ def partuv_update_pending():
 
 
 def find_wheel_url():
-    request = urllib.request.Request(
-        PARTUV_RELEASE_API, headers={"Accept": "application/vnd.github+json"}
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        release = json.load(response)
+    def fetch_release():
+        request = urllib.request.Request(
+            PARTUV_RELEASE_API, headers={"Accept": "application/vnd.github+json"}
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+
+    release = with_retries(PARTUV_RELEASE_API, fetch_release)
     # linux wheels ship as manylinux after auditwheel repair
     plat = "win_amd64" if platform.system() == "Windows" else "x86_64"
     for asset in release.get("assets", []):

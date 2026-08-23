@@ -2,6 +2,7 @@ import importlib.util
 import re
 import threading
 import tomllib
+import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -22,6 +23,7 @@ def _load(relpath, name):
 download = _load("src/utils/download.py", "uvgami_download")
 
 CONTENT = bytes(range(256)) * 40  # 10240 bytes
+API = "http://127.0.0.1:1/releases"
 
 
 class RangeHandler(BaseHTTPRequestHandler):
@@ -161,6 +163,39 @@ def test_exhausts_attempts_and_raises(server, tmp_path):
 
     assert not dest.exists()
     assert len(server.requests) == 3
+
+
+def test_with_retries_survives_a_transient_failure():
+    calls = []
+
+    def flaky():
+        calls.append(None)
+        if len(calls) < 3:
+            raise urllib.error.HTTPError(API, 504, "Gateway Timeout", None, None)
+        return "ok"
+
+    assert download.with_retries(API, flaky, backoff=0) == "ok"
+    assert len(calls) == 3
+
+
+def test_with_retries_names_the_url_when_it_gives_up():
+    def always_fails():
+        raise urllib.error.HTTPError(API, 504, "Gateway Timeout", None, None)
+
+    with pytest.raises(download.DownloadError, match=API):
+        download.with_retries(API, always_fails, attempts=2, backoff=0)
+
+
+def test_with_retries_gives_up_on_a_404():
+    calls = []
+
+    def missing():
+        calls.append(None)
+        raise urllib.error.HTTPError(API, 404, "Not Found", None, None)
+
+    with pytest.raises(download.DownloadError, match="404"):
+        download.with_retries(API, missing, backoff=0)
+    assert len(calls) == 1
 
 
 def test_partuv_version_matches_pyproject():

@@ -9,10 +9,39 @@ from pathlib import Path
 _CHUNK = 1 << 20
 _ATTEMPTS = 4
 _BACKOFF = 2.0
+# the only 4xx a retry can clear: a stale range and rate limiting
+_RETRIED_CLIENT_CODES = (416, 429)
 
 
 class DownloadError(RuntimeError):
     pass
+
+
+def _worth_retrying(error):
+    if not isinstance(error, urllib.error.HTTPError):
+        return True
+    return error.code < 400 or error.code >= 500 or error.code in _RETRIED_CLIENT_CODES
+
+
+def with_retries(url, call, attempts=_ATTEMPTS, backoff=_BACKOFF):
+    """Run call until it returns, waiting longer after each failure.
+
+    url is only for the error message.
+    """
+    error = None
+    tried = 0
+    while tried < attempts:
+        if tried:
+            time.sleep(backoff * tried)
+        tried += 1
+        try:
+            return call()
+        except (OSError, http.client.IncompleteRead, DownloadError) as e:
+            error = e
+            if not _worth_retrying(e):
+                break
+    tail = f" after {tried} attempts" if tried > 1 else ""
+    raise DownloadError(f"failed to fetch {url}{tail}: {error}")
 
 
 def download_file(
@@ -28,20 +57,18 @@ def download_file(
     """
     dest = Path(dest)
     part = dest.with_name(dest.name + ".part")
-    error = None
-    for attempt in range(attempts):
-        if attempt:
-            time.sleep(backoff * attempt)
+
+    def attempt():
         try:
             _fetch(url, part, timeout, progress)
-            part.replace(dest)
-            return
-        except (OSError, http.client.IncompleteRead, DownloadError) as e:
-            error = e
+        except urllib.error.HTTPError as error:
             # a full-size .part yields an unsatisfiable range, drop it to refetch
-            if isinstance(e, urllib.error.HTTPError) and e.code == 416:
+            if error.code == 416:
                 part.unlink(missing_ok=True)
-    raise DownloadError(f"failed to download {url} after {attempts} attempts: {error}")
+            raise
+        part.replace(dest)
+
+    with_retries(url, attempt, attempts, backoff)
 
 
 def _fetch(url, part, timeout, progress=None):
