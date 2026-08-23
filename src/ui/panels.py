@@ -121,13 +121,11 @@ def draw_missing_engine(layout):
     row = box.row()
     row.alignment = "CENTER"
     row.label(text="Engine not installed", icon="INFO")
-    split = box.split(factor=ICON_BUTTON_SPLIT)
-    split.scale_y = 1.5
+    row = box.row()
+    row.scale_y = 1.5
     # skip the confirmation, this is the only way to get an engine
-    split.operator_context = "EXEC_DEFAULT"
-    split.operator("uvgami.install_optcuts", text="Download Engine", icon="IMPORT")
-    split.operator_context = "INVOKE_DEFAULT"
-    split.operator("uvgami.open_preferences", text="", icon="PREFERENCES")
+    row.operator_context = "EXEC_DEFAULT"
+    row.operator("uvgami.install_optcuts", text="Download Engine", icon="IMPORT")
 
 
 SUCCESS_ICON = "COLORSET_03_VEC"
