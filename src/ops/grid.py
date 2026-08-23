@@ -28,7 +28,9 @@ def make_grid_mat(grid_img):
         return grid_mat
 
     grid_mat = bpy.data.materials.new("UVgami_grid")
-    grid_mat.use_nodes = True
+    # 5.0 builds the node tree here and deprecates the flag
+    if bpy.app.version < (5, 0, 0):
+        grid_mat.use_nodes = True
     tree_nodes = grid_mat.node_tree.nodes
     nodes = (
         tree_nodes.new(type="ShaderNodeTexImage"),

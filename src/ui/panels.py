@@ -254,7 +254,7 @@ def _draw_unwrap_groups(box, groups, active_groups):
                 ).job_id = group_id.job_id
             if manager.engine.supports_early_stop:
                 _icon_button(
-                    row, is_active, "uvgami.stop", "SNAP_FACE"
+                    row, any(u.is_stoppable for u in group), "uvgami.stop", "SNAP_FACE"
                 ).job_id = group_id.job_id
             row.operator(
                 "uvgami.cancel", text="", icon="CANCEL"
@@ -317,7 +317,7 @@ def _draw_piece_buttons(row, item):
         ).stem = item.path.stem
     if manager.engine.supports_early_stop:
         _icon_button(
-            row, item.is_active, "uvgami.stop", "SNAP_FACE"
+            row, item.is_stoppable, "uvgami.stop", "SNAP_FACE"
         ).stem = item.path.stem
     cancel_op = row.operator("uvgami.cancel", text="", icon="CANCEL")
     cancel_op.stem = item.path.stem

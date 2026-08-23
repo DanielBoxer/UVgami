@@ -246,6 +246,11 @@ class Unwrap:
         )
 
     @property
+    def is_stoppable(self):
+        """Reporting, so stopping keeps a uv map instead of dropping the piece."""
+        return self.is_running and self.has_reported
+
+    @property
     def is_viewable(self):
         """Running and reporting, so the engine has uvs to snapshot. The
         progress numbers can't say it, an all-high-distortion report is the
