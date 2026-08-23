@@ -16,6 +16,7 @@ from ..seams import (
     split_moves,
     uv_island_groups,
 )
+from ..ui.panels import describe_settings, fix_settings
 from ..unwrap import Unwrap
 from ..utils.io import export_obj
 from ..utils.mesh import (
@@ -750,7 +751,9 @@ def queue_targets(engine, engine_ctx, count, queue_one):
         raise
 
     if not manager.is_active:
-        logger.new_info()
+        info = logger.new_info()
+        info.engine = engine.describe()
+        info.settings = describe_settings(fix_settings(bpy.context.scene.uvgami))
         manager.engine = engine
         manager.engine_ctx = engine_ctx
         # these operators are run from the uv editor, so the bar belongs there

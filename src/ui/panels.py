@@ -10,7 +10,6 @@ from ..utils.ui import (
     draw_active,
     header_icon_limit,
     is_non_default,
-    newline_label,
     only_active,
     toggle,
 )
@@ -70,6 +69,11 @@ def unwrap_settings(props):
             ),
         )
     )
+
+
+def describe_settings(settings):
+    """The active settings as one string for the log."""
+    return ", ".join(label for _, label, _ in settings)
 
 
 def fix_settings(props):
@@ -680,20 +684,7 @@ class UVGAMI_PT_misc(EnginePanel, bpy.types.Panel):
         row.scale_y = 1.5
         row.operator("uvgami.open_preferences", text="Preferences", icon="PREFERENCES")
 
-        box.separator()
-
         row = box.row()
-        row.alignment = "CENTER"
-        row.label(text="Info", icon="INFO")
-
-        if logger.unwrap_info:
-            row = box.row()
-            row.scale_y = 1.5
-            row.operator("uvgami.copy_logs", icon="COPYDOWN")
-            row.operator("uvgami.clear_logs", icon="TRASH")
-            col = box.column()
-            newline_label(logger.get_all(), col)
-        else:
-            row = box.row()
-            row.alignment = "CENTER"
-            row.label(text="No previous unwraps")
+        row.scale_y = 1.5
+        row.operator("uvgami.open_logs", icon="TEXT")
+        row.operator("uvgami.clear_logs", icon="TRASH")

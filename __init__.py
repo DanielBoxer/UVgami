@@ -53,7 +53,7 @@ from .src.ops.viewer import UVGAMI_OT_view_unwrap
 from .src.ops.info import (
     UVGAMI_OT_clear_logs,
     UVGAMI_OT_clear_summary,
-    UVGAMI_OT_copy_logs,
+    UVGAMI_OT_open_logs,
 )
 from .src.ui.panels import (
     UVGAMI_PT_main,
@@ -103,7 +103,7 @@ classes = (
     UVGAMI_OT_reset_settings,
     UVGAMI_OT_clear_logs,
     UVGAMI_OT_clear_summary,
-    UVGAMI_OT_copy_logs,
+    UVGAMI_OT_open_logs,
     UVGAMI_PT_main,
     UVGAMI_PT_weights,
     # UVGAMI_PT_symmetry,

@@ -3,21 +3,25 @@ import time
 
 class Info:
     def __init__(self):
+        self.started = time.strftime("%H:%M:%S")
         self.time = 0
         self.errors = []
         self.status = "In Progress"
         self.objects = []
+        self.engine = ""
+        self.settings = ""
 
     def get_info(self):
-        output = [
-            f"Status: {self.status}",
-            f"Time: {self.time:.2f}s",
-            f"Objects: {', '.join(self.objects)}",
-        ]
+        """One line for the run."""
+        fields = [self.started, self.status, f"{self.time:.2f}s"]
+        if self.engine:
+            fields.append(self.engine)
+        fields.append(", ".join(self.objects))
+        if self.settings:
+            fields.append(f"Settings: {self.settings}")
         if self.errors:
-            output.append("Errors:")
-            output.extend(self.errors)
-        return output
+            fields.append(f"Errors: {'; '.join(self.errors)}")
+        return " | ".join(fields)
 
 
 class Logger:
@@ -26,8 +30,10 @@ class Logger:
         self.start_time = 0
 
     def new_info(self):
-        self.unwrap_info.append(Info())
+        info = Info()
+        self.unwrap_info.append(info)
         self.start_timer()
+        return info
 
     def discard_info(self):
         """Drop the entry for a run that was refused before it started."""
@@ -46,12 +52,8 @@ class Logger:
         return self.unwrap_info[-1]
 
     def get_all(self):
-        """Every run's info, newest first, blank separated."""
-        output = []
-        for info in reversed(self.unwrap_info):
-            output.extend(info.get_info())
-            output.append("")
-        return output[:-1]
+        """One line per run, oldest first."""
+        return [info.get_info() for info in self.unwrap_info]
 
     def start_timer(self):
         self.start_time = time.perf_counter()

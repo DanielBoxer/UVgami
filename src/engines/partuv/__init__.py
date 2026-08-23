@@ -178,6 +178,12 @@ class PartuvEngine(Engine):
             )
         )
 
+    def describe(self):
+        if find_partuv_dev_repo() is not None:
+            return f"{self.label} (local build)"
+        version = get_installed_partuv_version()
+        return f"{self.label} {version}" if version else self.label
+
     def update_pending(self):
         return find_partuv_dev_repo() is None and partuv_update_pending()
 

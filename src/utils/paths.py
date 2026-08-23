@@ -1,11 +1,19 @@
+import functools
 import pathlib
 import platform
+import tomllib
 
 import bpy
 
 
 def get_dir_path():
     return pathlib.Path(__file__).parents[2]
+
+
+@functools.cache
+def get_addon_version():
+    with (get_dir_path() / "blender_manifest.toml").open("rb") as file:
+        return tomllib.load(file)["version"]
 
 
 def get_root_package():

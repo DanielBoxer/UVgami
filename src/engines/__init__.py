@@ -23,6 +23,10 @@ class Engine:
     # the proxy finish flattens with optcuts
     supports_proxy = False
 
+    def describe(self):
+        """Engine name and version for the log."""
+        return self.label
+
     def is_available(self):
         """Whether this engine can run on the current platform."""
         return True

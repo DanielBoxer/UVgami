@@ -30,6 +30,7 @@ from ..seams import (
 from ..similar import find_twins, write_twin_output
 
 # from ..similar import mirror_matches
+from ..ui.panels import describe_settings, unwrap_settings
 from ..unwrap import Unwrap
 
 # from ..utils.geometry import apply_transforms, calc_center
@@ -753,12 +754,14 @@ class UVGAMI_OT_start(bpy.types.Operator):
         builder_registered = False
 
         try:
-            logger.new_info()
+            info = logger.new_info()
             self.engine = active_engine(context.scene.uvgami.engine)
             if self.engine is None:
                 self.report({"ERROR"}, "No engine installed")
                 logger.discard_info()
                 return {"CANCELLED"}
+            info.engine = self.engine.describe()
+            info.settings = describe_settings(unwrap_settings(context.scene.uvgami))
 
             # a mesh added to a running session would take the first one's
             # engine and settings

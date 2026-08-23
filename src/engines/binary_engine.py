@@ -193,6 +193,14 @@ class BinaryEngine(Engine):
             )
         return None, "Engine not installed. Download it in the add-on preferences"
 
+    def describe(self):
+        prefs = get_preferences()
+        if self.custom_path(prefs) is not None:
+            return f"{self.label} (custom build)"
+        if get_local_engine_path(self.release.name) is not None:
+            return f"{self.label} {self.release.version} (local build)"
+        return f"{self.label} {self.release.version}"
+
     def update_pending(self, prefs):
         _, error = self.validate(prefs)
         return (

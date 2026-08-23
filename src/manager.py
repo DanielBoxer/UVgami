@@ -900,6 +900,8 @@ class UnwrapManager:
         timer that would have cleaned them up."""
         self.stop_all()
         self.clear_summary()
+        # a log carried into the next file would list runs on the old one
+        logger.unwrap_info.clear()
 
 
 manager = UnwrapManager()
