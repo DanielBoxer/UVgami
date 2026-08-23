@@ -152,6 +152,10 @@ jobs:
           BLENDER: ${{ github.workspace }}/${{ env.BLENDER_DIR }}/${{ matrix.platform.binary }}
         run: uv run python dev/tests/blender/run.py
 
+      # validate only reads the manifest
+      - name: Validate the manifest
+        run: ${{ env.BLENDER_DIR }}/${{ matrix.platform.binary }} --factory-startup --command extension validate .
+
   partuv:
     strategy:
       fail-fast: false

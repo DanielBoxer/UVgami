@@ -13,6 +13,12 @@
 
 There are [three](#engines) supported engines.
 
+### Automatic Updates
+
+1. In Blender, go to `Preferences` > `Get Extensions` > `Repositories` > `+` > `Add Remote Repository`
+2. Set `https://uvgami.danielboxer.dev/index.json` as the URL
+3. Turn on `Check for Updates on Startup`
+
 ![Elephant](docs/img/readme/elephant.jpg)
 
 ![Elephant 2](docs/img/readme/elephant_seams.jpg)

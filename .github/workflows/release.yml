@@ -107,3 +107,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.TAG }}
         run: gh release create "$TAG" "${ADDON_NAME}.zip" --title "$TAG"
+
+      # the site serves index.json as a blender extension repository
+      - name: Update the extension index
+        env:
+          ARCHIVE_URL: https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}/${{ env.ADDON_NAME }}.zip
+        run: |
+          python dev/write_extension_index.py "${ADDON_NAME}.zip" "$ARCHIVE_URL" index.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          git commit -m "update extension index"
+          git push
