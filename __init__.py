@@ -51,7 +51,6 @@ from .src.ops.grid import (
 )
 from .src.ops.viewer import UVGAMI_OT_view_unwrap
 from .src.ops.info import (
-    UVGAMI_OT_clear_logs,
     UVGAMI_OT_clear_summary,
     UVGAMI_OT_open_logs,
 )
@@ -101,7 +100,6 @@ classes = (
     UVGAMI_OT_view_unwrap,
     UVGAMI_OT_reset_setting,
     UVGAMI_OT_reset_settings,
-    UVGAMI_OT_clear_logs,
     UVGAMI_OT_clear_summary,
     UVGAMI_OT_open_logs,
     UVGAMI_PT_main,

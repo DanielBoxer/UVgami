@@ -46,9 +46,6 @@ class Logger:
         self.get_latest().status = status
 
     def get_latest(self):
-        # if logs cleared during unwrap, add a new one
-        if not self.unwrap_info:
-            self.new_info()
         return self.unwrap_info[-1]
 
     def get_all(self):

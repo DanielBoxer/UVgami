@@ -17,17 +17,6 @@ class UVGAMI_OT_clear_summary(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class UVGAMI_OT_clear_logs(bpy.types.Operator):
-    bl_idname = "uvgami.clear_logs"
-    bl_label = "Clear Log"
-    bl_description = "Delete all info"
-
-    def execute(self, context):
-        logger.unwrap_info.clear()
-        self.report({"INFO"}, "Cleared info")
-        return {"FINISHED"}
-
-
 LOG_TEXT_NAME = "UVgami Log"
 
 

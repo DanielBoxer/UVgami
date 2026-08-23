@@ -687,4 +687,3 @@ class UVGAMI_PT_misc(EnginePanel, bpy.types.Panel):
         row = box.row()
         row.scale_y = 1.5
         row.operator("uvgami.open_logs", icon="TEXT")
-        row.operator("uvgami.clear_logs", icon="TRASH")

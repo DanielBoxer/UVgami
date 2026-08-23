@@ -200,7 +200,7 @@ def test_reset_settings_restores_the_defaults():
     assert props.optcuts.quality == "BALANCED"
 
 
-def test_summary_and_logs_can_be_cleared(unwrap):
+def test_summary_can_be_cleared(unwrap):
     add_cube("cube")
     unwrap()
     assert manager.summary
@@ -208,7 +208,4 @@ def test_summary_and_logs_can_be_cleared(unwrap):
 
     bpy.ops.uvgami.clear_summary()
     assert manager.summary == []
-
     assert logger.get_all()
-    bpy.ops.uvgami.clear_logs()
-    assert logger.unwrap_info == []
