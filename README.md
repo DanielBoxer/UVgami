@@ -20,15 +20,15 @@ There are [three](#engines) supported engines.
 
 This is a different engine that requires an NVIDIA GPU. Install the add-on, then click `Install PartUV Engine` in the preferences.
 
-![Elephant](docs/img/readme/1.jpg)
+![Elephant](docs/img/readme/elephant.jpg)
 
-![Elephant 2](docs/img/readme/2.jpg)
+![Elephant 2](docs/img/readme/elephant_seams.jpg)
 
-![Seam Restrictions](docs/img/readme/3.jpg)
+![Seam Restrictions](docs/img/readme/elephant_weights.jpg)
 
-![Ostrich](docs/img/readme/4.jpg)
+![Ostrich](docs/img/readme/ostrich.jpg)
 
-![Rhino](docs/img/readme/5.jpg)
+![Rhino](docs/img/readme/rhino.jpg)
 
 ## Engines
 
