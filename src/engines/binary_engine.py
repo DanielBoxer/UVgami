@@ -1,4 +1,3 @@
-import pathlib
 import shutil
 import zipfile
 
@@ -162,26 +161,9 @@ class BinaryEngine(Engine):
     """Engine that runs a binary downloaded from its own GitHub release."""
 
     release = None
-    # optcuts alone lets the user point at a build of their own
-    uses_engine_path = False
-
-    def custom_path(self, prefs):
-        """The engine binary set in the preferences, or None for the default."""
-        if not self.uses_engine_path:
-            return None
-        raw = pathlib.Path(prefs.engine_path)
-        return None if str(raw) == "." else raw
 
     def validate(self, prefs):
-        raw = self.custom_path(prefs)
-        if raw is not None:
-            if not raw.is_file():
-                return None, "Engine path doesn't exist"
-            if raw.stem != self.release.name:
-                return None, f"Engine file must be named {self.release.name}"
-            return raw, None
-
-        # a local build in engines/ wins over the download, for dev checkouts
+        # a local build wins over the download, for dev checkouts
         path = get_local_engine_path(self.release.name) or self.release.installed_path()
         if path is not None:
             return path, None
@@ -194,20 +176,13 @@ class BinaryEngine(Engine):
         return None, "Engine not installed. Download it in the add-on preferences"
 
     def describe(self):
-        prefs = get_preferences()
-        if self.custom_path(prefs) is not None:
-            return f"{self.label} (custom build)"
         if get_local_engine_path(self.release.name) is not None:
             return f"{self.label} {self.release.version} (local build)"
         return f"{self.label} {self.release.version}"
 
     def update_pending(self, prefs):
         _, error = self.validate(prefs)
-        return (
-            error is not None
-            and self.custom_path(prefs) is None
-            and self.release.has_old_install()
-        )
+        return error is not None and self.release.has_old_install()
 
     def draw_update_notice(self, layout):
         row = draw_update_row(
@@ -226,8 +201,7 @@ class BinaryEngine(Engine):
             return
 
         _, error = self.validate(prefs)
-        custom = self.custom_path(prefs) is not None
-        needs_download = error is not None and not custom
+        needs_download = error is not None
         update_pending = self.update_pending(prefs)
         if update_pending:
             status = ("Engine update available", "FILE_REFRESH")
@@ -235,8 +209,6 @@ class BinaryEngine(Engine):
             status = ("Not installed", "X")
         elif error is not None:
             status = (error, "ERROR")
-        elif custom:
-            status = ("Using the engine path below", "CHECKMARK")
         elif get_local_engine_path(release.name) is not None:
             status = ("Using the local build", "CHECKMARK")
         else:
@@ -262,11 +234,3 @@ class BinaryEngine(Engine):
 
         if task_state["error"] is not None and task_state["owner"] == release.name:
             layout.row().label(text=task_state["error"], icon="ERROR")
-
-        if self.uses_engine_path:
-            row = layout.row()
-            row.scale_y = 1.5
-            split = row.split(factor=0.2)
-            split.scale_x = 1.5
-            split.label(text="Engine Path")
-            split.prop(prefs, "engine_path")

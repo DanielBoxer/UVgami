@@ -4,8 +4,8 @@ Blender addon that does automatic UV unwrapping. Three engines: optcuts (C++ bin
 
 ## Layout
 
-- `src/`: the addon. `manager.py` runs the unwrap queue, `src/engines/` is one module per engine, listed in `src/engines/__init__.py`.
-- `dev/`: everything that isn't shipped. `dev/uvgami_cli/`: dev-only CLI driving every engine via `--engine`. Tests live in two places, `dev/tests/` for the addon and CLI, `dev/bench/tests/` for the bench and the end-to-end unwraps, and one `pytest` run collects both. `dev/tests/blender/` runs inside a real Blender through its `run.py` and is skipped by the venv run.
+- `src/` is the addon, `src/engines/__init__.py` lists the engines. `dev/` is not part of the addon.
+- Tests are in two places, `dev/tests/` for the addon and CLI, `dev/bench/tests/` for the bench and the end-to-end unwraps, and one `pytest` run collects both. `dev/tests/blender/` runs inside a real Blender through its `run.py` and is skipped by the venv run.
 - `docs/docs.md` (user guide) and `README.md` are human only. Never edit them, propose the change instead. Anything an agent writes goes in the agent notes folder.
 - Keep this file and the agent notes short: only what an agent would get wrong without it.
 
@@ -17,10 +17,11 @@ Blender addon that does automatic UV unwrapping. Three engines: optcuts (C++ bin
 ## Gotchas
 
 - The dev venv is hand-built: the partuv CUDA stack was installed with `--extra partuv`, which is outside the default sync set. Bare `uv sync` uninstalls all of it, so sync with `uv sync --inexact`. Plain `uv run` is safe (inexact by default).
-- Engine stdout is a parsed protocol (`start:`/`done:`/`failed:`/`progress:` lines). Don't print extra lines to stdout in the engine path, use stderr.
+- Engine stdout is a parsed protocol (`start:`/`done:`/`failed:`/`progress:` lines). Don't print extra lines to stdout there, use stderr.
 - `src/` imports bpy, so only its bpy-free modules are unit-testable. `dev/tests/` shows which ones.
 - The addon runs one engine job per loose part. The CLI and bench feed the mesh whole, so a multi-part model can fail there but not in Blender.
-- The addon zip ships no engines. Each one downloads from its own GitHub release on first use, driven by `src/engines/binary_engine.py` (optcuts, xatlas) and `src/engines/partuv/install.py`.
+- The addon zip contains no engines. Each one downloads from its own GitHub release on first use, driven by `src/engines/binary_engine.py` (optcuts, xatlas) and `src/engines/partuv/install.py`.
 - Changing an engine's code needs that engine's version bumped: `engine/optcuts/VERSION`, `engine/xatlas/VERSION`, `engine/partuv/pyproject.toml`. CI fails if the version constants mirrored in the addon drift. That rebuilds the engine only, releases trigger only from the version line in `blender_manifest.toml`.
-- After building an engine, copy the binary into `engine-builds/windows/` (per-platform, gitignored) or the addon and CLI run the stale one. That local copy also beats the downloaded engine, so it's how a dev build gets tested in Blender. If addon behavior contradicts the engine source, compare the binary's mtime to the latest engine commit first.
+- After building an engine, copy the binary into `engine-builds/windows/` (per-platform, gitignored) or the addon and CLI run the stale one. That local copy is used instead of the downloaded engine, which is how a dev build gets tested in Blender. If addon behavior contradicts the engine source, compare the binary's mtime to the latest engine commit first.
+- `UVGAMI_ENGINE_DIR` points at another folder of engine binaries, checked before `engine-builds/`, so a worktree run doesn't need to copy over the shared one.
 - GitHub Pages builds the site from the repo root, so anything tracked and not in the `exclude` list in `_config.yml` gets published. Adding a top level folder or a markdown file that isn't user docs means adding it there too.

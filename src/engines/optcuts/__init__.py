@@ -184,7 +184,6 @@ class OptcutsEngine(BinaryEngine):
     supports_import_uvs = True
     supports_proxy = True
     release = OPTCUTS
-    uses_engine_path = True
 
     def draw_settings(self, layout, props):
         row = layout.row()

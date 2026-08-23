@@ -2,7 +2,7 @@ import multiprocessing
 
 import bpy
 
-from ..engines import ENGINES, installed_engines, invalidate_engine_caches
+from ..engines import ENGINES, installed_engines
 from ..utils.paths import get_addon_id
 
 # hang backstop, generous so a slow legitimate piece never hits it
@@ -266,12 +266,6 @@ class UVGAMI_AP_preferences(bpy.types.AddonPreferences):
         name="Show Popup",
         description="Show a popup when all meshes are finished unwrapping",
         default=False,
-    )
-    engine_path: bpy.props.StringProperty(
-        name="",
-        description="The path to the unwrapper application stored on your computer",
-        subtype="FILE_PATH",
-        update=lambda self, context: invalidate_engine_caches(),
     )
     show_progress_bar: bpy.props.BoolProperty(
         name="Progress Bar",

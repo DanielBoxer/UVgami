@@ -153,7 +153,7 @@ def get_engine(engine_id):
 
 # panel polls and the engine enum call installed_engines on every redraw, and
 # is_installed stats the filesystem, so the result is cached until an install
-# task ends or engine_path changes
+# task ends
 _installed_cache = None
 
 

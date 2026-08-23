@@ -1,4 +1,5 @@
 import functools
+import os
 import pathlib
 import platform
 import tomllib
@@ -88,13 +89,25 @@ def get_engine_binary_name(name):
     return f"{name}.exe" if platform.system() == "Windows" else name
 
 
-def get_local_engine_path(name):
-    """Path to an engine binary in engine-builds/<platform>/, or None. No engines ship
-    with the addon, so this only finds a build made in a dev checkout."""
+ENGINE_DIR_ENV_VAR = "UVGAMI_ENGINE_DIR"
+
+
+def _local_engine_dirs():
+    override = os.environ.get(ENGINE_DIR_ENV_VAR)
+    if override:
+        yield pathlib.Path(override)
     tag = get_platform_tag()
-    if tag is None:
-        return None
-    engine_path = get_dir_path() / "engine-builds" / tag / get_engine_binary_name(name)
-    if engine_path.is_file():
-        return engine_path
+    if tag is not None:
+        yield get_dir_path() / "engine-builds" / tag
+
+
+def get_local_engine_path(name):
+    """Path to an engine binary in UVGAMI_ENGINE_DIR or engine-builds/<platform>/, or
+    None. No engines ship with the addon, so this only finds a build made in a dev
+    checkout."""
+    binary_name = get_engine_binary_name(name)
+    for directory in _local_engine_dirs():
+        engine_path = directory / binary_name
+        if engine_path.is_file():
+            return engine_path
     return None
