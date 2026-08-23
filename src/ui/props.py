@@ -16,8 +16,16 @@ _ENGINE_ITEMS = {
 }
 
 
+# blender warns on every redraw when an enum has no items. the 0 matches what
+# the getter falls back to
+NO_ENGINE_ITEM = ("NONE", "No engine installed", "", 0)
+
+
 def _engine_items(self, context):
-    return [_ENGINE_ITEMS[e.id] for e in installed_engines()]
+    installed = installed_engines()
+    if not installed:
+        return [NO_ENGINE_ITEM]
+    return [_ENGINE_ITEMS[e.id] for e in installed]
 
 
 # the getter clamps to an installed engine without touching the stored value,

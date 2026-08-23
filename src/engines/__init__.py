@@ -177,7 +177,7 @@ def installed_engines():
 def active_engine(engine_id):
     """The installed engine an unwrap will run, or None when none is installed.
     The scene enum's getter clamps to an installed engine, so the id read back
-    only misses when nothing is installed and the enum is empty."""
+    only misses when nothing is installed and the enum is the placeholder."""
     engine = ENGINES.get(engine_id)
     if engine is not None and engine in installed_engines():
         return engine

@@ -14,6 +14,7 @@ from ..utils.paths import (
 from . import Engine
 from .install_task import (
     InstallTask,
+    draw_online_access,
     draw_progress,
     draw_update_row,
     offline_error,
@@ -217,7 +218,7 @@ class BinaryEngine(Engine):
 
         layout.row().label(text=status[0], icon=status[1])
 
-        if needs_download:
+        if needs_download and not draw_online_access(layout):
             row = layout.row()
             row.scale_y = 1.5
             row.operator(

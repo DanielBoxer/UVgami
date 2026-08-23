@@ -11,7 +11,12 @@ import bpy
 from .. import Engine
 from ...utils.paths import get_dir_path, get_extension_dir_path
 from ...utils.ui import is_non_default, only_active
-from ..install_task import draw_progress, draw_update_row, task_state
+from ..install_task import (
+    draw_online_access,
+    draw_progress,
+    draw_update_row,
+    task_state,
+)
 from .install import (
     PARTUV_PLATFORMS,
     UVGAMI_OT_install_partuv,
@@ -225,7 +230,7 @@ class PartuvEngine(Engine):
         else:
             row.label(text="Not installed", icon="X")
 
-        if update_pending or not ai_installed:
+        if (update_pending or not ai_installed) and not draw_online_access(layout):
             row = layout.row()
             row.scale_y = 1.5
             if update_pending:

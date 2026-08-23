@@ -2,7 +2,7 @@ import bpy
 
 from ..engines import active_engine, get_engine, installed_engines
 from ..engines.optcuts import QUALITY_LABELS
-from ..engines.install_task import draw_progress, task_state
+from ..engines.install_task import draw_online_access, draw_progress, task_state
 from ..job import Result
 from ..logger import logger
 from ..manager import manager
@@ -125,6 +125,8 @@ def draw_missing_engine(layout):
     row = box.row()
     row.alignment = "CENTER"
     row.label(text="Engine not installed", icon="INFO")
+    if draw_online_access(box):
+        return
     row = box.row()
     row.scale_y = 1.5
     # skip the confirmation, this is the only way to get an engine

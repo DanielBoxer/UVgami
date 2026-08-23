@@ -24,6 +24,20 @@ def offline_error():
     return "Turn on Allow Online Access in the preferences"
 
 
+def draw_online_access(layout):
+    """Blender's own button for the Allow Online Access preference. True when it
+    drew, meaning no download can run yet."""
+    if bpy.app.online_access:
+        return False
+    row = layout.row()
+    row.scale_y = 1.5
+    # its poll explains itself when blender was started in offline mode
+    row.operator(
+        "extensions.userpref_allow_online", text="Allow Online Access", icon="URL"
+    )
+    return True
+
+
 def report_progress(done, total):
     task_state["bytes_done"] = done
     task_state["bytes_total"] = total
