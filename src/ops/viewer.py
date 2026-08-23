@@ -180,6 +180,8 @@ def _trim_to_uv(window):
             bpy.ops.screen.area_close()
     area = screen.areas[0]
     area.ui_type = "UV"
+    # every selected object draws its uv map under the snapshot
+    area.spaces.active.uv_editor.show_uv = False
     region = next(r for r in area.regions if r.type == "WINDOW")
     with bpy.context.temp_override(window=window, area=area, region=region):
         bpy.ops.image.view_all(fit_view=True)
