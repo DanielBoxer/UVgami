@@ -10,7 +10,7 @@ import zipfile
 import bpy
 
 from ...utils.download import download_file
-from ..install_task import InstallTask, report_progress, task_state
+from ..install_task import InstallTask, offline_error, report_progress, task_state
 from .venv_commands import VENV_PYTHON, build_install_commands
 from .paths import (
     get_partuv_checkpoint_path,
@@ -171,6 +171,9 @@ class UVGAMI_OT_install_partuv(PartuvTask, bpy.types.Operator):
     bl_idname = "uvgami.install_partuv"
     bl_label = "Download PartUV Engine"
     done_message = "PartUV engine downloaded"
+
+    def precheck(self):
+        return super().precheck() or offline_error()
 
     @classmethod
     def description(cls, context, properties):

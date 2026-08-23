@@ -16,6 +16,7 @@ from .install_task import (
     InstallTask,
     draw_progress,
     draw_update_row,
+    offline_error,
     report_progress,
     task_state,
 )
@@ -142,7 +143,7 @@ class InstallEngineTask(InstallTask):
     def precheck(self):
         if get_platform_tag() is None:
             return f"{self.release.label} has no build for this platform"
-        return None
+        return offline_error()
 
     def invoke(self, context, event):
         return context.window_manager.invoke_confirm(

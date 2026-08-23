@@ -18,8 +18,8 @@ def get_addon_version():
 
 
 def get_root_package():
-    parts = __package__.split(".")
-    return ".".join(parts[:3])
+    # the bl_ext install prefix isn't always the same depth
+    return __package__.rsplit(".", 2)[0]
 
 
 def get_addon_id():

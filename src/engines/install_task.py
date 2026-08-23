@@ -1,5 +1,7 @@
 import threading
 
+import bpy
+
 # written by the install or uninstall thread, read by the preferences ui.
 # shared across engines, so only one install task runs at a time. owner names
 # the engine whose task ran last, so each prefs section shows only its own.
@@ -11,6 +13,15 @@ task_state = {
     "bytes_done": 0,
     "bytes_total": None,
 }
+
+
+def offline_error():
+    """Blender requires add-ons to check this before any download."""
+    if bpy.app.online_access:
+        return None
+    if bpy.app.online_access_override:
+        return "Blender was started in offline mode"
+    return "Turn on Allow Online Access in the preferences"
 
 
 def report_progress(done, total):

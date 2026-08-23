@@ -17,6 +17,6 @@ website = "https://github.com/DanielBoxer/UVgami"
 tags = ["UV"]
 
 [permissions]
-files = "Import/export OBJ and access engine path"
+files = "Import/export OBJ"
 network = "Download the unwrapping engines from GitHub releases"
 clipboard = "Copy info logs to the clipboard"
