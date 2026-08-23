@@ -2,6 +2,8 @@ import threading
 
 import bpy
 
+from ..utils.ui import tag_redraw
+
 # written by the install or uninstall thread, read by the preferences ui.
 # shared across engines, so only one install task runs at a time. owner names
 # the engine whose task ran last, so each prefs section shows only its own.
@@ -14,6 +16,9 @@ task_state = {
     "bytes_total": None,
 }
 
+
+# the unwrap panels show what is installed
+INSTALL_AREAS = ("PREFERENCES", "VIEW_3D", "IMAGE_EDITOR")
 
 DOWNLOADED_MESSAGE = "Engine downloaded"
 DELETED_MESSAGE = "Engine deleted"
@@ -101,20 +106,14 @@ class InstallTask:
         if event.type != "TIMER":
             return {"PASS_THROUGH"}
         if task_state["running"]:
-            # preferences can be open in more than one window, so redraw them
-            # all. the unwrap panels show progress too
-            for window in context.window_manager.windows:
-                for area in window.screen.areas:
-                    if area.type in {"PREFERENCES", "VIEW_3D", "IMAGE_EDITOR"}:
-                        area.tag_redraw()
+            tag_redraw(area_types=INSTALL_AREAS)
             return {"PASS_THROUGH"}
         context.window_manager.event_timer_remove(self._timer)
         # imported late: the engines package imports this module while loading
         from . import invalidate_engine_caches
 
         invalidate_engine_caches()
-        for area in context.screen.areas:
-            area.tag_redraw()
+        tag_redraw(area_types=INSTALL_AREAS)
         if task_state["error"] is not None:
             self.report({"ERROR"}, f"{self.bl_label} failed: {task_state['error']}")
             return {"CANCELLED"}
@@ -134,6 +133,14 @@ def draw_update_row(layout, owner, default_phase, pending):
     row = layout.row()
     row.label(text="Engine update available", icon="FILE_REFRESH")
     return row
+
+
+def draw_error(layout, owner):
+    """The last failure for this engine, kept after the operator report is gone.
+    Only the first line: a label cannot wrap."""
+    if task_state["error"] is None or task_state["owner"] != owner:
+        return
+    layout.row().label(text=task_state["error"].partition("\n")[0], icon="ERROR")
 
 
 def draw_progress(layout, default_phase):

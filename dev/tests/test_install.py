@@ -51,5 +51,10 @@ def test_geometric_installs_no_torch():
 
 
 def test_an_existing_venv_is_not_recreated():
-    assert not any("venv" in c[1] for c in build(ai=True, create_venv=False))
-    assert build(ai=True, create_venv=True)[0][1] == "venv"
+    assert not any("venv" in command for command in build(ai=True, create_venv=False))
+    assert "venv" in build(ai=True, create_venv=True)[0]
+
+
+def test_every_command_ignores_user_config():
+    for command in build(ai=True, create_venv=True):
+        assert "--no-config" in command

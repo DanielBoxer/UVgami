@@ -13,6 +13,7 @@ from ...utils.paths import get_dir_path, get_extension_dir_path
 from ...utils.ui import is_non_default, only_active
 from ..install_task import (
     NOT_DOWNLOADED_ERROR,
+    draw_error,
     draw_online_access,
     draw_progress,
     draw_update_row,
@@ -107,7 +108,8 @@ def find_partuv_dev_repo():
 
 
 def is_partuv_installed():
-    return get_partuv_venv_python().is_file()
+    # uv venv makes the python before anything is installed into it
+    return get_installed_partuv_version() is not None
 
 
 def is_partuv_ai_installed():
@@ -209,52 +211,51 @@ class PartuvEngine(Engine):
             )
             return
         if find_partuv_dev_repo() is not None:
-            layout.row().label(text="Using the local build", icon="CHECKMARK")
+            layout.row().label(text="Local build", icon="CHECKMARK")
             return
 
         if task_state["running"] and task_state["owner"] == "partuv":
-            draw_progress(layout, "Installing PartUV")
+            draw_progress(layout, "Installing engine")
             return
 
         installed = is_partuv_installed()
         ai_installed = is_partuv_ai_installed()
         update_pending = partuv_update_pending()
-        row = layout.row()
-        if update_pending:
-            row.label(text="Engine update available", icon="FILE_REFRESH")
-        elif ai_installed:
-            row.label(text="Downloaded with AI segmentation", icon="CHECKMARK")
-        elif installed:
-            row.label(
-                text="Downloaded with geometric segmentation only", icon="CHECKMARK"
-            )
-        else:
-            row.label(text="Not downloaded", icon="X")
+        if not installed:
+            layout.row().label(text="Not downloaded", icon="X")
 
-        if (update_pending or not ai_installed) and not draw_online_access(layout):
-            row = layout.row()
-            row.scale_y = 1.5
-            if update_pending:
-                row.operator(
-                    "uvgami.install_partuv", text="Update", icon="IMPORT"
-                ).tier = "AI" if ai_installed else "GEOMETRIC"
-            if not installed:
-                row.operator(
-                    "uvgami.install_partuv",
-                    text="Download Geometric",
-                    icon="IMPORT",
-                ).tier = "GEOMETRIC"
-            if not ai_installed:
-                row.operator(
-                    "uvgami.install_partuv", text="Download AI", icon="IMPORT"
-                ).tier = "AI"
+        # an update reinstalls the tier already there
+        current_tier = "AI" if ai_installed else "GEOMETRIC"
+        wants_download = update_pending or not ai_installed
+        if not (wants_download and draw_online_access(layout)):
+            columns = layout.split(factor=0.5)
+            for header, tier, tier_installed in (
+                ("Geometric Segmentation", "GEOMETRIC", installed),
+                ("AI Segmentation", "AI", ai_installed),
+            ):
+                column = columns.column()
+                title = column.row()
+                title.alignment = "CENTER"
+                title.label(text=header)
+                button = column.row()
+                button.scale_y = 1.5
+                if update_pending and tier == current_tier:
+                    button.operator(
+                        "uvgami.install_partuv", text="Update Engine", icon="IMPORT"
+                    ).tier = tier
+                elif tier_installed:
+                    button.alignment = "CENTER"
+                    button.label(text="Downloaded", icon="CHECKMARK")
+                else:
+                    button.operator(
+                        "uvgami.install_partuv", text="Download Engine", icon="IMPORT"
+                    ).tier = tier
         if installed:
             row = layout.row()
             row.scale_y = 1.5
             row.operator("uvgami.uninstall_partuv", text="Delete Engine", icon="TRASH")
 
-        if task_state["error"] is not None and task_state["owner"] == "partuv":
-            layout.row().label(text=task_state["error"], icon="ERROR")
+        draw_error(layout, "partuv")
 
     def build_args(self, ctx, input_path, props):
         return self.build_batch_args(ctx, [input_path], props)

@@ -71,7 +71,7 @@ def draw_active(layout, settings, limit):
         row.label(text=f"+{hidden + 1}")
 
 
-def tag_redraw(region_types=("WINDOW", "UI")):
+def tag_redraw(region_types=("WINDOW", "UI"), area_types=("VIEW_3D", "IMAGE_EDITOR")):
     """Repaint the editors that show unwrap progress. Goes through bpy.data
     because the manager calls this from a timer, where the context has no
     window or area. High frequency callers pass WINDOW only: rebuilding the
@@ -80,7 +80,7 @@ def tag_redraw(region_types=("WINDOW", "UI")):
     for wm in bpy.data.window_managers:
         for window in wm.windows:
             for area in window.screen.areas:
-                if area.type in {"VIEW_3D", "IMAGE_EDITOR"}:
+                if area.type in area_types:
                     for region in area.regions:
                         if region.type in region_types:
                             region.tag_redraw()

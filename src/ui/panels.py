@@ -116,10 +116,12 @@ def optcuts_installed():
 ICON_BUTTON_SPLIT = 0.85
 
 
-def draw_missing_engine(layout):
-    """Stands in for a panel body that has no engine to run."""
+def draw_missing_engine(layout, waiting_for=None):
+    """Stands in for a panel body that has no engine to run. waiting_for is the
+    engine that would fill the panel, None when any will do: another engine's
+    install never unblocks it."""
     box = layout.box()
-    if task_state["running"]:
+    if task_state["running"] and waiting_for in (None, task_state["owner"]):
         draw_progress(box, "Downloading engine")
         return
     row = box.row()
@@ -576,7 +578,7 @@ class UVGAMI_PT_island_uv(bpy.types.Panel):
     def draw(self, context):
         props = context.scene.uvgami
         if not optcuts_installed():
-            draw_missing_engine(self.layout)
+            draw_missing_engine(self.layout, waiting_for="optcuts")
             return
 
         box = self.layout.box()

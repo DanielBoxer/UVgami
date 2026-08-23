@@ -1,5 +1,6 @@
 import json
 import functools
+import pathlib
 import platform
 import shutil
 import subprocess
@@ -93,7 +94,7 @@ def _run(args):
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
         tail = "\n".join(result.stderr.strip().splitlines()[-3:])
-        raise RuntimeError(f"{args[0]} failed: {tail}")
+        raise RuntimeError(f"{pathlib.Path(args[0]).name} failed: {tail}")
 
 
 def ensure_uv():

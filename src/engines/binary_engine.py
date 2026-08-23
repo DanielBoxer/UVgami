@@ -18,6 +18,7 @@ from .install_task import (
     DELETED_MESSAGE,
     DOWNLOADED_MESSAGE,
     InstallTask,
+    draw_error,
     draw_online_access,
     draw_progress,
     draw_update_row,
@@ -216,9 +217,9 @@ class BinaryEngine(Engine):
         elif error is not None:
             status = (error, "ERROR")
         elif get_local_engine_path(release.name) is not None:
-            status = ("Using the local build", "CHECKMARK")
+            status = ("Local build", "CHECKMARK")
         else:
-            status = ("Using the downloaded engine", "CHECKMARK")
+            status = ("Downloaded", "CHECKMARK")
 
         layout.row().label(text=status[0], icon=status[1])
 
@@ -238,5 +239,4 @@ class BinaryEngine(Engine):
             )
             delete.engine_name = release.name
 
-        if task_state["error"] is not None and task_state["owner"] == release.name:
-            layout.row().label(text=task_state["error"], icon="ERROR")
+        draw_error(layout, release.name)
