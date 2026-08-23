@@ -38,7 +38,7 @@ def _text_editor_area():
 
 class UVGAMI_OT_open_logs(bpy.types.Operator):
     bl_idname = "uvgami.open_logs"
-    bl_label = "Open Log"
+    bl_label = "Log"
     bl_description = "Show the info in a text editor, where it can be selected"
 
     def execute(self, context):
