@@ -8,7 +8,7 @@ copyright = ["2022-2026 Daniel Boxer"]
 
 id = "uvgami"
 name = "UVgami"
-version = "1.6.1"
+version = "2.0.0"
 blender_version_min = "4.3.0"
 tagline = "Automatic UV unwrapping"
 website = "https://github.com/DanielBoxer/UVgami"
@@ -19,4 +19,3 @@ tags = ["UV"]
 [permissions]
 files = "Import/export OBJ"
 network = "Download the unwrapping engines from GitHub releases"
-clipboard = "Copy info logs to the clipboard"
