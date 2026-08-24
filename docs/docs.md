@@ -14,6 +14,7 @@ Blender 4.3+
 ## Table of Contents <!-- omit in toc -->
 
 - [Installation](#installation)
+- [Automatic Updates](#automatic-updates)
 - [General Instructions](#general-instructions)
   - [Unwrap a Mesh](#unwrap-a-mesh)
   - [Unwrap Settings](#unwrap-settings)
@@ -66,6 +67,12 @@ Blender 4.3+
 3. In Blender, press `Download Engine` in the n-panel
 
 ![Download Engine](img/ui/download_engine.png)
+
+## Automatic Updates
+
+1. In Blender, go to `Preferences` > `Get Extensions` > `Repositories` > `+` > `Add Remote Repository`
+2. Set `https://uvgami.danielboxer.dev/index.json` as the URL
+3. Turn on `Check for Updates on Startup`
 
 ## General Instructions
 
