@@ -193,9 +193,7 @@ class PartuvEngine(Engine):
 
     def draw_prefs(self, layout, prefs):
         if not self.is_available():
-            layout.row().label(
-                text="PartUV needs Windows or Linux with an NVIDIA GPU", icon="ERROR"
-            )
+            layout.row().label(text="PartUV is not available on macOS", icon="ERROR")
             return
         if find_partuv_dev_repo() is not None:
             layout.row().label(text="Local build", icon="CHECKMARK")
