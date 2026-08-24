@@ -2,12 +2,6 @@
 
 UVgami is a Blender add-on that allows you to automatically unwrap your meshes with a single button click.
 
-There are three supported UV unwrapping engines. More info [here](#engines).
-
-- OptCuts (CPU): [OptCuts](https://github.com/liminchen/OptCuts) by Minchen Li (MIT License), modified to work in Blender
-- PartUV (GPU): [PartUV](https://github.com/EricWang12/PartUV) by Zhaoning Wang (Apache 2.0)
-- xatlas (CPU): [xatlas](https://github.com/jpcy/xatlas) by Jonathan Young (MIT License)
-
 Supported Operating Systems:
 
 - Windows
@@ -20,119 +14,135 @@ Blender 4.3+
 ## Table of Contents <!-- omit in toc -->
 
 - [Installation](#installation)
-- [Instructions](#instructions)
+- [General Instructions](#general-instructions)
   - [Unwrap a Mesh](#unwrap-a-mesh)
+  - [Unwrap Settings](#unwrap-settings)
   - [Unwrap Buttons](#unwrap-buttons)
-    - [Stop](#stop)
-    - [Cancel](#cancel)
-    - [Cancel All](#cancel-all)
   - [Batch Unwrap](#batch-unwrap)
   - [Joined Objects](#joined-objects)
   - [Progress Bar](#progress-bar)
-- [Settings](#settings)
-  - [Symmetry](#symmetry)
+- [General Settings](#general-settings)
+  - [Priority](#priority)
+  - [Transfer UVs](#transfer-uvs)
   - [Speed](#speed)
     - [Concurrent mode](#concurrent-mode)
     - [Timeout](#timeout)
+    - [Stack Similar](#stack-similar)
   - [Grid](#grid)
   - [Pack](#pack)
-  - [Misc](#misc)
+- [Engines](#engines)
+  - [OptCuts](#optcuts)
+    - [Visual Mode](#visual-mode)
+    - [Import UVs](#import-uvs)
+    - [Hard Surface](#hard-surface)
+    - [Weights](#weights)
+      - [Avoid Seams](#avoid-seams)
+      - [Reduce stretching](#reduce-stretching)
+      - [Generate Weights](#generate-weights)
+      - [Strength](#strength)
+    - [Proxy (in Speed panel)](#proxy-in-speed-panel)
+    - [OptCuts Limitations](#optcuts-limitations)
+  - [UV Editor Tools](#uv-editor-tools)
+    - [Island Operators](#island-operators)
+      - [Unwrap Island](#unwrap-island)
+      - [Relax Island](#relax-island)
+      - [Combine Islands](#combine-islands)
+    - [Area Operators](#area-operators)
+      - [Unwrap Area](#unwrap-area)
+      - [Relax Area](#relax-area)
+  - [PartUV](#partuv)
+    - [Segmentation mode](#segmentation-mode)
+  - [xatlas](#xatlas)
   - [Preferences](#preferences)
-    - [Autosave (recommended)](#autosave-recommended)
+    - [Autosave](#autosave)
     - [Show Popup](#show-popup)
     - [Progress Bar Option](#progress-bar-option)
-    - [Not Unwrapped Collection](#not-unwrapped-collection)
     - [Reset Settings](#reset-settings)
-- [Engines](#engines)
-- [OptCuts](#optcuts)
-  - [Engine Path](#engine-path)
-  - [Quality](#quality)
-  - [Import UVs](#import-uvs)
-  - [Preserve Mesh](#preserve-mesh)
-    - [Preserve Mesh: Full](#preserve-mesh-full)
-    - [Preserve Mesh: Partial](#preserve-mesh-partial)
-  - [Seam Restrictions](#seam-restrictions)
-    - [Weight](#weight)
-  - [Visual Mode](#visual-mode)
-  - [OptCuts Limitations](#optcuts-limitations)
-    - [High Poly Meshes](#high-poly-meshes)
-    - [Non Manifold Meshes](#non-manifold-meshes)
-- [PartUV](#partuv)
-  - [Segmentation mode](#segmentation-mode)
-  - [Threshold](#threshold)
-- [xatlas](#xatlas)
-- [Limitations](#limitations)
-  - [Triangulation](#triangulation)
-  - [Invalid Objects](#invalid-objects)
 
 ## Installation
 
-- Download `UVgami.zip` (don't extract it)
-- Drag and drop the zip file into Blender
-- The add-on will auto detect the OptCuts and xatlas engines since they are bundled.
-- For the PartUV engine, you need to install it from the add-on [settings](#partuv)
+1. Download `UVgami.zip`
+2. Drag and drop the zip file into Blender
+3. In Blender, press `Download Engine` in the n-panel
 
-## Instructions
+![Download Engine](img/ui/download_engine.png)
+
+## General Instructions
 
 ### Unwrap a Mesh
 
-- Press the `Unwrap` button
+1. Select a mesh
+2. Press the `Unwrap` button
 
-![Unwrap Button](img/unwrap.jpg)
+![Unwrap Button](img/ui/unwrap.jpg)
+
+<!--
 
 - If an unwrap is already active, you can still add new items to the queue
 
-![Unwrap Queue](img/unwrapping.jpg)
+![Unwrap Queue](img/ui/queue.jpg)
+
+-->
+
+### Unwrap Settings
+
+![Unwrap Settings Icons](img/ui/unwrap_settings_icons.png)
+
+The top of the panel shows any current non default settings that affect the unwrap. This allows you to quickly see the active settings. You can click an icon to reset that setting.
+
 
 ### Unwrap Buttons
 
-![Unwrap Buttons](img/unwrap_buttons.jpg)
+![Unwrap Buttons](img/ui/unwrap_buttons.jpg)
 
-#### Stop
-
-![Stop Button](img/stop_button.jpg)
-
-Keep what's finished and stop the rest. If the mesh is made up of multiple pieces, the finished ones will be kept and the rest will be moved to a collection so you can see what wasn't unwrapped yet.
-
-#### Cancel
-
-![Cancel Button](img/cancel_button.jpg)
-
-Cancel the unwrap and discard the UV map.
-
-#### Cancel All
-
-Cancel all active unwraps at once. This button appears when there are multiple unwraps in the queue.
+- Click the eye button to open the viewer and see the UVs update live
+- Click the stop button to stop the unwrap and get the partly finished output.
+- Click the cancel button to cancel the unwrap
 
 ### Batch Unwrap
 
 - Pressing unwrap with more than one object selected will add them all to the unwrap queue
-- Most UVgami buttons will operate on all selected objects
 
-![Batch](img/batch.jpg)
+![Batch](img/ui/batch.jpg)
 
 ### Joined Objects
 
 - If an object is made up of joined together objects, each piece of the object will be unwrapped separately and later joined together
 - This will show up as a group in the ui
 
-![Separated Objects](img/separated.jpg)
+![Separated Objects](img/ui/separated.jpg)
 
 ### Progress Bar
 
-![Progress Bar](img/progress_bar.jpg)
+![Progress Bar](img/ui/progress_bar.jpg)
 
 - The progress bar will appear in the bottom left corner of the 3D viewport
-- For Optcuts, the colours correspond to the UV stretching in the current unwrap
+- For Optcuts engine, the colours correspond to the UV stretching in the current unwrap
   - Blue: Low stretching
   - Green: Medium stretching
   - Red: High stretching
 - A progress bar with almost all blue doesn't necessarily mean that the unwrap will finish soon. Sometimes there is not much stretching, but the seams need adjustment to get the best result.
 - For the other engines, the bar just represents the amount of meshes unwrapped
 
-## Settings
+## General Settings
 
-### Symmetry
+### Priority
+
+- `Balanced`: Good balance between stretch and seam length.
+- `Less Stretch`: Less stretch (distortion) in final UV map but more seams. Slowest option.
+- `Fewer Seams`: Fewer seams in the final UV map but more stretching. Fastest option.
+
+### Transfer UVs
+
+This setting makes the finished uvs go onto the original object instead of a separate output mesh. It will overwrite the current UV map if there is one. Modifers will not be applied.
+
+Use this settings if you want to keep quad topology. However note that the seams may be slightly worse if the original seams went through the middle of any quads.
+
+If this setting is off, the original object will be hidden and the new unwrapped object will be put in a separate collection. Modifiers will be applied on the new object.
+
+![Transfer UVs](img/ui/transfer_uvs.png)
+
+<!-- ### Symmetry
 
 Use symmetry when you have a symmetrical mesh. The more axes selected, the faster the unwrap will be.
 
@@ -141,111 +151,70 @@ Use symmetry when you have a symmetrical mesh. The more axes selected, the faste
 - If `Merge` is turned on, the symmetrical UVs will overlap and merge. This is good if you want your texture mirrored. Turning `Merge` off will result in a seam down the set axes.
 - Press preview to add a plane on the set axes. This is only for making sure you have selected the correct axes.
 
-![Symmetry](img/symmetry.jpg)
+![Symmetry](img/ui/symmetry.jpg)
 
-![Symmetry](img/cow_symmetry.jpg)
+![Symmetry](img/examples/cow_symmetry.jpg)
 
-![Symmetry](img/cow_uvs.jpg)
+![Symmetry](img/examples/cow_uvs.jpg) -->
 
 ### Speed
 
 #### Concurrent mode
 
-![Concurrent](img/concurrent_mode.jpg)
+![Concurrent](img/ui/speed.jpg)
 
 Unwrap multiple meshes simultaneously, making the unwrap much faster. This also has an effect on meshes that need to be separated. The amount of meshes able to be unwrapped at the same time depends on your computer.
 
-You can choose the amount of cores to use below. For example, with 8 cores you can unwrap 8 meshes simultaneously.
+You can choose the amount of cores to use. For example, with 8 cores you can unwrap 8 meshes simultaneously. Note that the default amount of cores will probably be the fastest since if you do too many at once, it maxes the CPU and each one gets slower.
 
 #### Timeout
 
-Set a maximum time in minutes for each unwrap. If an unwrap exceeds this time, the mesh will be moved to the "UVgami Not Unwrapped" collection. Set to `0` to disable the timeout. This is useful for when unwrapping multiple things at once so if one times out the rest will still unwrap.
+Set a maximum time in minutes for each unwrap. If an unwrap times out, the mesh will be cancelled and moved to the not unwrapped collection. Set to `0` to disable the timeout. This is useful for when unwrapping multiple things at once so if one times out the rest will still unwrap.
+
+With the default OptCuts engine, the partial result will be kept on timeout.
+
+#### Stack Similar
+
+Finds repeated mesh pieces and only unwrap one, then copies the uvs to all the others. The uvs will be overlapping to save texture space.
 
 ### Grid
 
-![Grid](img/grid.jpg)
+![Grid](img/ui/grid.jpg)
 
 - Press `Add Grid` to apply a grid material to all selected objects. The shading mode will be changed to material preview.
 - Press the button to the right of the `Add Grid` button to remove the grid material from selected objects. The shading mode will be changed to solid.
 - Choose the grid type: `UV` for a standard UV grid, or `Colour` for a coloured UV grid.
-- Set the `Resolution` to control the pixel size of the grid texture (default 1024).
+- Set the `Resolution` to control the pixel size of the grid texture.
 - Turn `Auto Grid` on to automatically add a grid after unwrapping a mesh
 
 ### Pack
 
-![Pack](img/pack.jpg)
+![Pack](img/ui/pack.jpg)
 
-Packing uses the Blender packing engine. This is just to make packing a bit easier.
+Packing uses the Blender packing engine.
 
 - Use the `Margin` slider to set the space between UV islands.
 - Turn `Combine UVs` on if you want to combine UV maps of multiple objects into a single UV map.
 - Turn `Average Islands Scale` on to scale all islands based on their actual space in 3D.
 - Turn `Pack After Unwrap` on to automatically pack UVs after each unwrap finishes.
 
-### Misc
-
-![Info](img/info.jpg)
-
-- Press `Preferences` to open the UVgami preferences dialog.
-
-The info section below shows information about past unwraps. Any errors will also be shown here.
-
-- Press `Copy` to copy all info to the clipboard
-- Press `Clear` to clear all info
-
-### Preferences
-
-![Preferences](img/preferences.jpg)
-
-#### Autosave (recommended)
-
-Save the Blender file before and after unwrapping to avoid losing work.
-
-#### Show Popup
-
-Show a popup when all meshes are finished unwrapping. This might contain other information like if any objects were invalid or if there were any errors.
-
-#### Progress Bar Option
-
-Show a [progress bar](#progress-bar) in the 3D view while unwrapping.
-
-#### Not Unwrapped Collection
-
-Add meshes that failed to unwrap, were cancelled, or were stopped to a collection.
-
-#### Reset Settings
-
-Reset all UVgami properties to their default values.
-
 ## Engines
 
-Pick the engine at the top of the main panel.
+### OptCuts
 
-| Engine              | Hardware   | Install                          | Notes                                                      |
-| ------------------- | ---------- | -------------------------------- | ---------------------------------------------------------- |
-| [OptCuts](#optcuts) | CPU        | bundled                          | Default CPU engine. Least stretching and islands, but slow |
-| [PartUV](#partuv)   | GPU (CUDA) | settings, Windows and Linux only | GPU engine. Much faster than OptCuts on dense meshes       |
-| [xatlas](#xatlas)   | CPU        | bundled                          | Fast CPU engine. Sometimes better than Smart UV Project      |
+Default CPU engine. Highest quality but can be slow. Includes the UV island operators.
 
-## OptCuts
+#### Visual Mode
 
-### Engine Path
+![Visual Button](img/readme/demo.gif)
 
-To use a different OptCuts build instead of the bundled one, select it with the button on the right of the `Engine Path` field. The `optcuts` app inside the engine folder is what should be selected. Builds are on the [OptCuts engine releases](https://github.com/DanielBoxer/UVgami/releases?q=optcuts%20engine) as `optcuts-engine-X.X.X-operating-system.zip`.
+Press to enter visual mode. This will show a real time view of the unwrap as it progresses. You can zoom in or pan to inspect the unwrap. Press `ESC` or Left Click to exit visual mode. If there are multiple meshes unwrapping concurrently, press the arrow keys to switch between viewers.
 
-![Engine Path](img/engine_path.jpg)
+#### Import UVs
 
-### Quality
+![Import Uvs](img/ui/import_uvs.jpg)
 
-![Quality](img/quality.jpg)
-
-Increasing the unwrap quality will produce a UV map with less stretching. This also will make the unwrap take longer, so it's recommended to keep it at medium.
-
-### Import UVs
-
-![Import Uvs](img/import_uvs.jpg)
-
-Use the existing UV map on the input mesh as the starting point.
+Use the existing UV map on the input mesh as the starting point for the engine unwrap.
 
 Some use cases:
 
@@ -253,109 +222,158 @@ Some use cases:
 - Finishing a manual unwrap
 - Speeding up the unwrap time
 
-### Preserve Mesh
+<!-- #### Preserve Mesh
 
-![Preserve Mesh](img/preserve_mesh.jpg)
+![Preserve Mesh](img/ui/preserve_mesh.jpg)
 
 - Turn this on to keep the final mesh the same as the original mesh. This is useful when you are working with quads and don't want the final mesh to be triangulated.
 - If the mesh had any n-gons, the final result might still have some triangles. There might also be a small amount of extra stretching and overlap. The overlap is easily fixed by hand and can be found by using the Blender `Select Overlap` UV operator.
 
-#### Preserve Mesh: Full
+##### Preserve Mesh: Full
 
 - The final mesh will be fully untriangulated and the seams will be rerouted.
 - This might cause some overlap in the UV map, but this can be easily fixed manually
 
-#### Preserve Mesh: Partial
+##### Preserve Mesh: Partial
 
-- All areas of the mesh except for the seams will be untriangulated
+- All areas of the mesh except for the seams will be untriangulated -->
 
-### Seam Restrictions
+#### Hard Surface
 
-![Seam Restrictions](img/seam_restrictions.jpg)
+Hard surface mode makes seams go on sharp edges and creases of the mesh. This will cause more islands, but the seams will be hidden on the edges so it's good for hard surface models. Use this on meshes with hard edges like mechanical or man made objects. Don't use it for organic meshes like characters.
 
-#### Draw on areas of the mesh you don't want seams added <!-- omit in toc -->
+#### Weights
 
-- Press `Draw` to start drawing on the mesh
-- Red areas will be avoided and will have no seams
+![Weights](img/ui/weights.jpg)
 
-![Seam Restrictions](img/seam_restrictions_bear.jpg)
+Using weight painting, draw on areas of the mesh to add restrictions to the unwrap. The drawn red areas will have the restrictions while the blue areas won't.
 
-##### Attribution for 3D models: <!-- omit in toc -->
+##### Avoid Seams
+
+This mode makes the unwrap avoid putting seams on the painted areas. For example you can use this to avoid putting seams on a characters face.
+
+This option will cause the unwrap to take longer so you can combine it with proxy mode to speed it up.
+
+![Seam Restrictions](img/examples/bear_weights.jpg)
+
+###### Attribution for 3D models: <!-- omit in toc -->
 
 ###### "25 Animals Pack" (<https://skfb.ly/orQpx>) by MadTrollStudio is licensed under Creative Commons Attribution (<http://creativecommons.org/licenses/by/4.0/>) <!-- omit in toc -->
 
 Before seam restrictions:
 
-![Seams Before Restrictions](img/bear_before.jpg)
+![Seams Before Restrictions](img/examples/bear_before.jpg)
 
-![UVs Before Restrictions](img/bear_uvs_before.jpg)
+![UVs Before Restrictions](img/examples/bear_uvs_before.jpg)
 
 After seam restrictions:
 
-![Seams After Restrictions](img/bear_after.jpg)
+![Seams After Restrictions](img/examples/bear_after.jpg)
 
-![UVs After Restrictions](img/bear_uvs_after.jpg)
+![UVs After Restrictions](img/examples/bear_uvs_after.jpg)
 
-#### Weight
+##### Reduce stretching
 
-Use the `Weight` slider to control how strictly the seam restrictions are followed. A higher weight will avoid the restricted areas more, but will take longer to finish the unwrap.
+This mode makes the painted areas have less stretching. To compensate, the non painted areas will have more stretching. Note that you can't use this in combination with proxy mode.
 
-### Visual Mode
+##### Generate Weights
 
-![Visual Button](img/visual_button.jpg)
+Use these buttons to automatically generate weights.
 
-Press to enter visual mode. This will show a real time view of the unwrap as it progresses. All keyboard and mouse input will be blocked. Press `ESC` to exit visual mode.
+- `From View`: Paint the visible areas (relative to scene camera). Useful for avoiding seams/stretching on the front of a mesh.
+- `Crevices`: Paint the areas in concave crevices. Useful for putting seams/stretching in the hidden crevice areas of a mesh.
+- `Both`: Both from view and crevices.
 
-### OptCuts Limitations
+##### Strength
 
-#### High Poly Meshes
+Use the `Strength` slider to control how strictly the seam restrictions are followed. A higher strength will avoid the restricted areas more, but will take longer to finish the unwrap.
 
-Unwrapping high/medium poly meshes is very slow
+#### Proxy (in Speed panel)
 
-Current ways to speed up the unwrap:
+Proxy mode unwraps a decimated low poly copy of the mesh then transfers the seams onto the real mesh. This is really useful for unwrapping a slow high poly mesh. You can even unwrap a mesh that is millions of tris like this!
 
-- Use the PartUV or xatlas engine instead
-- Turn `Concurrent` mode on and increase the max cores
-- Turn `Symmetry` on if the mesh is symmetrical
-- Don't add too many seam restrictions
-- Consider lowering the quality. Though this isn't recommended as the final unwrap will probably have too much stretching.
+The proxy faces number is the amount of faces of the decimated copy. If the mesh is already under this amount, it won't be decimated, and proxy will have no effect.
 
-#### Non Manifold Meshes
+#### OptCuts Limitations
 
-OptCuts can't unwrap some non manifold meshes. For example, the Suzanne monkey head is invalid because it's non manifold. Unwrapping it will have this result, where the eyes are unwrapped succesfully, and the head was not:
+- Unwrapping high/medium poly meshes is slow. Use proxy mode to speed up unwrapping dense meshes.
+- Some meshes can't be unwrapped due to various reasons. For example, non manifold meshes.
 
-![Invalid Objects](img/invalid_objects.jpg)
+### UV Editor Tools
 
-In this case, the problem is this area, which when fixed, will unwrap properly:
+UVgami also has a panel in the UV editor n-panel for fixing parts of a finished UV map. This uses the OptCuts engine.
 
-![Suzanne](img/suzanne_non_manifold.jpg)
-![Suzanne](img/suzanne_non_manifold_2.jpg)
+These operate on selected islands and faces in the UV editor. You can select multiple faces/islands to do batch operations.
 
-## PartUV
+#### Island Operators
 
-PartUV needs CUDA and runs on Windows or Linux. Install the add-on first, then in UVgami preferences click install. See below for the two segmentation install options:
+The island operators affect the entire UV island.
 
-### Segmentation mode
+##### Unwrap Island
+
+Select a face on a UV island and press `Unwrap Island`.
+
+This will re-unwrap just that island.
+
+##### Relax Island
+
+<!-- TODO: example of suzanne mesh -->
+
+Select a face on a UV island and press `Relax Island`.
+
+This will relax all areas with high stretching in the island to reduce stretching. The seams will be unchanged.
+
+##### Combine Islands
+
+Select a face on two UV islands and press `Combine Islands.
+
+This will re-unwrap both those islands as a single combined island. Note that the two islands have to share a seam. You can check this in the 3D view by turning on `UV sync selection` and then check on the 3D model.
+
+#### Area Operators
+
+The area operators affect only the selected faces.
+
+Use the `Expand Area` setting to grow the selection automatically by a number of face rings. This helps so you can be less accurate in your selection and affect a larger area.
+
+##### Unwrap Area
+
+Re-unwrap the selected faces, adding cuts/seams if necessary.
+
+##### Relax Area
+
+Relax the selected faces to reduce stretching. The seams will stay the same.
+
+### PartUV
+
+PartUV uses the GPU and needs CUDA (Windows or Linux only). PartUV makes fewer islands and can be faster on dense meshes.
+
+#### Segmentation mode
+
+PartUV AI segmentation can't be used commercially (NVIDIA license).
 
 - AI (5 gb): Uses PartField which is an AI model to do the segmentation which has the best results. This results in less seams.
 - Geometric (200 mb): Finds seams from the mesh surface shape. Fast and decent results.
 
+### xatlas
 
-### Threshold
+xatlas is a CPU engine that is good for making quick uvs for baking lightmaps and texture painting. xatlas is very fast but will result in more islands/seams than Optcuts and PartUV. Though it can sometimes still have better results than Blender smart UV project.
 
-A lower threshold produces more UV islands.
+### Preferences
 
-## xatlas
+In the preferences you can install and delete engines and change some options.
 
-xatlas is bundled and auto detected like OptCuts. It's very fast but will result in more islands/seams than Optcuts and PartUV. Though it can still have better results than Blender smart UV project.
+#### Autosave
 
-## Limitations
+Automatically save the Blender file before unwrapping.
 
-### Triangulation
+#### Show Popup
 
-- The mesh currently needs to be triangulated in order to unwrap it (the add-on will do this automatically)
+Show a popup when all meshes are finished unwrapping. This might contain other information like if any objects were invalid or if there were any errors.
 
-### Invalid Objects
+#### Progress Bar Option
 
-- The unwrapper can't unwrap some objects for various reasons
-- If it can't unwrap an object, you will be notified, or if the object is part of a separated object, it will be moved to a "UVgami Not Unwrapped" collection
+Show a [progress bar](#progress-bar) while unwrapping.
+
+#### Reset Settings
+
+Reset all UVgami preferences and panel settings to their default values.
