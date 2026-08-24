@@ -20,6 +20,12 @@ _ENGINE_ITEMS = {
 # the getter falls back to
 NO_ENGINE_ITEM = ("NONE", "No engine installed", "", 0)
 
+PRIORITY_LABELS = {
+    "LESS_STRETCH": "Less Stretch",
+    "BALANCED": "Balanced",
+    "FEWER_SEAMS": "Fewer Seams",
+}
+
 
 def _engine_items(self, context):
     installed = installed_engines()
@@ -50,6 +56,20 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
         items=_engine_items,
         get=_engine_get,
         set=_engine_set,
+    )
+    priority: bpy.props.EnumProperty(
+        name="Priority",
+        description="Whether the unwrap favors less stretching or fewer seams",
+        items=(
+            (
+                "LESS_STRETCH",
+                "Less Stretch",
+                "Lowest stretching, most seams. Slowest",
+            ),
+            ("BALANCED", "Balanced", "Low stretching with moderate seams"),
+            ("FEWER_SEAMS", "Fewer Seams", "Fewest seams, allows visible stretching"),
+        ),
+        default="BALANCED",
     )
     import_uvs: bpy.props.BoolProperty(
         name="", description="Use the UV map on the mesh as input"
@@ -257,6 +277,8 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
 
 # each engine contributes a pointer to its own settings group, keyed by engine id
 for engine in ENGINES.values():
+    if engine.property_group is None:
+        continue
     UVGAMI_PG_properties.__annotations__[engine.id.lower()] = bpy.props.PointerProperty(
         type=engine.property_group
     )

@@ -10,7 +10,7 @@ import bpy
 
 from .. import Engine
 from ...utils.paths import get_dir_path, get_extension_dir_path
-from ...utils.ui import is_non_default, only_active
+from ...utils.ui import only_active
 from ..install_task import (
     NOT_DOWNLOADED_ERROR,
     draw_error,
@@ -75,6 +75,10 @@ def _segmentation_set(self, value):
     self["segmentation"] = value
 
 
+# 1.0 is a chart per triangle
+PRIORITY_VALUES = {"LESS_STRETCH": "1.1", "BALANCED": "1.25", "FEWER_SEAMS": "1.5"}
+
+
 class UVGAMI_PG_partuv(bpy.types.PropertyGroup):
     segmentation: bpy.props.EnumProperty(
         name="Segmentation",
@@ -82,13 +86,6 @@ class UVGAMI_PG_partuv(bpy.types.PropertyGroup):
         items=_segmentation_items,
         get=_segmentation_get,
         set=_segmentation_set,
-    )
-    threshold: bpy.props.FloatProperty(
-        name="",
-        description="Distortion threshold. Lower values cut the mesh into more UV islands",
-        default=1.25,
-        min=1.0,
-        max=10.0,
     )
 
 
@@ -162,10 +159,6 @@ class PartuvEngine(Engine):
         row.label(icon="MOD_EXPLODE", text="Segmentation")
         row.prop(props.partuv, "segmentation", text="")
 
-        row = layout.row()
-        row.label(icon="MOD_LENGTH", text="Threshold")
-        row.prop(props.partuv, "threshold")
-
     def active_settings(self, props):
         partuv = props.partuv
         return only_active(
@@ -176,12 +169,6 @@ class PartuvEngine(Engine):
                     "partuv.segmentation",
                     partuv.segmentation == "GEOMETRIC"
                     and is_ai_segmentation_available(),
-                ),
-                (
-                    "MOD_LENGTH",
-                    f"Threshold {partuv.threshold:.2f}",
-                    "partuv.threshold",
-                    is_non_default(props, "partuv.threshold"),
                 ),
             )
         )
@@ -293,7 +280,7 @@ class PartuvEngine(Engine):
             "--segmentation",
             props.partuv.segmentation.lower(),
             "--threshold",
-            f"{props.partuv.threshold:.3f}",
+            PRIORITY_VALUES[props.priority],
             # drives the progress bar and the live chart viewer
             "--visual",
         ]

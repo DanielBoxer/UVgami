@@ -89,7 +89,7 @@ def test_quality_levels_trade_seams_for_stretch(load_obj, unwrap, outputs):
     for quality in QUALITY_LEVELS:
         bpy.ops.wm.read_homefile(use_empty=True)
         load_obj("cylinder")
-        bpy.context.scene.uvgami.optcuts.quality = quality
+        bpy.context.scene.uvgami.priority = quality
         unwrap()
         (output,) = outputs().values()
         seams.append(seam_count(output))
@@ -190,14 +190,14 @@ def test_reset_settings_restores_the_defaults():
     props.margin = 0.5
     props.use_proxy = True
     props.max_cores = 1
-    props.optcuts.quality = "FEWER_SEAMS"
+    props.priority = "FEWER_SEAMS"
 
     bpy.ops.uvgami.reset_settings()
 
     assert props.margin == pytest.approx(0.001)
     assert props.use_proxy is False
     assert props.max_cores > 1
-    assert props.optcuts.quality == "BALANCED"
+    assert props.priority == "BALANCED"
 
 
 def test_summary_can_be_cleared(unwrap):

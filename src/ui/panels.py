@@ -1,11 +1,11 @@
 import bpy
 
 from ..engines import active_engine, get_engine, installed_engines
-from ..engines.optcuts import QUALITY_LABELS
 from ..engines.install_task import draw_online_access, draw_progress, task_state
 from ..job import Result
 from ..logger import logger
 from ..manager import manager
+from .props import PRIORITY_LABELS
 from ..utils.ui import (
     draw_active,
     header_icon_limit,
@@ -22,6 +22,12 @@ def unwrap_settings(props):
     engine = active_engine(props.engine)
     return engine.active_settings(props) + only_active(
         (
+            (
+                "SOLO_OFF",
+                PRIORITY_LABELS[props.priority],
+                "priority",
+                is_non_default(props, "priority"),
+            ),
             (
                 "IMPORT",
                 "Import UVs",
@@ -83,9 +89,9 @@ def fix_settings(props):
         (
             (
                 "SOLO_OFF",
-                QUALITY_LABELS[props.optcuts.quality],
-                "optcuts.quality",
-                is_non_default(props, "optcuts.quality"),
+                PRIORITY_LABELS[props.priority],
+                "priority",
+                is_non_default(props, "priority"),
             ),
             ("MOD_DECIM", "Proxy", "use_proxy", is_non_default(props, "use_proxy")),
             (
@@ -363,6 +369,9 @@ class UVGAMI_PT_main(bpy.types.Panel):
         row.prop(props, "engine", text="")
 
         engine.draw_update_notice(box)
+        row = box.row()
+        row.label(icon="SOLO_OFF", text="Priority")
+        row.prop(props, "priority", text="")
         engine.draw_settings(box, props)
 
         if engine.supports_import_uvs:
@@ -630,7 +639,7 @@ class UVGAMI_PT_island_settings(bpy.types.Panel):
 
         row = box.row()
         row.label(icon="SOLO_OFF", text="Priority")
-        row.prop(props.optcuts, "quality", text="")
+        row.prop(props, "priority", text="")
 
         # these operators always run optcuts, whatever the main panel is set to
         engine = get_engine("OPTCUTS")

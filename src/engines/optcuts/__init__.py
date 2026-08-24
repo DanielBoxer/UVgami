@@ -18,11 +18,7 @@ from .install import OPTCUTS, UVGAMI_OT_install_optcuts
 # what counts as a sharp feature
 HARD_SURFACE_ANGLE = 66
 
-QUALITY_LABELS = {
-    "LESS_STRETCH": "Less Stretch",
-    "BALANCED": "Balanced",
-    "FEWER_SEAMS": "Fewer Seams",
-}
+PRIORITY_VALUES = {"LESS_STRETCH": "4.05", "BALANCED": "4.2", "FEWER_SEAMS": "5.0"}
 
 
 class UVGAMI_PG_optcuts(bpy.types.PropertyGroup):
@@ -45,20 +41,6 @@ class UVGAMI_PG_optcuts(bpy.types.PropertyGroup):
     #     min=math.radians(1),
     #     max=math.radians(180),
     # )
-    quality: bpy.props.EnumProperty(
-        name="Priority",
-        description="Whether the unwrap favors less stretching or fewer seams",
-        items=(
-            (
-                "LESS_STRETCH",
-                "Less Stretch",
-                "Lowest stretching, longest seams. Slowest",
-            ),
-            ("BALANCED", "Balanced", "Low stretching with moderate seams"),
-            ("FEWER_SEAMS", "Fewer Seams", "Shortest seams, allows visible stretching"),
-        ),
-        default="BALANCED",
-    )
 
     @property
     def is_auto(self):
@@ -186,15 +168,11 @@ class OptcutsEngine(BinaryEngine):
     release = OPTCUTS
 
     def draw_settings(self, layout, props):
-        row = layout.row()
-        row.label(icon="SOLO_OFF", text="Priority")
-        row.prop(props.optcuts, "quality", text="")
         split = layout.split(factor=0.7)
         split.label(icon="MOD_BEVEL", text="Hard Surface")
         split.prop(props.optcuts, "use_hard_surface")
 
     def active_settings(self, props):
-        optcuts = props.optcuts
         return only_active(
             (
                 (
@@ -209,12 +187,6 @@ class OptcutsEngine(BinaryEngine):
                 #     "optcuts.hard_surface_auto",
                 #     optcuts.is_auto,
                 # ),
-                (
-                    "SOLO_OFF",
-                    QUALITY_LABELS[optcuts.quality],
-                    "optcuts.quality",
-                    is_non_default(props, "optcuts.quality"),
-                ),
             )
         )
 
@@ -264,13 +236,12 @@ class OptcutsEngine(BinaryEngine):
         return not uvs_collapsed(corner_uvs(obj.data))
 
     def build_args(self, ctx, input_path, props):
-        bounds = {"LESS_STRETCH": "4.05", "BALANCED": "4.2", "FEWER_SEAMS": "5.0"}
-        u = bounds[props.optcuts.quality]
+        u = PRIORITY_VALUES[props.priority]
         pinned = (input_path.parent / f"{input_path.stem}_fixed").is_file()
-        if pinned and props.optcuts.quality == "FEWER_SEAMS":
+        if pinned and props.priority == "FEWER_SEAMS":
             # a pinned repair under the loose bound is a no-op: the broken
             # patch already counts as feasible, so no cut gets added
-            u = bounds["BALANCED"]
+            u = PRIORITY_VALUES["BALANCED"]
         s = {5: "200", 4: "150", 3: "100", 2: "50", 1: "25"}.get(props.weight_value, "")
         shared_args = f"-u {u} -s {s}"
 

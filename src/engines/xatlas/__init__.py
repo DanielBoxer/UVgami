@@ -1,20 +1,10 @@
-import bpy
-
 from ...utils.paths import get_extension_dir_path
-from ...utils.ui import is_non_default, only_active
 from ..binary_engine import BinaryEngine
 from .install import XATLAS, UVGAMI_OT_install_xatlas
 
 
-class UVGAMI_PG_xatlas(bpy.types.PropertyGroup):
-    max_cost: bpy.props.FloatProperty(
-        name="",
-        description="Lower values cut the mesh into more UV islands",
-        default=2.0,
-        # above 10 the chart count stops dropping, xatlas' merge pass sets the floor
-        min=0.1,
-        max=10.0,
-    )
+# above 4.0 the output is identical
+PRIORITY_VALUES = {"LESS_STRETCH": "0.1", "BALANCED": "2.0", "FEWER_SEAMS": "4.0"}
 
 
 class XatlasEngine(BinaryEngine):
@@ -23,28 +13,9 @@ class XatlasEngine(BinaryEngine):
     label = "xatlas"
     description = "Fast CPU engine for baking lightmaps and texture painting"
     icon = "MESH_GRID"
-    property_group = UVGAMI_PG_xatlas
-    classes = (UVGAMI_PG_xatlas, UVGAMI_OT_install_xatlas)
+    classes = (UVGAMI_OT_install_xatlas,)
     release = XATLAS
     # xatlas packs its own atlas, so it never needs forced packing
-
-    def draw_settings(self, layout, props):
-        row = layout.row()
-        row.label(icon="UV_ISLANDSEL", text="Chart Cost")
-        row.prop(props.xatlas, "max_cost")
-
-    def active_settings(self, props):
-        max_cost = props.xatlas.max_cost
-        return only_active(
-            (
-                (
-                    "UV_ISLANDSEL",
-                    f"Chart Cost {max_cost:.2f}",
-                    "xatlas.max_cost",
-                    is_non_default(props, "xatlas.max_cost"),
-                ),
-            )
-        )
 
     def build_args(self, ctx, input_path, props):
         output_path = get_extension_dir_path() / "output" / f"{input_path.stem}.obj"
@@ -55,7 +26,7 @@ class XatlasEngine(BinaryEngine):
             "-o",
             str(output_path),
             "--max-cost",
-            f"{props.xatlas.max_cost:.4f}",
+            PRIORITY_VALUES[props.priority],
         ]
 
     def describe_failure(self, code):
