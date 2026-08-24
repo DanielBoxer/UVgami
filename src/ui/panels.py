@@ -232,7 +232,8 @@ def _draw_unwrap_groups(box, groups, active_groups):
         expand_layout = not isinstance(group_id, int)
 
         if expand_layout:
-            row.operator(
+            expand_row = row.row(align=True)
+            expand_row.operator(
                 "uvgami.expand",
                 text="",
                 icon=f"DISCLOSURE_TRI_{'DOWN' if group_id.is_expanded else 'RIGHT'}",
@@ -246,10 +247,13 @@ def _draw_unwrap_groups(box, groups, active_groups):
         # on the header too, a collapsed group hides its piece rows
         if any(u.is_stalled for u in group):
             label_text += " (stalled)"
-        row.label(
-            text=label_text,
-            icon=f"RADIOBUT_{'ON' if is_active else 'OFF'}",
-        )
+        status_icon = f"RADIOBUT_{'ON' if is_active else 'OFF'}"
+        if expand_layout:
+            expand_row.operator(
+                "uvgami.expand", text=label_text, icon=status_icon, emboss=False
+            ).job_id = group_id.job_id
+        else:
+            row.label(text=label_text, icon=status_icon)
 
         if expand_layout:
             if manager.engine.supports_viewer:
