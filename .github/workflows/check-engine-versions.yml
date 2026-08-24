@@ -7,7 +7,7 @@ on:
       - engine/optcuts/VERSION
       - engine/xatlas/VERSION
       - src/engines/optcuts/install.py
-      - src/engines/xatlas.py
+      - src/engines/xatlas/install.py
   push:
     branches:
       - master
@@ -15,7 +15,7 @@ on:
       - engine/optcuts/VERSION
       - engine/xatlas/VERSION
       - src/engines/optcuts/install.py
-      - src/engines/xatlas.py
+      - src/engines/xatlas/install.py
 
 jobs:
   check:
@@ -28,7 +28,7 @@ jobs:
             file: src/engines/optcuts/install.py
           - engine: xatlas
             constant: XATLAS_VERSION
-            file: src/engines/xatlas.py
+            file: src/engines/xatlas/install.py
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Compare ${{ matrix.engine }} versions
