@@ -41,3 +41,4 @@
 - Autosave defaults off
 - Pack after unwrap defaults on
 - Timeout defaults to 60 minutes
+- Concurrent defaults on
