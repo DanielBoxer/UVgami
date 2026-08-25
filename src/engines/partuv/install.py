@@ -17,6 +17,7 @@ from ..install_task import (
     DOWNLOADED_MESSAGE,
     InstallTask,
     offline_error,
+    parse_version,
     report_progress,
     task_state,
 )
@@ -30,6 +31,8 @@ from .paths import (
 
 # must match engine/partuv/pyproject.toml
 PARTUV_VERSION = "0.1.4"
+# see OPTCUTS_MINIMUM_VERSION for when this has to go up
+PARTUV_MINIMUM_VERSION = "0.1.0"
 PARTUV_RELEASE_API = f"https://api.github.com/repos/DanielBoxer/UVgami/releases/tags/partuv-v{PARTUV_VERSION}"
 # the hugging face original moves with its main branch
 CHECKPOINT_URL = "https://github.com/DanielBoxer/UVgami/releases/download/checkpoint/model_objaverse.ckpt"
@@ -63,6 +66,12 @@ def get_installed_partuv_version():
 def partuv_update_pending():
     version = get_installed_partuv_version()
     return version is not None and version != PARTUV_VERSION
+
+
+def partuv_too_old():
+    """Whether the installed wheel is older than the addon can call."""
+    version = parse_version(get_installed_partuv_version() or "")
+    return version is not None and version < parse_version(PARTUV_MINIMUM_VERSION)
 
 
 def find_wheel_url():
@@ -201,14 +210,15 @@ class UVGAMI_OT_install_partuv(PartuvTask, bpy.types.Operator):
 
     def invoke(self, context, event):
         ai = self.tier == "AI"
+        action = "Update" if partuv_update_pending() else "Download"
         return context.window_manager.invoke_confirm(
             self,
             event,
-            title="Download PartUV AI" if ai else "Download PartUV",
+            title=f"{action} PartUV AI" if ai else f"{action} PartUV",
             message=f"{AI_DOWNLOAD_SIZE}. The NVIDIA AI model is non-commercial only"
             if ai
             else GEOMETRIC_DOWNLOAD_SIZE,
-            confirm_text="Download",
+            confirm_text=action,
         )
 
     tier: bpy.props.EnumProperty(

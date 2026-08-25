@@ -1,7 +1,12 @@
 import bpy
 
-from ..engines import active_engine, get_engine, installed_engines
-from ..engines.install_task import draw_online_access, draw_progress, task_state
+from ..engines import ENGINES, active_engine, get_engine, installed_engines
+from ..engines.install_task import (
+    UPDATE_ICON,
+    draw_online_access,
+    draw_progress,
+    task_state,
+)
 from ..job import Result
 from ..logger import logger
 from ..manager import manager
@@ -130,16 +135,25 @@ def draw_missing_engine(layout, waiting_for=None):
     if task_state["running"] and waiting_for in (None, task_state["owner"]):
         draw_progress(box, "Downloading engine")
         return
+    # the button always downloads optcuts
+    outdated = get_engine("OPTCUTS").release.install_too_old()
     row = box.row()
     row.alignment = "CENTER"
-    row.label(text="Engine not downloaded", icon="INFO")
+    if outdated:
+        row.label(text="Engine update required", icon="FILE_REFRESH")
+    else:
+        row.label(text="Engine not downloaded", icon="INFO")
     if draw_online_access(box):
         return
     row = box.row()
     row.scale_y = 1.5
     # skip the confirmation, this is the only way to get an engine
     row.operator_context = "EXEC_DEFAULT"
-    row.operator("uvgami.install_optcuts", text="Download Engine", icon="IMPORT")
+    row.operator(
+        "uvgami.install_optcuts",
+        text="Update Engine" if outdated else "Download Engine",
+        icon=UPDATE_ICON if outdated else "IMPORT",
+    )
 
 
 SUCCESS_ICON = "COLORSET_03_VEC"
@@ -359,6 +373,10 @@ class UVGAMI_PT_main(bpy.types.Panel):
 
         box = self.layout.box()
 
+        for candidate in ENGINES.values():
+            if candidate.is_available():
+                candidate.draw_update_notice(box)
+
         row = box.row()
         row.scale_y = 2
         row.enabled = not manager.is_active
@@ -371,8 +389,6 @@ class UVGAMI_PT_main(bpy.types.Panel):
         row = box.row()
         row.label(icon="TOOL_SETTINGS", text="Engine")
         row.prop(props, "engine", text="")
-
-        engine.draw_update_notice(box)
         row = box.row()
         row.label(icon="SOLO_OFF", text="Priority")
         row.prop(props, "priority", text="")

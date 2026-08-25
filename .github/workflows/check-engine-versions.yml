@@ -46,3 +46,13 @@ jobs:
             echo "::error::$CONSTANT ($addon) != engine version ($engine). Update $FILE to match."
             exit 1
           fi
+          minimum=$(grep -m1 "^${CONSTANT%_VERSION}_MINIMUM_VERSION" "$FILE" | cut -d'"' -f2)
+          if [ -z "$minimum" ]; then
+            echo "::error::$FILE has no ${CONSTANT%_VERSION}_MINIMUM_VERSION line."
+            exit 1
+          fi
+          older=$( { echo "$minimum"; echo "$addon"; } | sort -V | head -1 )
+          if [ "$older" != "$minimum" ]; then
+            echo "::error::${CONSTANT%_VERSION}_MINIMUM_VERSION ($minimum) is newer than $CONSTANT ($addon), so every download would be refused."
+            exit 1
+          fi

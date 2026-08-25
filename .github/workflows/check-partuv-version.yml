@@ -29,3 +29,13 @@ jobs:
             echo "::error::PARTUV_VERSION ($install) != pyproject version ($pyproject). Update src/engines/partuv/install.py to match."
             exit 1
           fi
+          minimum=$(grep -m1 '^PARTUV_MINIMUM_VERSION' src/engines/partuv/install.py | cut -d'"' -f2)
+          if [ -z "$minimum" ]; then
+            echo "::error::src/engines/partuv/install.py has no PARTUV_MINIMUM_VERSION line."
+            exit 1
+          fi
+          older=$( { echo "$minimum"; echo "$install"; } | sort -V | head -1 )
+          if [ "$older" != "$minimum" ]; then
+            echo "::error::PARTUV_MINIMUM_VERSION ($minimum) is newer than PARTUV_VERSION ($install), so every download would be refused."
+            exit 1
+          fi

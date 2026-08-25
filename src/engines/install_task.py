@@ -22,8 +22,16 @@ INSTALL_AREAS = ("PREFERENCES", "VIEW_3D", "IMAGE_EDITOR")
 
 DOWNLOADED_MESSAGE = "Engine downloaded"
 DELETED_MESSAGE = "Engine deleted"
-DELETE_DESCRIPTION = "Delete the downloaded engine, so it can be downloaded again"
+DELETE_DESCRIPTION = "Delete the engine"
 NOT_DOWNLOADED_ERROR = "Engine not downloaded. Download it in the add-on preferences"
+
+
+def parse_version(version):
+    """(1, 20, 2) for "1.20.2", or None when the name is not a version."""
+    parts = version.split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
 
 
 def offline_error():
@@ -121,18 +129,22 @@ class InstallTask:
         return {"FINISHED"}
 
 
-def draw_update_row(layout, owner, default_phase, pending):
+UPDATE_ICON = "FILE_REFRESH"
+UPDATE_LABEL_SPLIT = 0.9
+
+
+def draw_update_row(layout, owner, default_phase, text, required=False):
     """Shared body for Engine.draw_update_notice: progress while this engine's
-    task runs, else the update label. Returns the row the engine puts its
-    update button on, or None when nothing should draw."""
+    task runs, else the message. text is None when no update is pending. The
+    download button for it is in the preferences, not here."""
     if task_state["running"] and task_state["owner"] == owner:
         draw_progress(layout, default_phase)
-        return None
-    if not pending:
-        return None
-    row = layout.row()
-    row.label(text="Engine update available", icon="FILE_REFRESH")
-    return row
+        return
+    if text is None:
+        return
+    split = layout.split(factor=UPDATE_LABEL_SPLIT)
+    split.label(text=text, icon="ERROR" if required else "INFO")
+    split.row().operator("uvgami.open_preferences", text="", icon="PREFERENCES")
 
 
 def draw_error(layout, owner):

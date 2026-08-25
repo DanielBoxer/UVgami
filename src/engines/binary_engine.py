@@ -9,7 +9,6 @@ from ..utils.paths import (
     get_extension_dir_path,
     get_local_engine_path,
     get_platform_tag,
-    get_preferences,
 )
 from . import Engine
 from .install_task import (
@@ -22,6 +21,8 @@ from .install_task import (
     draw_online_access,
     draw_progress,
     draw_update_row,
+    parse_version,
+    UPDATE_ICON,
     offline_error,
     report_progress,
     task_state,
@@ -41,15 +42,16 @@ class EngineRelease:
     """An engine binary published as a <name>-v<version> GitHub release. The
     addon ships no binaries, so this download is how the engine arrives."""
 
-    def __init__(self, name, label, version, download_size):
+    def __init__(self, name, label, version, minimum_version, download_size):
         self.name = name
         self.label = label
         self.version = version
+        self.minimum_version = minimum_version
         self.download_size = download_size
         self.install_op = f"uvgami.install_{name}"
 
     def install_dir(self):
-        # versioned so an addon update with a newer engine downloads again
+        # named by version, which is how installed_version reads it back
         return engine_install_root(self.name) / self.version
 
     def is_downloaded(self):
@@ -59,17 +61,39 @@ class EngineRelease:
         root = engine_install_root(self.name)
         return root.is_dir() and any(d.is_dir() for d in root.iterdir())
 
-    def installed_path(self):
-        path = self.install_dir() / get_engine_binary_name(self.name)
-        return path if path.is_file() else None
-
-    def has_old_install(self):
-        """Whether a previous engine version's download is present, meaning an
-        addon update bumped the pinned version and a redownload is due."""
+    def installed_version(self):
+        """The newest version whose binary is there, or None. A dead download
+        leaves the folder without one."""
         root = engine_install_root(self.name)
         if not root.is_dir():
-            return False
-        return any(d.is_dir() and d.name != self.version for d in root.iterdir())
+            return None
+        binary_name = get_engine_binary_name(self.name)
+        names = [
+            d.name
+            for d in root.iterdir()
+            if parse_version(d.name) is not None and (d / binary_name).is_file()
+        ]
+        return max(names, key=parse_version, default=None)
+
+    def installed_path(self):
+        version = self.installed_version()
+        if version is None or self.install_too_old():
+            return None
+        return (
+            engine_install_root(self.name) / version / get_engine_binary_name(self.name)
+        )
+
+    def installed_below(self, bound):
+        version = self.installed_version()
+        return version is not None and parse_version(version) < parse_version(bound)
+
+    def install_too_old(self):
+        """Whether the download is older than the addon can run."""
+        return self.installed_below(self.minimum_version)
+
+    def update_available(self):
+        """Whether the download still runs but a newer engine is pinned."""
+        return self.installed_below(self.version)
 
     def install(self):
         install_dir = self.install_dir()
@@ -142,9 +166,13 @@ class UVGAMI_OT_delete_engine(InstallTask, bpy.types.Operator):
 class InstallEngineTask(InstallTask):
     """Operator body for downloading one engine binary."""
 
-    bl_description = "Download the engine"
     done_message = DOWNLOADED_MESSAGE
     release = None
+
+    @classmethod
+    def description(cls, context, properties):
+        action = "Update" if cls.release.update_available() else "Download"
+        return f"{action} the engine"
 
     def precheck(self):
         if get_platform_tag() is None:
@@ -152,12 +180,13 @@ class InstallEngineTask(InstallTask):
         return offline_error()
 
     def invoke(self, context, event):
+        action = "Update" if self.release.update_available() else "Download"
         return context.window_manager.invoke_confirm(
             self,
             event,
-            title=f"Download {self.release.label}",
+            title=f"{action} {self.release.label}",
             message=self.release.download_size,
-            confirm_text="Download",
+            confirm_text=action,
         )
 
     def build_task(self):
@@ -174,7 +203,7 @@ class BinaryEngine(Engine):
         path = get_local_engine_path(self.release.name) or self.release.installed_path()
         if path is not None:
             return path, None
-        if self.release.has_old_install():
+        if self.release.install_too_old():
             return (
                 None,
                 "This update needs a newer engine. Download it in the add-on"
@@ -185,21 +214,19 @@ class BinaryEngine(Engine):
     def describe(self):
         if get_local_engine_path(self.release.name) is not None:
             return f"{self.label} {self.release.version} (local build)"
-        return f"{self.label} {self.release.version}"
+        version = self.release.installed_version() or self.release.version
+        return f"{self.label} {version}"
 
-    def update_pending(self, prefs):
-        _, error = self.validate(prefs)
-        return error is not None and self.release.has_old_install()
+    def update_pending(self):
+        if get_local_engine_path(self.release.name) is not None:
+            return False
+        return self.release.update_available()
 
     def draw_update_notice(self, layout):
-        row = draw_update_row(
-            layout,
-            self.release.name,
-            DOWNLOAD_PHASE,
-            self.update_pending(get_preferences()),
-        )
-        if row is not None:
-            row.operator(self.release.install_op, text="Update", icon="IMPORT")
+        required = self.release.install_too_old()
+        state = "required" if required else "available"
+        text = f"{self.label} update {state}" if self.update_pending() else None
+        draw_update_row(layout, self.release.name, DOWNLOAD_PHASE, text, required)
 
     def draw_prefs(self, layout, prefs):
         release = self.release
@@ -209,8 +236,10 @@ class BinaryEngine(Engine):
 
         _, error = self.validate(prefs)
         needs_download = error is not None
-        update_pending = self.update_pending(prefs)
-        if update_pending:
+        update_pending = self.update_pending()
+        if release.install_too_old():
+            status = ("Engine update required", "ERROR")
+        elif update_pending:
             status = ("Engine update available", "FILE_REFRESH")
         elif needs_download:
             status = ("Not downloaded", "X")
@@ -223,20 +252,20 @@ class BinaryEngine(Engine):
 
         layout.row().label(text=status[0], icon=status[1])
 
-        if needs_download and not draw_online_access(layout):
+        wants_download = needs_download or update_pending
+        if wants_download or release.is_downloaded():
             row = layout.row()
             row.scale_y = 1.5
-            row.operator(
-                release.install_op,
-                text="Update Engine" if update_pending else "Download Engine",
-                icon="IMPORT",
-            )
-        if release.is_downloaded():
-            row = layout.row()
-            row.scale_y = 1.5
-            delete = row.operator(
-                "uvgami.delete_engine", text="Delete Engine", icon="TRASH"
-            )
-            delete.engine_name = release.name
+            if wants_download and not draw_online_access(row):
+                row.operator(
+                    release.install_op,
+                    text="Update Engine" if update_pending else "Download Engine",
+                    icon=UPDATE_ICON if update_pending else "IMPORT",
+                )
+            if release.is_downloaded():
+                delete = row.operator(
+                    "uvgami.delete_engine", text="Delete Engine", icon="TRASH"
+                )
+                delete.engine_name = release.name
 
         draw_error(layout, release.name)

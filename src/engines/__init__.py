@@ -89,8 +89,7 @@ class Engine:
         """Draw this engine's section in the addon preferences."""
 
     def draw_update_notice(self, layout):
-        """Draw a row in the unwrap panels when an addon update bumped the
-        engine version and the new engine isn't downloaded yet."""
+        """Draw a row in the unwrap panels when a newer engine is pinned."""
 
     def batches_queue(self, props):
         """Whether queued meshes share one engine process. Batching and running

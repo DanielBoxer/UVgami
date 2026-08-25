@@ -17,6 +17,7 @@ from ..install_task import (
     draw_online_access,
     draw_progress,
     draw_update_row,
+    UPDATE_ICON,
     task_state,
 )
 from .install import (
@@ -24,6 +25,7 @@ from .install import (
     UVGAMI_OT_install_partuv,
     UVGAMI_OT_uninstall_partuv,
     get_installed_partuv_version,
+    partuv_too_old,
     partuv_update_pending,
 )
 from .paths import (
@@ -147,6 +149,12 @@ class PartuvEngine(Engine):
         repo = find_partuv_dev_repo()
         if repo is not None:
             return PartuvRun("dev", repo), None
+        if partuv_too_old():
+            return (
+                None,
+                "This update needs a newer engine. Download it in the add-on"
+                " preferences",
+            )
         if is_partuv_installed():
             return PartuvRun("installed", get_partuv_venv_path()), None
         return None, NOT_DOWNLOADED_ERROR
@@ -183,13 +191,10 @@ class PartuvEngine(Engine):
         return find_partuv_dev_repo() is None and partuv_update_pending()
 
     def draw_update_notice(self, layout):
-        row = draw_update_row(
-            layout, "partuv", "Installing PartUV", self.update_pending()
-        )
-        if row is not None:
-            row.operator("uvgami.install_partuv", text="Update", icon="IMPORT").tier = (
-                "AI" if is_partuv_ai_installed() else "GEOMETRIC"
-            )
+        required = partuv_too_old()
+        state = "required" if required else "available"
+        text = f"{self.label} update {state}" if self.update_pending() else None
+        draw_update_row(layout, "partuv", "Installing PartUV", text, required)
 
     def draw_prefs(self, layout, prefs):
         if not self.is_available():
@@ -206,7 +211,11 @@ class PartuvEngine(Engine):
         installed = is_partuv_installed()
         ai_installed = is_partuv_ai_installed()
         update_pending = partuv_update_pending()
-        if not installed:
+        if partuv_too_old():
+            layout.row().label(text="Engine update required", icon="ERROR")
+        elif update_pending:
+            layout.row().label(text="Engine update available", icon=UPDATE_ICON)
+        elif not installed:
             layout.row().label(text="Not downloaded", icon="X")
 
         # an update reinstalls the tier already there
@@ -226,7 +235,7 @@ class PartuvEngine(Engine):
                 button.scale_y = 1.5
                 if update_pending and tier == current_tier:
                     button.operator(
-                        "uvgami.install_partuv", text="Update Engine", icon="IMPORT"
+                        "uvgami.install_partuv", text="Update Engine", icon=UPDATE_ICON
                     ).tier = tier
                 elif tier_installed:
                     button.alignment = "CENTER"
