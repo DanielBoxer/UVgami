@@ -321,11 +321,230 @@ void SymDirichletEnergy::computeGradient(const TriMesh &data,
     }
 }
 
+
+// the uv hessian is zero along the two translations
+static const Eigen::Matrix<double, 6, 4> TRANSLATION_FREE_BASIS = [] {
+    Eigen::Matrix<double, 6, 4> basis;
+    const double half = 1.0 / std::sqrt(2.0), sixth = 1.0 / std::sqrt(6.0);
+    basis << half, 0.0, sixth, 0.0, 0.0, half, 0.0, sixth, -half, 0.0, sixth,
+        0.0, 0.0, -half, 0.0, sixth, 0.0, 0.0, -2.0 * sixth, 0.0, 0.0, 0.0,
+        0.0, -2.0 * sixth;
+    return basis;
+}();
+const int SECULAR_NEWTON_STEPS = 30;
+const double SECULAR_F_TOLERANCE = 1.0e-12;
+const double SECULAR_STEP_TOLERANCE = 1.0e-13;
+const double NEGLIGIBLE_EIGENVALUE = 1.0e-13;
+const double NEGATIVE_EIGENPAIR_RESIDUAL = 1.0e-12;
+
+static Eigen::Vector4d fourDimensionalCross(const Eigen::Vector4d &a,
+                                            const Eigen::Vector4d &b,
+                                            const Eigen::Vector4d &c) {
+    Eigen::Vector4d n;
+    double sign = 1.0;
+    for (int i = 0; i < 4; i++) {
+        Eigen::Matrix3d minor;
+        int column = 0;
+        for (int j = 0; j < 4; j++) {
+            if (j == i)
+                continue;
+            minor(0, column) = a[j];
+            minor(1, column) = b[j];
+            minor(2, column) = c[j];
+            column++;
+        }
+        n[i] = sign * minor.determinant();
+        sign = -sign;
+    }
+    return n;
+}
+
+// cholesky, P - shift I is positive definite for any shift below zero
+static Eigen::Vector4d solveShifted(const Eigen::Matrix4d &P, double shift,
+                                    const Eigen::Vector4d &rhs) {
+    Eigen::Matrix4d L;
+    for (int j = 0; j < 4; j++) {
+        double diagonal = P(j, j) - shift;
+        for (int k = 0; k < j; k++)
+            diagonal -= L(j, k) * L(j, k);
+        L(j, j) = std::sqrt(diagonal);
+        for (int i = j + 1; i < 4; i++) {
+            double sum = P(i, j);
+            for (int k = 0; k < j; k++)
+                sum -= L(i, k) * L(j, k);
+            L(i, j) = sum / L(j, j);
+        }
+    }
+    Eigen::Vector4d x;
+    for (int i = 0; i < 4; i++) {
+        double sum = rhs[i];
+        for (int k = 0; k < i; k++)
+            sum -= L(i, k) * x[k];
+        x[i] = sum / L(i, i);
+    }
+    for (int i = 3; i >= 0; i--) {
+        double sum = x[i];
+        for (int k = i + 1; k < 4; k++)
+            sum -= L(k, i) * x[k];
+        x[i] = sum / L(i, i);
+    }
+    return x;
+}
+
+// nearest positive semidefinite matrix in the translation-free complement.
+// P plus one negative rank-1 term beta t t^T has exactly one negative
+// eigenvalue there, the root of f(mu) = 1 + beta t^T (P - mu I)^-1 t,
+// decreasing and concave on [beta |t|^2, 0), with (P - mu I)^-1 t its
+// eigenvector. modes are scaled by their eigenvalues, the last one negative
+static void clampNegativeEigenvalue(Eigen::Matrix<double, 6, 6> &hessian,
+                                    const Eigen::Matrix<double, 6, 1> modes[4],
+                                    const double scaledEigenvalues[4]) {
+    const Eigen::Matrix<double, 6, 4> &Q = TRANSLATION_FREE_BASIS;
+    Eigen::Matrix4d P = Eigen::Matrix4d::Zero();
+    Eigen::Vector4d reducedModes[3];
+    for (int modeI = 0; modeI < 3; modeI++) {
+        reducedModes[modeI] = Q.transpose() * modes[modeI];
+        P += scaledEigenvalues[modeI] * reducedModes[modeI] *
+             reducedModes[modeI].transpose();
+    }
+    const Eigen::Vector4d t = Q.transpose() * modes[3];
+    const double beta = scaledEigenvalues[3];
+    // a rayleigh quotient is above the eigenvalue, the side newton never
+    // overshoots from, and the null direction of P always gives a negative one
+    const Eigen::Vector4d nullDirection = fourDimensionalCross(
+        reducedModes[0], reducedModes[1], reducedModes[2]).normalized();
+    const double nullQuotient = beta * std::pow(t.dot(nullDirection), 2);
+    const double twistQuotient =
+        (t.dot(P * t) + beta * std::pow(t.squaredNorm(), 2)) / t.squaredNorm();
+    double low = beta * t.squaredNorm(), high = 0.0;
+    // a twist term below rounding is noise, not a projection
+    if (-low <= NEGLIGIBLE_EIGENVALUE * P.norm())
+        return;
+    double mu = (std::min)(nullQuotient, twistQuotient);
+    if (!(mu < 0.0))
+        mu = 0.5 * low;
+    Eigen::Vector4d y = t;
+    for (int stepI = 0; stepI < SECULAR_NEWTON_STEPS; stepI++) {
+        y = solveShifted(P, mu, t);
+        const double f = 1.0 + beta * t.dot(y);
+        if (std::abs(f) <= SECULAR_F_TOLERANCE)
+            break;
+        if (f > 0.0)
+            low = mu;
+        else
+            high = mu;
+        double next = mu - f / (beta * y.squaredNorm());
+        if (std::abs(next - mu) <= SECULAR_STEP_TOLERANCE * std::abs(mu))
+            break;
+        if (!(next > low && next < high))
+            next = 0.5 * (low + high);
+        mu = next;
+    }
+    const Eigen::Matrix4d reduced = P + beta * t * t.transpose();
+    const Eigen::Vector4d x = y.normalized();
+    const double residual = (reduced * x - mu * x).norm();
+    if (mu < 0.0 && residual <= NEGATIVE_EIGENPAIR_RESIDUAL * reduced.norm()) {
+        const Eigen::Matrix<double, 6, 1> eigenvector = Q * x;
+        hessian -= mu * eigenvector * eigenvector.transpose();
+        return;
+    }
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> eigenSolver(reduced);
+    Eigen::Vector4d clamped = eigenSolver.eigenvalues();
+    for (int i = 0; i < 4; ++i)
+        if (clamped[i] < 0.0)
+            clamped[i] = 0.0;
+    const Eigen::Matrix<double, 6, 4> QV = Q * eigenSolver.eigenvectors();
+    hessian = QV * clamped.asDiagonal() * QV.transpose();
+}
+
+// analytic eigensystem of the symmetric dirichlet triangle hessian (Smith,
+// De Goes, Kim 2019, "Analytic Eigensystems for Isotropic Distortion
+// Energies", eq. 31): from the 2x2 SVD of the deformation gradient, two
+// scaling modes, the flip and the twist, only the twist eigenvalue negative
+static void projectedTriangleHessian(const TriMesh &data, int triI,
+                                     bool uniformWeight,
+                                     Eigen::Matrix<double, 6, 6> &hessian) {
+    const Eigen::Vector3i &triVInd = data.F.row(triI);
+    const Eigen::Vector2d &U1 = data.V.row(triVInd[0]);
+    const Eigen::Vector2d &U2 = data.V.row(triVInd[1]);
+    const Eigen::Vector2d &U3 = data.V.row(triVInd[2]);
+
+    // rest triangle laid flat with vertex 2 on the x axis
+    const double e0Len = std::sqrt(data.e0SqLen[triI]);
+    const double doubleArea = 2.0 * data.triArea[triI];
+    Eigen::Matrix2d restInverse;
+    restInverse << 1.0 / e0Len, -data.e0dote1[triI] / (doubleArea * e0Len),
+        0.0, e0Len / doubleArea;
+    Eigen::Matrix<double, 3, 2> vertexGradient;
+    vertexGradient.row(1) = restInverse.row(0);
+    vertexGradient.row(2) = restInverse.row(1);
+    vertexGradient.row(0) = -(vertexGradient.row(1) + vertexGradient.row(2));
+
+    Eigen::Matrix2d uvEdges;
+    uvEdges.col(0) = U2 - U1;
+    uvEdges.col(1) = U3 - U1;
+    const Eigen::Matrix2d deformation = uvEdges * restInverse;
+
+    // polar decomposition, det F > 0 since the line search rejects inversions
+    const double a = deformation(0, 0), b = deformation(0, 1);
+    const double c = deformation(1, 0), d = deformation(1, 1);
+    const double rotationNorm = std::sqrt((a + d) * (a + d) + (b - c) * (b - c));
+    Eigen::Matrix2d rotation;
+    rotation << a + d, b - c, c - b, a + d;
+    rotation /= rotationNorm;
+    const Eigen::Matrix2d stretch = rotation.transpose() * deformation;
+    const double angle =
+        0.5 * std::atan2(2.0 * stretch(0, 1), stretch(0, 0) - stretch(1, 1));
+    const double cosine = std::cos(angle), sine = std::sin(angle);
+    Eigen::Matrix2d V;
+    V << cosine, -sine, sine, cosine;
+    const Eigen::Matrix2d U = rotation * V;
+    const double s1 = stretch(0, 0) * cosine * cosine +
+                      2.0 * stretch(0, 1) * sine * cosine +
+                      stretch(1, 1) * sine * sine;
+    const double s2 = stretch(0, 0) * sine * sine -
+                      2.0 * stretch(0, 1) * sine * cosine +
+                      stretch(1, 1) * cosine * cosine;
+
+    const double I2 = s1 * s1 + s2 * s2;
+    const double I3 = s1 * s2;
+    const double I3Sq = I3 * I3;
+    double eigenvalues[4] = {1.0 + 3.0 / (s1 * s1 * s1 * s1),
+                             1.0 + 3.0 / (s2 * s2 * s2 * s2),
+                             1.0 + 1.0 / I3Sq + I2 / (I3Sq * I3),
+                             1.0 + 1.0 / I3Sq - I2 / (I3Sq * I3)};
+
+    const Eigen::Vector2d u1 = U.col(0), u2 = U.col(1);
+    const Eigen::Vector2d v1 = V.col(0), v2 = V.col(1);
+    const double invSqrt2 = 1.0 / std::sqrt(2.0);
+    const Eigen::Matrix2d eigenmatrices[4] = {
+        u1 * v1.transpose(), u2 * v2.transpose(),
+        invSqrt2 * (u1 * v2.transpose() + u2 * v1.transpose()),
+        invSqrt2 * (u2 * v1.transpose() - u1 * v2.transpose())};
+
+    // the triangle energy is twice the psi of Smith, De Goes, Kim 2019
+    const double weight =
+        2.0 * (uniformWeight ? 1.0
+                             : data.faceWeight[triI] * data.triArea[triI] /
+                                   data.surfaceArea);
+    Eigen::Matrix<double, 6, 1> modes[4];
+    double scaledEigenvalues[4];
+    hessian.setZero();
+    for (int modeI = 0; modeI < 4; modeI++) {
+        for (int vI = 0; vI < 3; vI++)
+            modes[modeI].segment<2>(vI * 2) =
+                eigenmatrices[modeI] * vertexGradient.row(vI).transpose();
+        scaledEigenvalues[modeI] = weight * eigenvalues[modeI];
+        hessian += scaledEigenvalues[modeI] * modes[modeI] * modes[modeI].transpose();
+    }
+    // only the twist term can make it indefinite
+    if (scaledEigenvalues[3] < 0.0)
+        clampNegativeEigenvalue(hessian, modes, scaledEigenvalues);
+}
+
 void SymDirichletEnergy::computeHessian(const TriMesh &data,
                                         Eigen::MatrixXd &Hessian,
                                         bool uniformWeight) const {
-    const double normalizer_div = data.surfaceArea;
-
     Hessian.resize(data.V.rows() * 2, data.V.rows() * 2);
     Hessian.setZero();
 
@@ -336,132 +555,8 @@ void SymDirichletEnergy::computeHessian(const TriMesh &data,
     std::vector<Eigen::Matrix<double, 6, 6>> triHessians(data.F.rows());
     std::vector<Eigen::Vector3i> vInds(data.F.rows());
     parallelFor((int)data.F.rows(), [&](int triI) {
-        //        for(int triI = 0; triI < data.F.rows(); triI++) {
         const Eigen::Vector3i &triVInd = data.F.row(triI);
-
-        const Eigen::Vector2d &U1 = data.V.row(triVInd[0]);
-        const Eigen::Vector2d &U2 = data.V.row(triVInd[1]);
-        const Eigen::Vector2d &U3 = data.V.row(triVInd[2]);
-
-        const Eigen::Vector2d U2m1 = U2 - U1;
-        const Eigen::Vector2d U3m1 = U3 - U1;
-
-        const double area_U = 0.5 * (U2m1[0] * U3m1[1] - U2m1[1] * U3m1[0]);
-        const double areaRatio =
-            data.triAreaSq[triI] / area_U / area_U / area_U;
-        const double dAreaRatio_div_dArea_mult = 3.0 / 2.0 * areaRatio / area_U;
-
-        const double w =
-            (uniformWeight ? 1.0
-                           : (data.faceWeight[triI] * data.triArea[triI] /
-                              normalizer_div));
-
-        const double e0SqLen_div_dbAreaSq = data.e0SqLen_div_dbAreaSq[triI];
-        const double e1SqLen_div_dbAreaSq = data.e1SqLen_div_dbAreaSq[triI];
-        const double e0dote1_div_dbAreaSq = data.e0dote1_div_dbAreaSq[triI];
-
-        // compute energy terms
-        const double leftTerm = 1.0 + data.triAreaSq[triI] / area_U / area_U;
-        const double rightTerm = (U3m1.squaredNorm() * e0SqLen_div_dbAreaSq +
-                                  U2m1.squaredNorm() * e1SqLen_div_dbAreaSq) /
-                                     2. -
-                                 U3m1.dot(U2m1) * e0dote1_div_dbAreaSq;
-
-        const Eigen::Vector2d edge_oppo1 = U3 - U2;
-        const Eigen::Vector2d edge_oppo2 = U1 - U3;
-        const Eigen::Vector2d edge_oppo3 = U2 - U1;
-        const Eigen::Vector2d edge_oppo1_Ortho =
-            Eigen::Vector2d(edge_oppo1[1], -edge_oppo1[0]);
-        const Eigen::Vector2d edge_oppo2_Ortho =
-            Eigen::Vector2d(edge_oppo2[1], -edge_oppo2[0]);
-        const Eigen::Vector2d edge_oppo3_Ortho =
-            Eigen::Vector2d(edge_oppo3[1], -edge_oppo3[0]);
-        Eigen::Matrix2d dOrtho_div_dU;
-        dOrtho_div_dU << 0.0, -1.0, 1.0, 0.0;
-
-        // compute 1st order derivatives
-        const Eigen::Vector2d dLeft1 = areaRatio * edge_oppo1_Ortho;
-        const Eigen::Vector2d dRight1 =
-            ((e0dote1_div_dbAreaSq - e0SqLen_div_dbAreaSq) * U3m1 +
-             (e0dote1_div_dbAreaSq - e1SqLen_div_dbAreaSq) * U2m1);
-
-        const Eigen::Vector2d dLeft2 = areaRatio * edge_oppo2_Ortho;
-        const Eigen::Vector2d dRight2 =
-            (e1SqLen_div_dbAreaSq * U2m1 - e0dote1_div_dbAreaSq * U3m1);
-
-        const Eigen::Vector2d dLeft3 = areaRatio * edge_oppo3_Ortho;
-        const Eigen::Vector2d dRight3 =
-            (e0SqLen_div_dbAreaSq * U3m1 - e0dote1_div_dbAreaSq * U2m1);
-
-        Eigen::Matrix<double, 6, 6> &curHessian = triHessians[triI];
-
-        // compute second order derivatives for g_U1
-        const Eigen::Matrix2d d2Left11 = dAreaRatio_div_dArea_mult *
-                                         edge_oppo1_Ortho *
-                                         edge_oppo1_Ortho.transpose();
-        const double d2Right11 = (e0SqLen_div_dbAreaSq + e1SqLen_div_dbAreaSq -
-                                  2.0 * e0dote1_div_dbAreaSq);
-        const Eigen::Matrix2d dLeft1dRight1T = dLeft1 * dRight1.transpose();
-        curHessian.block(0, 0, 2, 2) =
-            w * (d2Left11 * rightTerm + dLeft1dRight1T +
-                 d2Right11 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dLeft1dRight1T.transpose());
-
-        const Eigen::Matrix2d d2Left12 = dAreaRatio_div_dArea_mult *
-                                             edge_oppo1_Ortho *
-                                             edge_oppo2_Ortho.transpose() +
-                                         areaRatio * dOrtho_div_dU;
-        const double d2Right12 = (e0dote1_div_dbAreaSq - e1SqLen_div_dbAreaSq);
-        curHessian.block(0, 2, 2, 2) =
-            w * (d2Left12 * rightTerm + dLeft1 * dRight2.transpose() +
-                 d2Right12 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight1 * dLeft2.transpose());
-        curHessian.block(2, 0, 2, 2) = curHessian.block(0, 2, 2, 2).transpose();
-
-        const Eigen::Matrix2d d2Left13 = dAreaRatio_div_dArea_mult *
-                                             edge_oppo1_Ortho *
-                                             edge_oppo3_Ortho.transpose() +
-                                         areaRatio * (-dOrtho_div_dU);
-        const double d2Right13 = (e0dote1_div_dbAreaSq - e0SqLen_div_dbAreaSq);
-        curHessian.block(0, 4, 2, 2) =
-            w * (d2Left13 * rightTerm + dLeft1 * dRight3.transpose() +
-                 d2Right13 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight1 * dLeft3.transpose());
-        curHessian.block(4, 0, 2, 2) = curHessian.block(0, 4, 2, 2).transpose();
-
-        // compute second order derivatives for g_U2
-        const Eigen::Matrix2d d2Left22 = dAreaRatio_div_dArea_mult *
-                                         edge_oppo2_Ortho *
-                                         edge_oppo2_Ortho.transpose();
-        const double d2Right22 = e1SqLen_div_dbAreaSq;
-        curHessian.block(2, 2, 2, 2) =
-            w * (d2Left22 * rightTerm + dLeft2 * dRight2.transpose() +
-                 d2Right22 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight2 * dLeft2.transpose());
-
-        const Eigen::Matrix2d d2Left23 = dAreaRatio_div_dArea_mult *
-                                             edge_oppo2_Ortho *
-                                             edge_oppo3_Ortho.transpose() +
-                                         areaRatio * dOrtho_div_dU;
-        const double d2Right23 = -e0dote1_div_dbAreaSq;
-        curHessian.block(2, 4, 2, 2) =
-            w * (d2Left23 * rightTerm + dLeft2 * dRight3.transpose() +
-                 d2Right23 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight2 * dLeft3.transpose());
-        curHessian.block(4, 2, 2, 2) = curHessian.block(2, 4, 2, 2).transpose();
-
-        // compute second order derivatives for g_U3
-        const Eigen::Matrix2d d2Left33 = dAreaRatio_div_dArea_mult *
-                                         edge_oppo3_Ortho *
-                                         edge_oppo3_Ortho.transpose();
-        const double d2Right33 = e0SqLen_div_dbAreaSq;
-        curHessian.block(4, 4, 2, 2) =
-            w * (d2Left33 * rightTerm + dLeft3 * dRight3.transpose() +
-                 d2Right33 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight3 * dLeft3.transpose());
-
-        // project to nearest SPD matrix
-        IglUtils::makePDTriangleHessian(curHessian);
+        projectedTriangleHessian(data, triI, uniformWeight, triHessians[triI]);
 
         Eigen::Vector3i &vInd = vInds[triI];
         vInd = triVInd;
@@ -470,7 +565,6 @@ void SymDirichletEnergy::computeHessian(const TriMesh &data,
                 vInd[vI] = -1;
             }
         }
-        //        }
     });
     for (int triI = 0; triI < data.F.rows(); triI++)
         IglUtils::addBlockToMatrix(triHessians[triI], vInds[triI], 2, Hessian);
@@ -488,8 +582,6 @@ void SymDirichletEnergy::computeHessian(const TriMesh &data,
 void SymDirichletEnergy::computeHessian(const TriMesh &data, Eigen::VectorXd *V,
                                         Eigen::VectorXi *I, Eigen::VectorXi *J,
                                         bool uniformWeight) const {
-    const double normalizer_div = data.surfaceArea;
-
     //        std::cout << "computing entry value..." << std::endl;
     //        clock_t start = clock();
     std::vector<char> isFixedVert(data.V.rows(), 0);
@@ -499,132 +591,8 @@ void SymDirichletEnergy::computeHessian(const TriMesh &data, Eigen::VectorXd *V,
     std::vector<Eigen::Matrix<double, 6, 6>> triHessians(data.F.rows());
     std::vector<Eigen::Vector3i> vInds(data.F.rows());
     parallelFor((int)data.F.rows(), [&](int triI) {
-        //        for(int triI = 0; triI < data.F.rows(); triI++) {
         const Eigen::Vector3i &triVInd = data.F.row(triI);
-
-        const Eigen::Vector2d &U1 = data.V.row(triVInd[0]);
-        const Eigen::Vector2d &U2 = data.V.row(triVInd[1]);
-        const Eigen::Vector2d &U3 = data.V.row(triVInd[2]);
-
-        const Eigen::Vector2d U2m1 = U2 - U1;
-        const Eigen::Vector2d U3m1 = U3 - U1;
-
-        const double area_U = 0.5 * (U2m1[0] * U3m1[1] - U2m1[1] * U3m1[0]);
-        const double areaRatio =
-            data.triAreaSq[triI] / area_U / area_U / area_U;
-        const double dAreaRatio_div_dArea_mult = 3.0 / 2.0 * areaRatio / area_U;
-
-        const double w =
-            (uniformWeight ? 1.0
-                           : (data.faceWeight[triI] * data.triArea[triI] /
-                              normalizer_div));
-
-        const double e0SqLen_div_dbAreaSq = data.e0SqLen_div_dbAreaSq[triI];
-        const double e1SqLen_div_dbAreaSq = data.e1SqLen_div_dbAreaSq[triI];
-        const double e0dote1_div_dbAreaSq = data.e0dote1_div_dbAreaSq[triI];
-
-        // compute energy terms
-        const double leftTerm = 1.0 + data.triAreaSq[triI] / area_U / area_U;
-        const double rightTerm = (U3m1.squaredNorm() * e0SqLen_div_dbAreaSq +
-                                  U2m1.squaredNorm() * e1SqLen_div_dbAreaSq) /
-                                     2. -
-                                 U3m1.dot(U2m1) * e0dote1_div_dbAreaSq;
-
-        const Eigen::Vector2d edge_oppo1 = U3 - U2;
-        const Eigen::Vector2d edge_oppo2 = U1 - U3;
-        const Eigen::Vector2d edge_oppo3 = U2 - U1;
-        const Eigen::Vector2d edge_oppo1_Ortho =
-            Eigen::Vector2d(edge_oppo1[1], -edge_oppo1[0]);
-        const Eigen::Vector2d edge_oppo2_Ortho =
-            Eigen::Vector2d(edge_oppo2[1], -edge_oppo2[0]);
-        const Eigen::Vector2d edge_oppo3_Ortho =
-            Eigen::Vector2d(edge_oppo3[1], -edge_oppo3[0]);
-        Eigen::Matrix2d dOrtho_div_dU;
-        dOrtho_div_dU << 0.0, -1.0, 1.0, 0.0;
-
-        // compute 1st order derivatives
-        const Eigen::Vector2d dLeft1 = areaRatio * edge_oppo1_Ortho;
-        const Eigen::Vector2d dRight1 =
-            ((e0dote1_div_dbAreaSq - e0SqLen_div_dbAreaSq) * U3m1 +
-             (e0dote1_div_dbAreaSq - e1SqLen_div_dbAreaSq) * U2m1);
-
-        const Eigen::Vector2d dLeft2 = areaRatio * edge_oppo2_Ortho;
-        const Eigen::Vector2d dRight2 =
-            (e1SqLen_div_dbAreaSq * U2m1 - e0dote1_div_dbAreaSq * U3m1);
-
-        const Eigen::Vector2d dLeft3 = areaRatio * edge_oppo3_Ortho;
-        const Eigen::Vector2d dRight3 =
-            (e0SqLen_div_dbAreaSq * U3m1 - e0dote1_div_dbAreaSq * U2m1);
-
-        Eigen::Matrix<double, 6, 6> &curHessian = triHessians[triI];
-
-        // compute second order derivatives for g_U1
-        const Eigen::Matrix2d d2Left11 = dAreaRatio_div_dArea_mult *
-                                         edge_oppo1_Ortho *
-                                         edge_oppo1_Ortho.transpose();
-        const double d2Right11 = (e0SqLen_div_dbAreaSq + e1SqLen_div_dbAreaSq -
-                                  2.0 * e0dote1_div_dbAreaSq);
-        const Eigen::Matrix2d dLeft1dRight1T = dLeft1 * dRight1.transpose();
-        curHessian.block(0, 0, 2, 2) =
-            w * (d2Left11 * rightTerm + dLeft1dRight1T +
-                 d2Right11 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dLeft1dRight1T.transpose());
-
-        const Eigen::Matrix2d d2Left12 = dAreaRatio_div_dArea_mult *
-                                             edge_oppo1_Ortho *
-                                             edge_oppo2_Ortho.transpose() +
-                                         areaRatio * dOrtho_div_dU;
-        const double d2Right12 = (e0dote1_div_dbAreaSq - e1SqLen_div_dbAreaSq);
-        curHessian.block(0, 2, 2, 2) =
-            w * (d2Left12 * rightTerm + dLeft1 * dRight2.transpose() +
-                 d2Right12 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight1 * dLeft2.transpose());
-        curHessian.block(2, 0, 2, 2) = curHessian.block(0, 2, 2, 2).transpose();
-
-        const Eigen::Matrix2d d2Left13 = dAreaRatio_div_dArea_mult *
-                                             edge_oppo1_Ortho *
-                                             edge_oppo3_Ortho.transpose() +
-                                         areaRatio * (-dOrtho_div_dU);
-        const double d2Right13 = (e0dote1_div_dbAreaSq - e0SqLen_div_dbAreaSq);
-        curHessian.block(0, 4, 2, 2) =
-            w * (d2Left13 * rightTerm + dLeft1 * dRight3.transpose() +
-                 d2Right13 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight1 * dLeft3.transpose());
-        curHessian.block(4, 0, 2, 2) = curHessian.block(0, 4, 2, 2).transpose();
-
-        // compute second order derivatives for g_U2
-        const Eigen::Matrix2d d2Left22 = dAreaRatio_div_dArea_mult *
-                                         edge_oppo2_Ortho *
-                                         edge_oppo2_Ortho.transpose();
-        const double d2Right22 = e1SqLen_div_dbAreaSq;
-        curHessian.block(2, 2, 2, 2) =
-            w * (d2Left22 * rightTerm + dLeft2 * dRight2.transpose() +
-                 d2Right22 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight2 * dLeft2.transpose());
-
-        const Eigen::Matrix2d d2Left23 = dAreaRatio_div_dArea_mult *
-                                             edge_oppo2_Ortho *
-                                             edge_oppo3_Ortho.transpose() +
-                                         areaRatio * dOrtho_div_dU;
-        const double d2Right23 = -e0dote1_div_dbAreaSq;
-        curHessian.block(2, 4, 2, 2) =
-            w * (d2Left23 * rightTerm + dLeft2 * dRight3.transpose() +
-                 d2Right23 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight2 * dLeft3.transpose());
-        curHessian.block(4, 2, 2, 2) = curHessian.block(2, 4, 2, 2).transpose();
-
-        // compute second order derivatives for g_U3
-        const Eigen::Matrix2d d2Left33 = dAreaRatio_div_dArea_mult *
-                                         edge_oppo3_Ortho *
-                                         edge_oppo3_Ortho.transpose();
-        const double d2Right33 = e0SqLen_div_dbAreaSq;
-        curHessian.block(4, 4, 2, 2) =
-            w * (d2Left33 * rightTerm + dLeft3 * dRight3.transpose() +
-                 d2Right33 * leftTerm * Eigen::Matrix2d::Identity() +
-                 dRight3 * dLeft3.transpose());
-
-        // project to nearest SPD matrix
-        IglUtils::makePDTriangleHessian(curHessian);
+        projectedTriangleHessian(data, triI, uniformWeight, triHessians[triI]);
 
         Eigen::Vector3i &vInd = vInds[triI];
         vInd = triVInd;
@@ -633,7 +601,6 @@ void SymDirichletEnergy::computeHessian(const TriMesh &data, Eigen::VectorXd *V,
                 vInd[vI] = -1;
             }
         }
-        //        }
     });
     // size the triplet arrays once and fill disjoint slices in parallel;
     // the per-triangle offsets keep the exact order of serial appends

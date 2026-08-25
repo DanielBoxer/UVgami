@@ -69,34 +69,6 @@ class IglUtils {
                                     Eigen::Ref<const Eigen::VectorXi> index,
                                     int dim, Eigen::MatrixXd &mtr);
 
-    // nearest positive semidefinite matrix to a triangle's 6x6 uv hessian,
-    // negative eigenvalues clamped to zero. the energy is translation
-    // invariant, so the two uniform shifts are a null space and the eigen
-    // solve happens in the 4-dimensional complement (Q spans it, so
-    // H == Q (Q^T H Q) Q^T). the 6x6 solve was half the cpu of a run
-    static void makePDTriangleHessian(Eigen::Matrix<double, 6, 6> &symMtr) {
-        static const Eigen::Matrix<double, 6, 4> Q = [] {
-            Eigen::Matrix<double, 6, 6> shiftsFirst =
-                Eigen::Matrix<double, 6, 6>::Zero();
-            shiftsFirst(0, 0) = shiftsFirst(2, 0) = shiftsFirst(4, 0) = 1.0;
-            shiftsFirst(1, 1) = shiftsFirst(3, 1) = shiftsFirst(5, 1) = 1.0;
-            shiftsFirst.block<6, 4>(0, 2) =
-                Eigen::Matrix<double, 6, 4>::Identity();
-            Eigen::HouseholderQR<Eigen::Matrix<double, 6, 6>> qr(shiftsFirst);
-            const Eigen::Matrix<double, 6, 6> full = qr.householderQ();
-            return Eigen::Matrix<double, 6, 4>(full.rightCols<4>());
-        }();
-        const Eigen::Matrix4d reduced = Q.transpose() * symMtr * Q;
-        Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> eigenSolver(reduced);
-        if (eigenSolver.eigenvalues()[0] >= 0.0)
-            return;
-        Eigen::Vector4d clamped = eigenSolver.eigenvalues();
-        for (int i = 0; i < 4 && clamped[i] < 0.0; ++i)
-            clamped[i] = 0.0;
-        const Eigen::Matrix<double, 6, 4> QV = Q * eigenSolver.eigenvectors();
-        symMtr = QV * clamped.asDiagonal() * QV.transpose();
-    }
-
     static double computeRotAngle(const Eigen::RowVector2d &from,
                                   const Eigen::RowVector2d &to);
 
