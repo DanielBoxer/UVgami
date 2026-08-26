@@ -79,18 +79,24 @@ void Optimizer::setAllowEDecRelTol(bool p_allowEDecRelTol) {
     allowEDecRelTol = p_allowEDecRelTol;
 }
 
+void Optimizer::rebuildScaffold(void) {
+    scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
+    result.scaffold = &scaffold;
+    // the dense solver never reads the merged pattern
+    if (useDense)
+        return;
+    scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
+    scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
+}
+
 void Optimizer::precompute(void) {
     result = data0;
-    if (scaffolding) {
-        scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
-        result.scaffold = &scaffold;
-        scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
-        scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-    }
+    if (scaffolding)
+        rebuildScaffold();
     computeHessian(result, scaffold);
     if (useDense) {
         if (!needRefactorize)
-            denseSolver = Hessian.ldlt();
+            denseSolver.compute(Hessian);
     } else {
         linSysSolver->set_type(pardisoThreadAmt, -2);
         linSysSolver->set_pattern(
@@ -135,14 +141,8 @@ int Optimizer::solve(int maxIter) {
         if (propagateFracture > 0) {
             if (!createFracture(lastEDec, propagateFracture)) {
                 // always perform the one decreasing E_w more
-                if (scaffolding) {
-                    scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold,
-                                        bnd_scaffold);
-                    result.scaffold = &scaffold;
-                    scaffold.mergeVNeighbor(result.vNeighbor,
-                                            vNeighbor_withScaf);
-                    scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-                }
+                if (scaffolding)
+                    rebuildScaffold();
 
                 if (lastPropagate) {
                     lastPropagate = false;
@@ -152,13 +152,8 @@ int Optimizer::solve(int maxIter) {
                 lastPropagate = true;
             }
         } else {
-            if (scaffolding) {
-                scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold,
-                                    bnd_scaffold);
-                result.scaffold = &scaffold;
-                scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
-                scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-            }
+            if (scaffolding)
+                rebuildScaffold();
         }
     }
     return 0;
@@ -173,7 +168,7 @@ void Optimizer::updatePrecondMtrAndFactorize(void) {
     // std::endl;
     computeHessian(result, scaffold);
     if (useDense) {
-        denseSolver = Hessian.ldlt();
+        denseSolver.compute(Hessian);
     } else {
         linSysSolver->update_a(I_mtr, J_mtr, V_mtr);
         linSysSolver->factorize();
@@ -184,22 +179,14 @@ void Optimizer::setConfig(const TriMesh &config, int iterNum, int p_topoIter) {
     topoIter = p_topoIter;
     globalIterNum = iterNum;
     result = config;
-    if (scaffolding) {
-        scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
-        result.scaffold = &scaffold;
-        scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
-        scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-    }
+    if (scaffolding)
+        rebuildScaffold();
     updateEnergyData();
 }
 void Optimizer::setScaffolding(bool p_scaffolding) {
     scaffolding = p_scaffolding;
-    if (scaffolding) {
-        scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
-        result.scaffold = &scaffold;
-        scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
-        scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-    }
+    if (scaffolding)
+        rebuildScaffold();
 }
 
 void Optimizer::updateEnergyData(bool updateEVal, bool updateGradient,
@@ -227,7 +214,7 @@ void Optimizer::updateEnergyData(bool updateEVal, bool updateGradient,
         computeHessian(result, scaffold);
         if (useDense) {
             if (!needRefactorize)
-                denseSolver = Hessian.ldlt();
+                denseSolver.compute(Hessian);
         } else {
             linSysSolver->set_pattern(
                 scaffolding ? vNeighbor_withScaf : result.vNeighbor,
@@ -289,12 +276,8 @@ bool Optimizer::createFracture(int opType, const std::vector<int> &path,
         assert(0);
         break;
     }
-    if (scaffolding) {
-        scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
-        result.scaffold = &scaffold;
-        scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
-        scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-    }
+    if (scaffolding)
+        rebuildScaffold();
     updateEnergyData(true, false, true);
     fractureInitiated = true;
     if (allowPropagate)
@@ -308,12 +291,8 @@ bool Optimizer::stitchIslands(void) {
     // data_findExtrema = result;
     if (!result.stitchIsland())
         return false;
-    if (scaffolding) {
-        scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
-        result.scaffold = &scaffold;
-        scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
-        scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-    }
+    if (scaffolding)
+        rebuildScaffold();
     updateEnergyData(true, false, true);
     fractureInitiated = true;
     return true;
@@ -322,12 +301,8 @@ bool Optimizer::stitchIslands(void) {
 bool Optimizer::zipStitched(void) {
     if (!result.zipStitchedSeam())
         return false;
-    if (scaffolding) {
-        scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
-        result.scaffold = &scaffold;
-        scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
-        scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-    }
+    if (scaffolding)
+        rebuildScaffold();
     updateEnergyData(true, false, true);
     return true;
 }
@@ -355,13 +330,8 @@ bool Optimizer::createFracture(double stressThres, int propType,
         break;
     }
     if (changed) {
-        if (scaffolding) {
-            scaffold =
-                Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
-            result.scaffold = &scaffold;
-            scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
-            scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
-        }
+        if (scaffolding)
+            rebuildScaffold();
         updateEnergyData(true, false, true);
         fractureInitiated = true;
         if (allowPropagate && (propType == 0)) {
@@ -393,7 +363,7 @@ bool Optimizer::solve_oneStep(void) {
         }
         try {
             if (useDense)
-                denseSolver = Hessian.ldlt();
+                denseSolver.compute(Hessian);
             else
                 linSysSolver->factorize();
         } catch (std::exception e) {
@@ -578,23 +548,16 @@ void Optimizer::computeHessian(const TriMesh &data,
         J_mtr.resize(0);
         V_mtr.resize(0);
         for (int eI = 0; eI < energyTerms.size(); eI++) {
-            Eigen::VectorXi I, J;
-            Eigen::VectorXd V;
-            energyTerms[eI]->computeHessian(data, &V, &I, &J);
-            V *= energyParams[eI];
-            I_mtr.conservativeResize(I_mtr.size() + I.size());
-            I_mtr.bottomRows(I.size()) = I;
-            J_mtr.conservativeResize(J_mtr.size() + J.size());
-            J_mtr.bottomRows(J.size()) = J;
-            V_mtr.conservativeResize(V_mtr.size() + V.size());
-            V_mtr.bottomRows(V.size()) = V;
+            const Eigen::Index start = V_mtr.size();
+            energyTerms[eI]->computeHessian(data, &V_mtr, &I_mtr, &J_mtr);
+            V_mtr.tail(V_mtr.size() - start) *= energyParams[eI];
         }
         if (scaffolding) {
             SymDirichletEnergy SD;
-            Eigen::VectorXi I, J;
-            Eigen::VectorXd V;
-            SD.computeHessian(scaffoldData.airMesh, &V, &I, &J, true);
-            scaffoldData.augmentProxyMatrix(I_mtr, J_mtr, V_mtr, I, J, V,
+            const Eigen::Index airStart = V_mtr.size();
+            SD.computeHessian(scaffoldData.airMesh, &V_mtr, &I_mtr, &J_mtr,
+                              true);
+            scaffoldData.augmentProxyMatrix(I_mtr, J_mtr, V_mtr, airStart,
                                             w_scaf / scaffold.airMesh.F.rows());
         }
     }

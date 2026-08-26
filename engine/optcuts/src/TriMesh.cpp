@@ -10,6 +10,7 @@
 #include <tbb/tbb.h>
 
 #include "TriMesh.hpp"
+#include <climits>
 #include "IglUtils.hpp"
 #include "SymDirichletEnergy.hpp"
 #include "Optimizer.hpp"
@@ -275,12 +276,7 @@ void TriMesh::computeLaplacianMtr(void) {
     LaplacianMtr.makeCompressed();
 }
 
-void TriMesh::computeFeatures(bool multiComp, bool resetFixedV) {
-    if (resetFixedV) {
-        fixedVert.clear();
-        fixedVert.insert(0);
-    }
-
+void TriMesh::computeTriangleFeatures(void) {
     boundaryEdge.resize(cohE.rows());
     edgeLen.resize(cohE.rows());
     for (int cohI = 0; cohI < cohE.rows(); cohI++) {
@@ -306,8 +302,6 @@ void TriMesh::computeFeatures(bool multiComp, bool resetFixedV) {
     e0SqLen_div_dbAreaSq.resize(F.rows());
     e1SqLen_div_dbAreaSq.resize(F.rows());
     e0dote1_div_dbAreaSq.resize(F.rows());
-    std::vector<Eigen::RowVector3d> vertNormals(V_rest.rows(),
-                                                Eigen::Vector3d::Zero());
     Eigen::VectorXd longestSq(F.rows());
     int zeroAreaAmt = 0;
     for (int triI = 0; triI < F.rows(); triI++) {
@@ -367,14 +361,9 @@ void TriMesh::computeFeatures(bool multiComp, bool resetFixedV) {
             e1SqLen_div_dbAreaSq[triI] = e1SqLen[triI] / 2. / triAreaSq[triI];
             e0dote1_div_dbAreaSq[triI] = e0dote1[triI] / 2. / triAreaSq[triI];
         }
-        vertNormals[triVInd[0]] += normalVec;
-        vertNormals[triVInd[1]] += normalVec;
-        vertNormals[triVInd[2]] += normalVec;
     }
     avgEdgeLen = igl::avg_edge_length(V_rest, F);
     virtualRadius = std::sqrt(surfaceArea / M_PI);
-    for (auto &vNI : vertNormals)
-        vNI.normalize();
 
     // std::cout << "avg edge length = " << avgEdgeLen << std::endl;
     // std::cout << "triNormal validity: " << !!triNormal.rowwise().sum().sum()
@@ -404,6 +393,15 @@ void TriMesh::computeFeatures(bool multiComp, bool resetFixedV) {
                 bbox(1, dimI) = v[dimI];
         }
     }
+}
+
+void TriMesh::computeFeatures(bool multiComp, bool resetFixedV) {
+    if (resetFixedV) {
+        fixedVert.clear();
+        fixedVert.insert(0);
+    }
+
+    computeTriangleFeatures();
 
     edge2Tri.clear();
     vNeighbor.resize(0);
@@ -2328,6 +2326,45 @@ bool TriMesh::isBoundaryVert(int vI, int vI_neighbor,
             return true;
         }
     } while (1);
+}
+
+// same loops and vertex order as igl::boundary_loop, Triangle's output
+// depends on the order
+void TriMesh::boundaryLoops(std::vector<std::vector<int>> &loops) const {
+    loops.clear();
+    // outgoing boundary edges per vertex as (triangle, end vertex)
+    std::vector<std::vector<std::pair<int, int>>> outgoing(V.rows());
+    std::vector<char> unvisited(V.rows(), 0);
+    for (const auto &edgeTri : edge2Tri) {
+        const std::pair<int, int> &edge = edgeTri.first;
+        if (edge2Tri.count(std::pair<int, int>(edge.second, edge.first)))
+            continue;
+        outgoing[edge.first].emplace_back(edgeTri.second, edge.second);
+        unvisited[edge.first] = unvisited[edge.second] = 1;
+    }
+    for (int start = 0; start < V.rows(); start++) {
+        if (!unvisited[start])
+            continue;
+        std::vector<int> loop(1, start);
+        unvisited[start] = 0;
+        int vI = start;
+        while (true) {
+            // igl walks the lowest indexed triangle first
+            int next = -1, nextTri = INT_MAX;
+            for (const auto &triEnd : outgoing[vI]) {
+                if (unvisited[triEnd.second] && triEnd.first < nextTri) {
+                    nextTri = triEnd.first;
+                    next = triEnd.second;
+                }
+            }
+            if (next < 0)
+                break;
+            loop.push_back(next);
+            unvisited[next] = 0;
+            vI = next;
+        }
+        loops.emplace_back(std::move(loop));
+    }
 }
 
 bool TriMesh::isBoundaryVert(int vI) const {

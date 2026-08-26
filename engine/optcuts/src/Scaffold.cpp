@@ -27,7 +27,7 @@ Scaffold::Scaffold(const TriMesh &mesh, Eigen::MatrixXd UV_bnds,
     if (E.rows() == 0) {
         countTime = true;
         std::vector<std::vector<int>> bnd_all;
-        igl::boundary_loop(mesh.F, bnd_all);
+        mesh.boundaryLoops(bnd_all);
         assert(bnd_all.size());
 
         int curBndVAmt = 0;
@@ -143,7 +143,11 @@ Scaffold::Scaffold(const TriMesh &mesh, Eigen::MatrixXd UV_bnds,
     airMesh.areaThres_AM =
         std::sqrt(3.0) / 4.0 * edgeLen_eps *
         edgeLen_eps; // for preventing degenerate air mesh triangles
-    airMesh.computeFeatures();
+    // a local solve never reads the air mesh adjacency
+    if (fixAMBoundary)
+        airMesh.computeTriangleFeatures();
+    else
+        airMesh.computeFeatures();
 
     localVI2Global = bnd;
     localVI2Global.conservativeResize(airMesh.V.rows());
@@ -196,25 +200,14 @@ void Scaffold::augmentGradient(Eigen::VectorXd &gradient,
 }
 
 void Scaffold::augmentProxyMatrix(Eigen::VectorXi &I, Eigen::VectorXi &J,
-                                  Eigen::VectorXd &V,
-                                  const Eigen::VectorXi &I_scaf,
-                                  const Eigen::VectorXi &J_scaf,
-                                  const Eigen::VectorXd &V_scaf,
+                                  Eigen::VectorXd &V, Eigen::Index airStart,
                                   double w_scaf) const {
     assert(w_scaf > 0.0);
 
-    int tupleSize0 = I.size();
-
-    V.conservativeResize(tupleSize0 + V_scaf.size());
-    V.bottomRows(V_scaf.size()) = w_scaf * V_scaf;
-
-    I.conservativeResize(tupleSize0 + I_scaf.size());
-    J.conservativeResize(tupleSize0 + J_scaf.size());
-    for (int tupleI = 0; tupleI < I_scaf.size(); tupleI++) {
-        I[tupleI + tupleSize0] =
-            localVI2Global[I_scaf[tupleI] / 2] * 2 + I_scaf[tupleI] % 2;
-        J[tupleI + tupleSize0] =
-            localVI2Global[J_scaf[tupleI] / 2] * 2 + J_scaf[tupleI] % 2;
+    V.tail(V.size() - airStart) *= w_scaf;
+    for (Eigen::Index tupleI = airStart; tupleI < I.size(); tupleI++) {
+        I[tupleI] = localVI2Global[I[tupleI] / 2] * 2 + I[tupleI] % 2;
+        J[tupleI] = localVI2Global[J[tupleI] / 2] * 2 + J[tupleI] % 2;
     }
 }
 void Scaffold::augmentProxyMatrix(Eigen::MatrixXd &P,

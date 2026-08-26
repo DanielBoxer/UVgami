@@ -77,6 +77,8 @@ class TriMesh {
 
   public: // API
     void computeFeatures(bool multiComp = false, bool resetFixedV = false);
+    // the rest shape terms only, no adjacency
+    void computeTriangleFeatures(void);
     void updateFeatures(void);
     void resetFixedVert(const std::set<int> &p_fixedVert);
     void buildCohEfromRecord(const Eigen::MatrixXi &cohERecord);
@@ -150,6 +152,7 @@ class TriMesh {
                         std::pair<int, int> &boundaryEdge,
                         bool toBound = true) const;
     bool isBoundaryVert(int vI) const;
+    void boundaryLoops(std::vector<std::vector<int>> &loops) const;
 
     bool cutLeavesPinlessPiece(const std::vector<int> &path) const;
     // whether a split or merge queried on an earlier mesh still fits the

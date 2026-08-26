@@ -64,6 +64,15 @@ void EigenLibSolver<vectorTypeI, vectorTypeS>::update_a(const vectorTypeI &II,
 template <typename vectorTypeI, typename vectorTypeS>
 void EigenLibSolver<vectorTypeI, vectorTypeS>::analyze_pattern(void) {
     if (!useDense) {
+        // the same pattern gives the same ordering
+        const bool samePattern = analyzedIa.size() == Base::ia.size() &&
+                                 analyzedJa.size() == Base::ja.size() &&
+                                 analyzedIa == Base::ia &&
+                                 analyzedJa == Base::ja;
+        if (samePattern)
+            return;
+        analyzedIa = Base::ia;
+        analyzedJa = Base::ja;
         simplicialLDLT.analyzePattern(coefMtr);
         assert(simplicialLDLT.info() == Eigen::Success);
     }

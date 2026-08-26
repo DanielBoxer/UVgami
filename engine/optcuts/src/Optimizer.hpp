@@ -108,6 +108,8 @@ class Optimizer {
 
     bool lineSearch(void);
 
+    void rebuildScaffold(void);
+
     void stepForward(const Eigen::MatrixXd &dataV0,
                      const Eigen::MatrixXd &scaffoldV0, TriMesh &data,
                      Scaffold &scaffoldData, double stepSize) const;

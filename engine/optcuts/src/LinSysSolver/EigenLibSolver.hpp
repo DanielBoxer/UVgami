@@ -22,6 +22,7 @@ class EigenLibSolver : public LinSysSolver<vectorTypeI, vectorTypeS> {
     Eigen::LDLT<Eigen::MatrixXd> LDLT;
     Eigen::SparseMatrix<double> coefMtr;
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> simplicialLDLT;
+    Eigen::VectorXi analyzedIa, analyzedJa;
 
   public:
     void set_type(int threadAmt, int _mtype, bool is_upper_half = false);

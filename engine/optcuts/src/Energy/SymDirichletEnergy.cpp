@@ -545,29 +545,23 @@ static void projectedTriangleHessian(const TriMesh &data, int triI,
 void SymDirichletEnergy::computeHessian(const TriMesh &data,
                                         Eigen::MatrixXd &Hessian,
                                         bool uniformWeight) const {
-    Hessian.resize(data.V.rows() * 2, data.V.rows() * 2);
-    Hessian.setZero();
+    Hessian.setZero(data.V.rows() * 2, data.V.rows() * 2);
 
     std::vector<char> isFixedVert(data.V.rows(), 0);
     for (const auto fixedVI : data.fixedVert)
         isFixedVert[fixedVI] = 1;
 
-    std::vector<Eigen::Matrix<double, 6, 6>> triHessians(data.F.rows());
-    std::vector<Eigen::Vector3i> vInds(data.F.rows());
-    parallelFor((int)data.F.rows(), [&](int triI) {
-        const Eigen::Vector3i &triVInd = data.F.row(triI);
-        projectedTriangleHessian(data, triI, uniformWeight, triHessians[triI]);
-
-        Eigen::Vector3i &vInd = vInds[triI];
-        vInd = triVInd;
+    Eigen::Matrix<double, 6, 6> triHessian;
+    for (int triI = 0; triI < data.F.rows(); triI++) {
+        projectedTriangleHessian(data, triI, uniformWeight, triHessian);
+        Eigen::Vector3i vInd = data.F.row(triI);
         for (int vI = 0; vI < 3; vI++) {
             if (isFixedVert[vInd[vI]]) {
                 vInd[vI] = -1;
             }
         }
-    });
-    for (int triI = 0; triI < data.F.rows(); triI++)
-        IglUtils::addBlockToMatrix(triHessians[triI], vInds[triI], 2, Hessian);
+        IglUtils::addBlockToMatrix(triHessian, vInd, 2, Hessian);
+    }
 
     Eigen::VectorXi fixedVertInd;
     fixedVertInd.resize(data.fixedVert.size());
@@ -588,20 +582,16 @@ void SymDirichletEnergy::computeHessian(const TriMesh &data, Eigen::VectorXd *V,
     for (const auto fixedVI : data.fixedVert)
         isFixedVert[fixedVI] = 1;
 
-    std::vector<Eigen::Matrix<double, 6, 6>> triHessians(data.F.rows());
     std::vector<Eigen::Vector3i> vInds(data.F.rows());
-    parallelFor((int)data.F.rows(), [&](int triI) {
-        const Eigen::Vector3i &triVInd = data.F.row(triI);
-        projectedTriangleHessian(data, triI, uniformWeight, triHessians[triI]);
-
+    for (int triI = 0; triI < data.F.rows(); triI++) {
         Eigen::Vector3i &vInd = vInds[triI];
-        vInd = triVInd;
+        vInd = data.F.row(triI);
         for (int vI = 0; vI < 3; vI++) {
             if (isFixedVert[vInd[vI]]) {
                 vInd[vI] = -1;
             }
         }
-    });
+    }
     // size the triplet arrays once and fill disjoint slices in parallel;
     // the per-triangle offsets keep the exact order of serial appends
     std::vector<int> triTripletStart(data.F.rows() + 1);
@@ -621,7 +611,9 @@ void SymDirichletEnergy::computeHessian(const TriMesh &data, Eigen::VectorXd *V,
         J->conservativeResize(triTripletStart[data.F.rows()]);
     }
     parallelFor((int)data.F.rows(), [&](int triI) {
-        IglUtils::addBlockToMatrix(triHessians[triI], vInds[triI], 2, V, I, J,
+        Eigen::Matrix<double, 6, 6> triHessian;
+        projectedTriangleHessian(data, triI, uniformWeight, triHessian);
+        IglUtils::addBlockToMatrix(triHessian, vInds[triI], 2, V, I, J,
                                    triTripletStart[triI]);
     });
     //        std::cout << static_cast<double>(clock() - start) / CLOCKS_PER_SEC
