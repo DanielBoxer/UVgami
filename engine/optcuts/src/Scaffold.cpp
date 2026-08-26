@@ -12,7 +12,28 @@
 #include <cfloat>
 
 namespace uvgami {
+static double doubleArea(const Eigen::MatrixXd &V, const Eigen::RowVector3i &tri) {
+    const Eigen::RowVector2d &a = V.row(tri[0]);
+    const Eigen::RowVector2d &b = V.row(tri[1]);
+    const Eigen::RowVector2d &c = V.row(tri[2]);
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+}
+
 Scaffold::Scaffold(void) : wholeMeshSize(0) {}
+
+void Scaffold::resetRest(void) {
+    airMesh.V_rest.leftCols(2) = airMesh.V;
+    airMesh.computeTriangleFeatures();
+}
+
+bool Scaffold::squashed(double ratio) const {
+    for (int triI = 0; triI < airMesh.F.rows(); triI++) {
+        if (doubleArea(airMesh.V, airMesh.F.row(triI)) <
+            ratio * areaAtBuild[triI])
+            return true;
+    }
+    return false;
+}
 
 Scaffold::Scaffold(const TriMesh &mesh, Eigen::MatrixXd UV_bnds,
                    Eigen::MatrixXi E, const Eigen::VectorXi &p_bnd) {
@@ -148,6 +169,10 @@ Scaffold::Scaffold(const TriMesh &mesh, Eigen::MatrixXd UV_bnds,
         airMesh.computeTriangleFeatures();
     else
         airMesh.computeFeatures();
+
+    areaAtBuild.resize(airMesh.F.rows());
+    for (int triI = 0; triI < airMesh.F.rows(); triI++)
+        areaAtBuild[triI] = doubleArea(airMesh.V, airMesh.F.row(triI));
 
     localVI2Global = bnd;
     localVI2Global.conservativeResize(airMesh.V.rows());

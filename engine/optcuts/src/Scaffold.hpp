@@ -17,6 +17,8 @@ class Scaffold {
                                          // augmented system indices
     std::map<int, int> meshVI2AirMesh;   // the inverse map of bnd
     int wholeMeshSize;                   // augmented system size
+    // signed double areas at triangulation
+    Eigen::VectorXd areaAtBuild;
 
   public:
     Scaffold(void);
@@ -46,6 +48,9 @@ class Scaffold {
     // stepForward air mesh using augmented searchDir
     void stepForward(const Eigen::MatrixXd &V0,
                      const Eigen::VectorXd &searchDir, double stepSize);
+
+    void resetRest(void);
+    bool squashed(double ratio) const;
 
     void mergeVNeighbor(const std::vector<std::set<int>> &vNeighbor_mesh,
                         std::vector<std::set<int>> &vNeighbor) const;

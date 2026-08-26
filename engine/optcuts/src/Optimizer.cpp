@@ -14,6 +14,10 @@
 
 namespace uvgami {
 
+// fraction of its area at triangulation below which an air triangle
+// retriangulates the air mesh
+static const double AIR_SQUASH_RATIO = 0.25;
+
 Optimizer::Optimizer(const TriMesh &p_data0,
                      const std::vector<Energy *> &p_energyTerms,
                      const std::vector<double> &p_energyParams,
@@ -82,11 +86,21 @@ void Optimizer::setAllowEDecRelTol(bool p_allowEDecRelTol) {
 void Optimizer::rebuildScaffold(void) {
     scaffold = Scaffold(result, UV_bnds_scaffold, E_scaffold, bnd_scaffold);
     result.scaffold = &scaffold;
+    patternStale = true;
     // the dense solver never reads the merged pattern
     if (useDense)
         return;
     scaffold.mergeVNeighbor(result.vNeighbor, vNeighbor_withScaf);
     scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
+}
+
+// retriangulating the air mesh every iteration was most of a local solve
+void Optimizer::refreshScaffold(void) {
+    if (airClampedStep || scaffold.squashed(AIR_SQUASH_RATIO)) {
+        rebuildScaffold();
+        return;
+    }
+    scaffold.resetRest();
 }
 
 void Optimizer::precompute(void) {
@@ -104,6 +118,7 @@ void Optimizer::precompute(void) {
             scaffolding ? fixedV_withScaf : result.fixedVert);
         linSysSolver->update_a(I_mtr, J_mtr, V_mtr);
         linSysSolver->analyze_pattern();
+        patternStale = false;
         if (!needRefactorize) {
             try {
                 linSysSolver->factorize();
@@ -142,7 +157,7 @@ int Optimizer::solve(int maxIter) {
             if (!createFracture(lastEDec, propagateFracture)) {
                 // always perform the one decreasing E_w more
                 if (scaffolding)
-                    rebuildScaffold();
+                    refreshScaffold();
 
                 if (lastPropagate) {
                     lastPropagate = false;
@@ -153,7 +168,7 @@ int Optimizer::solve(int maxIter) {
             }
         } else {
             if (scaffolding)
-                rebuildScaffold();
+                refreshScaffold();
         }
     }
     return 0;
@@ -221,6 +236,7 @@ void Optimizer::updateEnergyData(bool updateEVal, bool updateGradient,
                 scaffolding ? fixedV_withScaf : result.fixedVert);
             linSysSolver->update_a(I_mtr, J_mtr, V_mtr);
             linSysSolver->analyze_pattern();
+            patternStale = false;
             if (!needRefactorize)
                 linSysSolver->factorize();
         }
@@ -350,12 +366,12 @@ bool Optimizer::solve_oneStep(void) {
         // std::cout << "factorizing proxy/Hessian matrix..." << std::endl;
         if (!fractureInitiated) {
             if (!useDense) {
-                if (scaffolding) {
-                    linSysSolver->set_pattern(
-                        scaffolding ? vNeighbor_withScaf : result.vNeighbor,
-                        scaffolding ? fixedV_withScaf : result.fixedVert);
+                if (scaffolding && patternStale) {
+                    linSysSolver->set_pattern(vNeighbor_withScaf,
+                                              fixedV_withScaf);
                     linSysSolver->update_a(I_mtr, J_mtr, V_mtr);
                     linSysSolver->analyze_pattern();
+                    patternStale = false;
                 } else {
                     linSysSolver->update_a(I_mtr, J_mtr, V_mtr);
                 }
@@ -383,7 +399,7 @@ bool Optimizer::solve_oneStep(void) {
 bool Optimizer::lineSearch(void) {
     bool stopped = false;
     double stepSize = 1.0;
-    initStepSize(result, stepSize);
+    airClampedStep = initStepSize(result, stepSize);
     stepSize *= 0.99; // producing degenerated element is not allowed
     double lastEnergyVal_scaffold = 0.0;
     Eigen::MatrixXd resultV0 = result.V;
@@ -480,15 +496,17 @@ void Optimizer::getGradientVisual(Eigen::MatrixXd &arrowVec) const {
     arrowVec *= igl::avg_edge_length(result.V, result.F);
 }
 
-void Optimizer::initStepSize(const TriMesh &data, double &stepSize) const {
+bool Optimizer::initStepSize(const TriMesh &data, double &stepSize) const {
     for (int eI = 0; eI < energyTerms.size(); eI++)
         energyTerms[eI]->initStepSize(data, searchDir, stepSize);
-    if (scaffolding) {
-        Eigen::VectorXd searchDir_scaffold;
-        scaffold.wholeSearchDir2airMesh(searchDir, searchDir_scaffold);
-        SymDirichletEnergy SD;
-        SD.initStepSize(scaffold.airMesh, searchDir_scaffold, stepSize);
-    }
+    if (!scaffolding)
+        return false;
+    const double meshBound = stepSize;
+    Eigen::VectorXd searchDir_scaffold;
+    scaffold.wholeSearchDir2airMesh(searchDir, searchDir_scaffold);
+    SymDirichletEnergy SD;
+    SD.initStepSize(scaffold.airMesh, searchDir_scaffold, stepSize);
+    return stepSize < meshBound;
 }
 void Optimizer::computeEnergyVal(const TriMesh &data,
                                  const Scaffold &scaffoldData,

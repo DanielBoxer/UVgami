@@ -100,6 +100,8 @@ class Optimizer {
     Eigen::VectorXi bnd_scaffold;
     std::vector<std::set<int>> vNeighbor_withScaf;
     std::set<int> fixedV_withScaf;
+    bool airClampedStep = false;
+    bool patternStale = false;
 
   protected: // helper functions
     // solve for new configuration in the next iteration
@@ -109,6 +111,7 @@ class Optimizer {
     bool lineSearch(void);
 
     void rebuildScaffold(void);
+    void refreshScaffold(void);
 
     void stepForward(const Eigen::MatrixXd &dataV0,
                      const Eigen::MatrixXd &scaffoldV0, TriMesh &data,
@@ -123,6 +126,7 @@ class Optimizer {
                          bool excludeScaffold = false);
     void computeHessian(const TriMesh &data, const Scaffold &scaffoldData);
 
-    void initStepSize(const TriMesh &data, double &stepSize) const;
+    // true when the air mesh set the bound
+    bool initStepSize(const TriMesh &data, double &stepSize) const;
 };
 } // namespace uvgami
