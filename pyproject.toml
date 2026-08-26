@@ -56,10 +56,10 @@ extend-exclude = ["engine", "src/utils/pyqtree.py"]
 
 [tool.pytest.ini_options]
 # pytest skips a testpath that is not there
-testpaths = ["dev/tests", "dev/bench/tests"]
+testpaths = ["dev/tests", "private/bench/tests"]
 markers = ["smoke: runs the real engine binary"]
 # the partuv driver source (no built _core) must import for the wheel tests,
-# dev/bench/src is a folder of scripts that import each other by bare name
-pythonpath = ["engine/partuv", "dev/bench/src"]
+# and the bench scripts import each other by bare name
+pythonpath = ["engine/partuv", "private/bench/src"]
 # the plugin keeps pytest from importing the blender addon root __init__.py
 addopts = "--import-mode=importlib -p uvgami_cli._pytest_plugin"

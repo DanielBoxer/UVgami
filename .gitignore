@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 
 .vscode/
+.ignore
 
 # io folders
 input/
@@ -13,12 +14,6 @@ output/
 
 # bundled engine binaries
 /engine-builds/
-
-# agent notes
-docs/agents/
-
-# benchmark
-dev/bench/
 
 # local test builds from dev/build.ps1
 /dist/
