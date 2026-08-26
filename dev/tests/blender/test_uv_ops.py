@@ -64,6 +64,9 @@ def select_faces(obj, indices):
     """Select faces in object mode, then enter edit mode as the operators'
     poll wants. Sync selection on, so the mesh flags are what count."""
     bpy.context.scene.tool_settings.use_uv_select_sync = True
+    # in vertex mode, entering edit mode selects any face whose vertices are
+    # all selected
+    bpy.context.scene.tool_settings.mesh_select_mode = (False, False, True)
     mesh = obj.data
     # a primitive comes with every vertex selected, and edit mode flushes
     # that up to the faces
@@ -172,4 +175,107 @@ def test_no_uv_map_is_refused():
         bpy.ops.uvgami.relax_island()
 
     assert grid.mode == "EDIT"
+    assert not manager.is_active
+
+
+def grid_islands(make_mesh, island_of, lifted=0.0):
+    """A 3x3 grid of unit quads, each island's faces laid out at their own
+    uv offset. island_of maps a (column, row) cell to its island number, and
+    the centre face's corners rise by lifted so the grid isn't flat."""
+    centre = {(1, 1), (2, 1), (2, 2), (1, 2)}
+    verts = [
+        (x, y, lifted if (x, y) in centre else 0.0) for y in range(4) for x in range(4)
+    ]
+    faces = []
+    uvs = []
+    for row in range(3):
+        for column in range(3):
+            v = row * 4 + column
+            faces.append((v, v + 1, v + 5, v + 4))
+            offset = island_of[column, row] * 4
+            uvs.append(
+                [
+                    (column + offset, row),
+                    (column + 1 + offset, row),
+                    (column + 1 + offset, row + 1),
+                    (column + offset, row + 1),
+                ]
+            )
+    return make_mesh("grid", verts, faces, uvs)
+
+
+def uv_island_count(obj, uvs):
+    """Faces joined wherever a shared vertex has one uv on both."""
+    parent = list(range(len(uvs)))
+
+    def find(i):
+        while parent[i] != i:
+            i = parent[i]
+        return i
+
+    owner = {}
+    for fi, face in enumerate(obj.data.polygons):
+        for vertex, uv in zip(face.vertices, uvs[fi]):
+            other = owner.setdefault((vertex, uv), fi)
+            parent[find(fi)] = find(other)
+    return len({find(i) for i in range(len(uvs))})
+
+
+def test_combine_keeps_a_cube_corner_as_one_island(session, make_mesh, face_uvs):
+    """Three quads meeting at a corner can't lie flat, so a fresh unwrap
+    would cut them again. Combining keeps them one island."""
+    obj = make_mesh(
+        "corner",
+        [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1)],
+        [(0, 1, 2, 3), (1, 0, 4, 5), (0, 3, 6, 4)],
+        [
+            [(0, 0), (1, 0), (1, 1), (0, 1)],
+            [(2, 0), (3, 0), (3, 1), (2, 1)],
+            [(4, 0), (5, 0), (5, 1), (4, 1)],
+        ],
+    )
+    select_faces(obj, {0, 1, 2})
+
+    session(bpy.ops.uvgami.combine_islands)
+
+    assert manager.summary[0] == "UV unwrap complete!", manager.summary
+    bpy.ops.object.mode_set(mode="OBJECT")
+    assert uv_island_count(obj, face_uvs(obj)) == 1
+
+
+def test_combine_keeps_the_islands_other_seams(session, make_mesh, face_uvs):
+    """The ring around the centre is one island cut open between its two
+    bottom left faces. Combining it with the centre welds the ring's inner
+    edges and leaves that cut alone."""
+    island_of = {(column, row): 0 for column in range(3) for row in range(3)}
+    island_of[1, 1] = 1
+    obj = grid_islands(make_mesh, island_of, lifted=1.0)
+    layer = obj.data.uv_layers.active.data
+    # face (0, 0)'s corner at vertex (1, 0) moves off face (1, 0)'s
+    layer[1].uv = (1.2, 0)
+    select_faces(obj, set(range(9)))
+
+    session(bpy.ops.uvgami.combine_islands)
+
+    assert manager.summary[0] == "UV unwrap complete!", manager.summary
+    bpy.ops.object.mode_set(mode="OBJECT")
+    uvs = face_uvs(obj)
+    assert uv_island_count(obj, uvs) == 1
+    assert uvs[0][1] != uvs[1][0]
+
+
+def test_combine_refuses_islands_touching_along_two_seams(make_mesh):
+    """The top row and the U under it touch at both ends with the centre
+    face between, so welded they ring a hole."""
+    island_of = {(column, row): 0 for column in range(3) for row in range(3)}
+    island_of[1, 1] = 1
+    for column in range(3):
+        island_of[column, 2] = 2
+    obj = grid_islands(make_mesh, island_of)
+    select_faces(obj, set(range(9)) - {4})
+
+    with pytest.raises(RuntimeError, match="more than one seam"):
+        bpy.ops.uvgami.combine_islands()
+
+    assert obj.mode == "EDIT"
     assert not manager.is_active

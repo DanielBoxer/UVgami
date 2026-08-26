@@ -166,6 +166,32 @@ def queue_island(obj, group, bbox, area, k, input_path, props):
     queue_fix(obj, job, name, path, vertex_count, props)
 
 
+def edge_splits_uv(edge, uvl):
+    """True when the faces on this edge don't share its uvs."""
+    uv_of = {}
+    for loop in edge.link_loops:
+        for corner in (loop, loop.link_loop_next):
+            uv = (round(corner[uvl].uv[0], 6), round(corner[uvl].uv[1], 6))
+            if uv_of.setdefault(corner.vert.index, uv) != uv:
+                return True
+    return False
+
+
+def folded_faces(bm, uvl):
+    """Faces with a uv triangle wound against the rest of the map."""
+    total = 0.0
+    fans = []
+    for face in bm.faces:
+        pts = [loop[uvl].uv for loop in face.loops]
+        areas = [
+            signed_area([pts[0], pts[i], pts[i + 1]]) for i in range(1, len(pts) - 1)
+        ]
+        total += sum(areas)
+        fans.append((face, areas))
+    orientation = 1 if total >= 0 else -1
+    return [face for face, areas in fans if any(a * orientation < 0 for a in areas)]
+
+
 def repair_flipped_island(obj, temp):
     """Clear flipped uv triangles from the exported island copy so the engine
     keeps the map: pin everything but the flipped faces and two rings around
@@ -176,27 +202,13 @@ def repair_flipped_island(obj, temp):
     bm = new_bmesh(temp)
     uvl = bm.loops.layers.uv.active
 
-    flipped = []
-    for face in bm.faces:
-        pts = [loop[uvl].uv for loop in face.loops]
-        if any(
-            signed_area([pts[0], pts[i], pts[i + 1]]) < 0
-            for i in range(1, len(pts) - 1)
-        ):
-            flipped.append(face)
+    flipped = folded_faces(bm, uvl)
     if not flipped:
         bm.free()
         return
 
     for edge in bm.edges:
-        uv_of = {}
-        seam = False
-        for loop in edge.link_loops:
-            for corner in (loop, loop.link_loop_next):
-                uv = (round(corner[uvl].uv[0], 6), round(corner[uvl].uv[1], 6))
-                if uv_of.setdefault(corner.vert.index, uv) != uv:
-                    seam = True
-        edge.seam = seam
+        edge.seam = edge_splits_uv(edge, uvl)
 
     free = {v for face in flipped for v in face.verts}
     for _ in range(2):
@@ -275,14 +287,7 @@ def rectify_islands(obj):
     # this neighboring islands weld at their shared edges and pull against
     # the pins
     for edge in bm.edges:
-        uv_at = {}
-        seam = False
-        for loop in edge.link_loops:
-            for corner in (loop, loop.link_loop_next):
-                uv = (round(corner[uvl].uv[0], 6), round(corner[uvl].uv[1], 6))
-                if uv_at.setdefault(corner.vert.index, uv) != uv:
-                    seam = True
-        edge.seam = seam
+        edge.seam = edge_splits_uv(edge, uvl)
     for group, targets, inner in plans:
         for fi in group:
             for corner, loop in enumerate(bm.faces[fi].loops):
@@ -337,25 +342,11 @@ def rectify_islands(obj):
     set_bmesh(bm, obj)
 
 
-def queue_relax(obj, group, bbox, area, k, input_path, props):
-    """Export one island with its uv map and queue a nocut run: the engine
-    keeps the map, so the seams come back unchanged and only the stretch
-    moves. A mirrored island reads as inverted to the engine, so it exports
-    with u negated and the job mirrors the result back."""
+def island_copy(obj, group):
     mesh = obj.data
     layer = mesh.uv_layers.active
     used = sorted({v for fi in group for v in mesh.polygons[fi].vertices})
     local = {v: i for i, v in enumerate(used)}
-
-    total = 0.0
-    for fi in group:
-        poly = mesh.polygons[fi]
-        pts = [
-            tuple(layer.uv[poly.loop_start + c].vector) for c in range(poly.loop_total)
-        ]
-        total += signed_area(pts)
-    mirrored = total < 0
-
     island_mesh = bpy.data.meshes.new("uvgami_island")
     island_mesh.from_pydata(
         [mesh.vertices[v].co.copy() for v in used],
@@ -367,13 +358,37 @@ def queue_relax(obj, group, bbox, area, k, input_path, props):
     for fi in group:
         poly = mesh.polygons[fi]
         for c in range(poly.loop_total):
-            u, w = layer.uv[poly.loop_start + c].vector
-            island_layer.uv[li].vector = (-u, w) if mirrored else (u, w)
+            island_layer.uv[li].vector = layer.uv[poly.loop_start + c].vector
             li += 1
-
     temp = bpy.data.objects.new("uvgami_island", island_mesh)
     bpy.context.scene.collection.objects.link(temp)
     temp.matrix_world = obj.matrix_world.copy()
+    return temp
+
+
+def remove_temp(temp):
+    mesh = temp.data
+    bpy.data.objects.remove(temp, do_unlink=True)
+    bpy.data.meshes.remove(mesh)
+
+
+def queue_nocut(obj, temp, group, bbox, area, k, input_path, props):
+    """Export the island copy with its uv map and queue a nocut run: the
+    engine keeps the map, so the seams come back unchanged and only the
+    stretch moves. A mirrored island reads as inverted to the engine, so it
+    exports with u negated and the job mirrors the result back."""
+    layer = temp.data.uv_layers.active
+    total = 0.0
+    for poly in temp.data.polygons:
+        pts = [
+            tuple(layer.uv[poly.loop_start + c].vector) for c in range(poly.loop_total)
+        ]
+        total += signed_area(pts)
+    mirrored = total < 0
+    if mirrored:
+        for corner in layer.uv:
+            u, w = corner.vector
+            corner.vector = (-u, w)
 
     bm = new_bmesh(temp)
     if any(len(f.verts) > 3 for f in bm.faces):
@@ -393,8 +408,7 @@ def queue_relax(obj, group, bbox, area, k, input_path, props):
     with (path.parent / f"{path.stem}_fixed").open("w") as f:
         f.write("\nnocut")
     vertex_count = len(temp.data.vertices)
-    bpy.data.objects.remove(temp, do_unlink=True)
-    bpy.data.meshes.remove(island_mesh)
+    remove_temp(temp)
 
     queue_fix(
         obj,
@@ -404,6 +418,49 @@ def queue_relax(obj, group, bbox, area, k, input_path, props):
         vertex_count,
         props,
     )
+
+
+def queue_relax(obj, group, bbox, area, k, input_path, props):
+    queue_nocut(obj, island_copy(obj, group), group, bbox, area, k, input_path, props)
+
+
+def euler_characteristic(temp, cut_edges):
+    """Of the island copy cut open along these edge indices: 1 for a disk,
+    one less per extra hole or handle."""
+    bm = new_bmesh(temp)
+    bm.edges.ensure_lookup_table()
+    bmesh.ops.split_edges(bm, edges=[bm.edges[i] for i in cut_edges])
+    chi = len(bm.verts) - len(bm.edges) + len(bm.faces)
+    bm.free()
+    return chi
+
+
+def weld_shared_seams(temp, island_of, island_count):
+    """Mark every uv discontinuity in the union copy as a seam except the
+    runs between two of the islands, which the unwrap then welds. Returns an
+    error when welding adds a hole."""
+    bm = new_bmesh(temp)
+    uvl = bm.loops.layers.uv.active
+    splits = []
+    seams = []
+    for edge in bm.edges:
+        if not edge_splits_uv(edge, uvl):
+            continue
+        splits.append(edge.index)
+        shared = len({island_of[face.index] for face in edge.link_faces}) > 1
+        edge.seam = not shared
+        if not shared:
+            seams.append(edge.index)
+    set_bmesh(bm, temp)
+
+    # joining n sheets along n - 1 single runs costs exactly n - 1
+    expected = euler_characteristic(temp, splits) - (island_count - 1)
+    if euler_characteristic(temp, seams) < expected:
+        return (
+            "The islands touch along more than one seam,"
+            " so they can't be one flat island"
+        )
+    return None
 
 
 def islands_connected(mesh, targets):
@@ -837,11 +894,12 @@ class UVGAMI_OT_combine_islands(FixOperator, bpy.types.Operator):
             self.report({"ERROR"}, "Select faces on at least two islands")
             return {"CANCELLED"}
         if not islands_connected(obj.data, targets):
-            self.report({"ERROR"}, "The selected islands don't all share mesh edges")
+            self.report(
+                {"ERROR"},
+                "The selected islands don't touch, select a face on each island between them",
+            )
             return {"CANCELLED"}
 
-        # a fresh unwrap of the union merges regardless of how the
-        # islands' seam shapes differ, unlike stitching them
         group = sorted({fi for g, _, _ in targets for fi in g})
         bbox = (
             min(b[0] for _, b, _ in targets),
@@ -851,11 +909,41 @@ class UVGAMI_OT_combine_islands(FixOperator, bpy.types.Operator):
         )
         area = sum(a for _, _, a in targets)
 
-        def queue_one(k, input_path):
-            queue_island(obj, group, bbox, area, k + 1, input_path, props)
+        # blender unwraps the union with only the shared runs welded, so
+        # every other seam stays where it was
+        island_of = {fi: i for i, (g, _, _) in enumerate(targets) for fi in g}
+        temp = island_copy(obj, group)
+        error = weld_shared_seams(temp, [island_of[fi] for fi in group], len(targets))
+        if error:
+            remove_temp(temp)
+            self.report({"ERROR"}, error)
+            return {"CANCELLED"}
+        obj.select_set(False)
+        unwrap(temp, range(len(temp.data.polygons)), REPAIR_ITERATIONS)
+        obj.select_set(True)
+        bm = new_bmesh(temp)
+        folded = bool(folded_faces(bm, bm.loops.layers.uv.active))
+        bm.free()
+
+        if folded:
+            # the engine can't unfold a kept map, so it cuts the union fresh
+            remove_temp(temp)
+
+            def queue_one(k, input_path):
+                queue_island(obj, group, bbox, area, k + 1, input_path, props)
+
+            message = "The combined island folds, unwrapping it from scratch instead"
+            level = "WARNING"
+        else:
+
+            def queue_one(k, input_path):
+                queue_nocut(obj, temp, group, bbox, area, k + 1, input_path, props)
+
+            message = f"Combining {len(targets)} islands"
+            level = "INFO"
 
         queue_targets(engine, engine_ctx, 1, queue_one)
-        self.report({"INFO"}, f"Combining {len(targets)} islands")
+        self.report({level}, message)
         return {"FINISHED"}
 
 
