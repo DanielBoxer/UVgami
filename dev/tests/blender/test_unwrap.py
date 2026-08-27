@@ -1,6 +1,6 @@
 import bpy
 import pytest
-from blender_fixtures import manager, needs_engine, needs_partuv, needs_xatlas
+from blender_fixtures import addon, manager, needs_engine, needs_partuv, needs_xatlas
 
 pytestmark = [needs_engine, pytest.mark.smoke]
 
@@ -44,6 +44,23 @@ def test_flipped_face_is_rewound_instead_of_refused(load_obj, unwrap, outputs):
     layer = next(iter(outputs().values())).data.uv_layers.active
     assert layer is not None
     assert any(any(datum.uv) for datum in layer.data)
+
+
+def test_shading_modifiers_carry_over(load_obj, unwrap, outputs):
+    obj = load_obj("cylinder")[0]
+    weighted = obj.modifiers.new("WeightedNormal", "WEIGHTED_NORMAL")
+    weighted.keep_sharp = True
+    angle = 0.5
+    bpy.ops.object.shade_auto_smooth(angle=angle)
+    unwrap()
+
+    assert manager.error_messages == []
+    output = outputs()["cylinder_unwrapped"]
+    assert [m.type for m in output.modifiers] == ["WEIGHTED_NORMAL", "NODES"]
+    assert output.modifiers[0].keep_sharp is True
+    assert output.modifiers[1].node_group is not None
+    records = addon.src.utils.mesh.get_shading_modifiers(output)
+    assert records[1][2][1]["Input_1"] == pytest.approx(angle)
 
 
 @pytest.mark.parametrize("engine", OTHER_ENGINES)

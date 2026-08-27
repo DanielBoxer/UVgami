@@ -18,6 +18,7 @@ from .similar import write_twin_output
 from .utils.geometry import set_origin
 from .utils.io import import_obj
 from .utils.mesh import (
+    add_shading_modifiers,
     check_collection,
     check_exists,
     edit_restore,
@@ -447,6 +448,7 @@ class UnwrapManager:
         # before the preserve job, so untriangulated faces carry these along
         self._restore_face_data(unwrap, output, "material_index", "material_indices")
         self._restore_face_data(unwrap, output, "use_smooth", "face_smooth")
+        add_shading_modifiers(output, unwrap.shading_modifiers)
 
         if unwrap.preserve_job is not None:
             unwrap.preserve_job.finish(unwrap, output, added_edges)

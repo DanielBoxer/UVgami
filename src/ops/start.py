@@ -39,6 +39,8 @@ from ..utils.mesh import (
     check_collection,
     check_exists,
     deselect_all,
+    get_shading_modifiers,
+    is_shading_modifier,
     move_to_collection,
     new_bmesh,
     set_bmesh,
@@ -252,6 +254,7 @@ class InputExporter:
             material_indices=material_indices,
             vertex_groups=vertex_groups,
             face_smooth=face_smooth,
+            shading_modifiers=get_shading_modifiers(obj),
         )
 
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -272,6 +275,7 @@ class InputExporter:
                 material_indices=representative.material_indices,
                 vertex_groups=representative.vertex_groups,
                 face_smooth=representative.face_smooth,
+                shading_modifiers=representative.shading_modifiers,
             )
         else:
             edge_path, new_edges = self._triangulate_mesh(
@@ -291,6 +295,7 @@ class InputExporter:
                 material_indices=material_indices,
                 vertex_groups=vertex_groups,
                 face_smooth=face_smooth,
+                shading_modifiers=get_shading_modifiers(obj),
             )
 
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -931,7 +936,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
         context.view_layer.objects.active = obj
         applied = False
         for modifier in obj.modifiers:
-            if "Smooth by Angle" in modifier.name:
+            if is_shading_modifier(modifier):
                 continue
 
             # a disabled modifier can't be applied

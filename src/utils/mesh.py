@@ -249,3 +249,83 @@ def edit_restore(input, func, *args, **kwargs):
     if old_active is not None:
         bpy.context.view_layer.objects.active = old_active
         bpy.ops.object.mode_set(mode=old_mode)
+
+
+AUTO_SMOOTH_MODIFIER_NAME = "Smooth by Angle"
+WEIGHTED_NORMAL_PROPERTIES = (
+    "weight",
+    "mode",
+    "thresh",
+    "keep_sharp",
+    "vertex_group",
+    "invert_vertex_group",
+    "use_face_influence",
+)
+
+
+def _is_auto_smooth(modifier):
+    return modifier.type == "NODES" and AUTO_SMOOTH_MODIFIER_NAME in modifier.name
+
+
+def is_shading_modifier(modifier):
+    """Smooth by Angle and Weighted Normal only change normals."""
+    return _is_auto_smooth(modifier) or modifier.type == "WEIGHTED_NORMAL"
+
+
+def _node_input_identifiers(modifier):
+    return [
+        item.identifier
+        for item in modifier.node_group.interface.items_tree
+        if item.item_type == "SOCKET"
+        and item.in_out == "INPUT"
+        and item.socket_type != "NodeSocketGeometry"
+    ]
+
+
+# blender 5.2 moved geometry nodes inputs off id properties
+def _node_input_values(modifier):
+    identifiers = _node_input_identifiers(modifier)
+    if hasattr(modifier, "properties"):
+        inputs = modifier.properties.inputs
+        return {key: getattr(inputs, key).value for key in identifiers}
+    return {key: modifier[key] for key in identifiers}
+
+
+def _set_node_input_values(modifier, values):
+    if hasattr(modifier, "properties"):
+        inputs = modifier.properties.inputs
+        for key, value in values.items():
+            getattr(inputs, key).value = value
+        return
+    for key, value in values.items():
+        modifier[key] = value
+
+
+def get_shading_modifiers(obj):
+    records = []
+    for modifier in obj.modifiers:
+        if _is_auto_smooth(modifier) and modifier.node_group is not None:
+            settings = (modifier.node_group.name, _node_input_values(modifier))
+            records.append((modifier.type, modifier.name, settings))
+        elif modifier.type == "WEIGHTED_NORMAL":
+            settings = {
+                key: getattr(modifier, key) for key in WEIGHTED_NORMAL_PROPERTIES
+            }
+            records.append((modifier.type, modifier.name, settings))
+    return records
+
+
+def add_shading_modifiers(obj, records):
+    for kind, name, settings in records:
+        if kind == "NODES":
+            node_group = bpy.data.node_groups.get(settings[0])
+            if node_group is None:
+                continue
+            modifier = obj.modifiers.new(name, kind)
+            modifier.node_group = node_group
+            modifier.use_pin_to_last = True
+            _set_node_input_values(modifier, settings[1])
+        else:
+            modifier = obj.modifiers.new(name, kind)
+            for key, value in settings.items():
+                setattr(modifier, key, value)
