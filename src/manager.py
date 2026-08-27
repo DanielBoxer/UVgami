@@ -29,6 +29,8 @@ from .utils.ui import popup, set_status, switch_shading, tag_redraw
 # how long a clean run's status bar message stays up
 STATUS_SECONDS = 5
 SETTLE_TICK_SECONDS = 0.05
+# a sidebar rebuild mid click drops the click
+PANEL_REDRAW_SECONDS = 1.0
 
 
 class Settings:
@@ -109,6 +111,7 @@ class UnwrapManager:
         self.viewer_done = False
         self._pack_output_objects = []
         self._drawn_panel_state = None
+        self._panel_drawn_at = 0.0
 
     @property
     def active(self):
@@ -314,11 +317,14 @@ class UnwrapManager:
         if get_preferences().show_progress_bar:
             progress_bar.update(self.progress)
             tag_redraw(("WINDOW",))
-        # redraw the sidebar only on a change, a 10 per second rebuild is wasted
-        # work the rest of the time
         state = self._panel_state()
-        if state != self._drawn_panel_state:
+        now = time.monotonic()
+        if (
+            state != self._drawn_panel_state
+            and now - self._panel_drawn_at >= PANEL_REDRAW_SECONDS
+        ):
             self._drawn_panel_state = state
+            self._panel_drawn_at = now
             tag_redraw(("UI",))
 
     def _panel_state(self):
