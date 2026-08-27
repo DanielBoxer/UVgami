@@ -36,12 +36,14 @@ old_mode = None
 # straight into gpu batches, no viewer mesh or edit mode needed
 _handler = None
 _text_handler = None
-_wire_batch = None
+# (typical uv edge, batch) per edge length, so short bevel edges fade alone
+_wire_batches = []
 _fill_batch = None
 _wire_shader = None
 _fill_shader = None
-# typical uv edge of the snapshot
-_median_edge = 0.0
+# edges within this factor of each other share a wire batch
+WIRE_EDGE_BUCKET = 2.0
+# PACK_MARGIN = 0.01
 # per-corner 3d angles of the engine input, for stretch colors
 _corner_angle = None
 
@@ -103,9 +105,69 @@ def _stretch_colors(uv_pts):
     return numpy.clip(colors, 0, 1, out=colors)
 
 
+# def _island_of_vertex(edges, vertex_count):
+#     """Island index per snapshot vertex, 0 to island count - 1. Min label
+#     propagation with pointer jumping, a few numpy rounds even on a long strip."""
+#     label = numpy.arange(vertex_count)
+#     e0, e1 = edges[:, 0], edges[:, 1]
+#     while True:
+#         before = label
+#         low = numpy.minimum(label[e0], label[e1])
+#         label = label.copy()
+#         numpy.minimum.at(label, e0, low)
+#         numpy.minimum.at(label, e1, low)
+#         while True:
+#             jumped = label[label]
+#             if numpy.array_equal(jumped, label):
+#                 break
+#             label = jumped
+#         if numpy.array_equal(label, before):
+#             return numpy.unique(label, return_inverse=True)[1]
+
+
+# def _pack_islands(co, island, island_count):
+#     """Shelf pack the islands by bounding box into the unit square. The engine
+#     never packs its layout, so straight from the snapshot the islands are
+#     scattered and small."""
+#     low = numpy.full((island_count, 2), numpy.inf, dtype=numpy.float32)
+#     high = numpy.full((island_count, 2), -numpy.inf, dtype=numpy.float32)
+#     numpy.minimum.at(low, island, co)
+#     numpy.maximum.at(high, island, co)
+#     size = high - low
+#     width = float(numpy.sqrt((size[:, 0] * size[:, 1]).sum()))
+#     margin = PACK_MARGIN * width
+#     offset = numpy.empty_like(low)
+#     x = y = margin
+#     shelf = extent = 0.0
+#     for i in numpy.argsort(-size[:, 1]):
+#         if x > margin and x + size[i, 0] > width:
+#             x, y, shelf = margin, y + shelf + margin, 0.0
+#         offset[i] = (x, y)
+#         x += size[i, 0] + margin
+#         shelf = max(shelf, size[i, 1])
+#         extent = max(extent, x, y + shelf + margin)
+#     return (co - low[island] + offset[island]) / extent
+
+
+def _wire_batches_by_edge_length(co, edges):
+    """One (typical edge, batch) per bucket of similar edge lengths."""
+    length = numpy.linalg.norm(co[edges[:, 0]] - co[edges[:, 1]], axis=1)
+    bucket = numpy.floor(
+        numpy.log(numpy.maximum(length, 1e-9)) / numpy.log(WIRE_EDGE_BUCKET)
+    )
+    batches = []
+    for key in numpy.unique(bucket):
+        chosen = bucket == key
+        batch = batch_for_shader(
+            _wire_shader, "LINES", {"pos": co[edges[chosen].reshape(-1)]}
+        )
+        batches.append((float(numpy.median(length[chosen])), batch))
+    return batches
+
+
 def set_snapshot(uv_co, uv_indices):
     """Build the fill and wire batches for the latest engine snapshot."""
-    global _wire_batch, _fill_batch, _wire_shader, _fill_shader, _median_edge
+    global _wire_batches, _fill_batch, _wire_shader, _fill_shader
     if _wire_shader is None:
         # polyline sets width in the shader, past the driver's line limit of 1
         _wire_shader = gpu.shader.from_builtin("POLYLINE_UNIFORM_COLOR")
@@ -117,12 +179,9 @@ def set_snapshot(uv_co, uv_indices):
     edges = numpy.concatenate((tris[:, :2], tris[:, 1:], tris[:, ::2]))
     edges.sort(axis=1)
     edges = numpy.unique(edges, axis=0)
-    _wire_batch = batch_for_shader(
-        _wire_shader, "LINES", {"pos": co[edges.reshape(-1)]}
-    )
-    _median_edge = numpy.median(
-        numpy.linalg.norm(co[edges[:, 0]] - co[edges[:, 1]], axis=1)
-    )
+    # island = _island_of_vertex(edges, len(co))
+    # co = _pack_islands(co, island, island.max() + 1)
+    _wire_batches = _wire_batches_by_edge_length(co, edges)
 
     _fill_batch = None
     if _corner_angle is not None and len(_corner_angle) == len(tris):
@@ -135,17 +194,17 @@ def set_snapshot(uv_co, uv_indices):
 
 
 def clear_snapshot():
-    global _wire_batch, _fill_batch
-    _wire_batch = None
+    global _wire_batches, _fill_batch
+    _wire_batches = []
     _fill_batch = None
 
 
-def _wire_fade():
+def _wire_fade(typical_edge):
     """0 to 1 on how many pixels wide the typical triangle draws right now."""
     view2d = bpy.context.region.view2d
     left = view2d.view_to_region(0.0, 0.0, clip=False)[0]
     right = view2d.view_to_region(1.0, 0.0, clip=False)[0]
-    pixels = _median_edge * (right - left)
+    pixels = typical_edge * (right - left)
     span = WIRE_FULL_PIXELS - WIRE_HIDDEN_PIXELS
     return min(max((pixels - WIRE_HIDDEN_PIXELS) / span, 0.0), 1.0)
 
@@ -155,19 +214,22 @@ def _draw():
     if _fill_batch is not None:
         _fill_batch.draw(_fill_shader)
     gpu.state.blend_set("ALPHA")
-    # without a fill the wire is the whole picture, so it never fades out
-    fade = _wire_fade() if _fill_batch is not None else 1.0
-    if _wire_batch is not None and fade > 0:
+    if _wire_batches:
         _wire_shader.bind()
         _wire_shader.uniform_float("viewportSize", gpu.state.viewport_get()[2:])
         _wire_shader.uniform_bool("lineSmooth", True)
+    for typical_edge, batch in _wire_batches:
+        # without a fill the wire is the whole picture, so it never fades out
+        fade = _wire_fade(typical_edge) if _fill_batch is not None else 1.0
+        if fade <= 0:
+            continue
         for width, rgb in (
             (WIRE_OUTLINE_WIDTH, (0.0, 0.0, 0.0)),
             (WIRE_WIDTH, WIRE_COLOR),
         ):
             _wire_shader.uniform_float("lineWidth", width)
             _wire_shader.uniform_float("color", (*rgb, fade))
-            _wire_batch.draw(_wire_shader)
+            batch.draw(_wire_shader)
     gpu.state.blend_set("NONE")
 
 
