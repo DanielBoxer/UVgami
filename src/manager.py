@@ -10,7 +10,7 @@ from .batch import BatchProcess, last_meaningful_line
 from .job import Join, ProxyUVs, Result, TransferReport
 from .logger import logger
 from .ops.grid import add_grid, make_grid_img, make_grid_mat
-from .ops.uv import pack, show_seams
+from .ops.uv import pack_objects, show_seams
 from .progress_bar import progress_bar
 from .reroute_seams import reroute_seams
 from .uv_transfer import AMBIGUOUS_GEOMETRY
@@ -743,10 +743,10 @@ class UnwrapManager:
             valid_objects = [o for o in self._pack_output_objects if check_exists(o)]
             if valid_objects:
                 if props.combine_uvs:
-                    edit_restore(valid_objects, pack)
+                    pack_objects(valid_objects)
                 else:
                     for obj in valid_objects:
-                        edit_restore([obj], pack)
+                        pack_objects([obj])
 
         counts = self._result_counts()
         self.finish()

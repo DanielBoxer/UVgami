@@ -49,38 +49,51 @@ def island_area(group, uvs):
 FLIP_NOISE = 1e-6
 
 
-def flatten_distortion(verts, faces, uvs, group):
+def flatten_distortion(verts, faces, uvs, group, uv_areas=None):
     """Scale-free symmetric Dirichlet of the island's map, 4.0 at isometry.
     A face flipped against the island's own orientation, above noise scale,
     is infinity: the map is broken there, not just stretched. A mirrored
-    island measures like its source, orientation is the island's majority."""
-    signed_total = sum(signed_area(uvs[fi]) for fi in group)
+    island measures like its source, orientation is the island's majority.
+    uv_areas are the per-face signed uv areas, when the caller has them."""
+    if uv_areas is None:
+        signed_total = sum(signed_area(uvs[fi]) for fi in group)
+    else:
+        signed_total = sum(uv_areas[fi] for fi in group)
     orientation = 1.0 if signed_total >= 0 else -1.0
     floor = FLIP_NOISE * abs(signed_total)
     grow = shrink = total = 0.0
     for fi in group:
         face = faces[fi]
         face_uv = uvs[fi]
+        p0 = verts[face[0]]
+        u0 = face_uv[0]
         for i in range(1, len(face) - 1):
-            corners = (0, i, i + 1)
-            p0, p1, p2 = (verts[face[c]] for c in corners)
-            e1 = [p1[k] - p0[k] for k in range(3)]
-            e2 = [p2[k] - p0[k] for k in range(3)]
-            length = math.sqrt(sum(x * x for x in e1))
-            span = [
-                e1[1] * e2[2] - e1[2] * e2[1],
-                e1[2] * e2[0] - e1[0] * e2[2],
-                e1[0] * e2[1] - e1[1] * e2[0],
-            ]
-            area = math.sqrt(sum(x * x for x in span)) / 2
-            uv_area = signed_area([face_uv[c] for c in corners]) * orientation
+            p1 = verts[face[i]]
+            p2 = verts[face[i + 1]]
+            e1x, e1y, e1z = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
+            e2x, e2y, e2z = p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]
+            length = math.sqrt(e1x * e1x + e1y * e1y + e1z * e1z)
+            sx = e1y * e2z - e1z * e2y
+            sy = e1z * e2x - e1x * e2z
+            sz = e1x * e2y - e1y * e2x
+            area = math.sqrt(sx * sx + sy * sy + sz * sz) / 2
+            u1 = face_uv[i]
+            u2 = face_uv[i + 1]
+            uv_area = (
+                (
+                    (u0[0] * u1[1] - u1[0] * u0[1])
+                    + (u1[0] * u2[1] - u2[0] * u1[1])
+                    + (u2[0] * u0[1] - u0[0] * u2[1])
+                )
+                / 2
+                * orientation
+            )
             if length <= 0 or area <= 0 or abs(uv_area) <= floor:
                 continue
             if uv_area < 0:
                 return math.inf
-            x2 = sum(a * b for a, b in zip(e1, e2)) / length
+            x2 = (e1x * e2x + e1y * e2y + e1z * e2z) / length
             y2 = 2 * area / length
-            u0, u1, u2 = (face_uv[c] for c in corners)
             a = (u1[0] - u0[0]) * orientation / length
             b = ((u2[0] - u0[0]) * orientation - x2 * a) / y2
             c = (u1[1] - u0[1]) / length

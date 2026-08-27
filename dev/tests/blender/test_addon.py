@@ -1,6 +1,6 @@
 import bpy
 import pytest
-from bl_ext.user_default.UVgami.src.ops.uv import pack, show_seams
+from bl_ext.user_default.UVgami.src.ops.uv import pack_objects, show_seams
 from bl_ext.user_default.UVgami.src.utils.mesh import edit_restore
 
 ADDON_MODULE = "bl_ext.user_default.UVgami"
@@ -54,7 +54,7 @@ def test_addon_survives_a_disable_enable_round_trip():
 
 def test_pack_moves_islands_into_the_unit_square(make_mesh, face_uvs):
     obj = two_quads(make_mesh, [(2, 2), (3, 2), (3, 3), (2, 3)])
-    edit_restore([obj], pack)
+    pack_objects([obj])
     corners = [uv for face in face_uvs(obj) for uv in face]
     assert min(u for u, _ in corners) >= 0
     assert max(u for u, _ in corners) <= 1
@@ -66,7 +66,7 @@ def test_pack_keeps_stacked_duplicates_exactly_together(make_mesh, face_uvs):
     twin, an artist stack). Blender's packer would separate them, so the
     duplicate sits out the pack and snaps back onto the island that ran."""
     obj = two_quads(make_mesh, SQUARE)
-    edit_restore([obj], pack)
+    pack_objects([obj])
     kept, duplicate = face_uvs(obj)
     assert kept == duplicate
     assert kept != SQUARE
@@ -76,7 +76,7 @@ def test_pack_separates_islands_that_are_not_duplicates(make_mesh, face_uvs):
     """The control for the stack case: without identical uvs the two islands
     have to end up somewhere different, or the test above proves nothing."""
     obj = two_quads(make_mesh, [(0, 0), (2, 0), (2, 1), (0, 1)])
-    edit_restore([obj], pack)
+    pack_objects([obj])
     first, second = face_uvs(obj)
     assert first != second
 

@@ -39,6 +39,7 @@ from .mesh import (
     uv_area_fit,
     uv_fit,
     uv_island_groups,
+    uv_seams,
     uvs_collapsed,
     vertex_components,
 )
@@ -135,6 +136,7 @@ __all__ = [
     "uv_area_fit",
     "uv_fit",
     "uv_island_groups",
+    "uv_seams",
     "uv_topology",
     "uvs_collapsed",
     "vertex_components",

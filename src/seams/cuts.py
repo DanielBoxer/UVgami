@@ -68,9 +68,15 @@ def crease_relief(verts, faces, weighted, edges):
     cuts prefer sharp edges over wandering across flat triangles. The sign
     is read off the neighbour's centroid against the face plane: risen means
     concave, a groove that hides a seam. Flat edges are left out."""
-    centroids = [
-        [sum(verts[v][i] for v in face) / len(face) for i in range(3)] for face in faces
-    ]
+    centroids = []
+    for face in faces:
+        x = y = z = 0.0
+        for v in face:
+            px, py, pz = verts[v]
+            x += px
+            y += py
+            z += pz
+        centroids.append([x / len(face), y / len(face), z / len(face)])
     relief = {}
     for key, owners in edges.items():
         if len(owners) != 2:

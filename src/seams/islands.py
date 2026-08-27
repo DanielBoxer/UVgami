@@ -12,7 +12,15 @@ import collections
 import math
 
 from .cuts import connect_loops, crease_relief, cut_path, edge_cost, path_cost
-from .mesh import build, face_edges, find, island_groups, pair, signed_area
+from .mesh import (
+    face_edges,
+    find,
+    island_groups,
+    pair,
+    signed_area,
+    uv_seams,
+    weighted_normals,
+)
 from .rectify import flatten_distortion
 
 
@@ -69,7 +77,14 @@ def uv_topology(group, faces, edges, seams):
     1. Boundary loops come back as mesh vert sets, and loops touching at a
     glued corner count as one, a cut between them would be a point.
     """
-    parent = {}
+    node_of = {}
+    vert_of = []
+    for f in group:
+        for v in faces[f]:
+            if (f, v) not in node_of:
+                node_of[(f, v)] = len(vert_of)
+                vert_of.append(v)
+    parent = list(range(len(vert_of)))
 
     def union(a, b):
         ra, rb = find(parent, a), find(parent, b)
@@ -77,9 +92,6 @@ def uv_topology(group, faces, edges, seams):
             parent[ra] = rb
 
     in_group = set(group)
-    for f in group:
-        for v in faces[f]:
-            parent.setdefault((f, v), (f, v))
     for f in group:
         face = faces[f]
         n = len(face)
@@ -90,18 +102,19 @@ def uv_topology(group, faces, edges, seams):
             if len(owners) == 2 and key not in seams:
                 g = owners[1] if owners[0] == f else owners[0]
                 if g != f and f < g and g in in_group:
-                    union((f, u), (g, u))
-                    union((f, v), (g, v))
+                    union(node_of[(f, u)], node_of[(g, u)])
+                    union(node_of[(f, v)], node_of[(g, v)])
 
     edge_count = collections.Counter()
     for f in group:
         face = faces[f]
         n = len(face)
+        roots = [find(parent, node_of[(f, v)]) for v in face]
         for i in range(n):
-            a, b = find(parent, (f, face[i])), find(parent, (f, face[(i + 1) % n]))
+            a, b = roots[i], roots[(i + 1) % n]
             edge_count[(a, b) if a < b else (b, a)] += 1
 
-    classes = {find(parent, node) for node in parent}
+    classes = {find(parent, node) for node in range(len(parent))}
     ec = len(classes) - len(edge_count) + len(group)
 
     comp_parent = {}
@@ -116,7 +129,7 @@ def uv_topology(group, faces, edges, seams):
     loops = collections.defaultdict(set)
     for a, b in boundary:
         # a corner class only ever holds one mesh vert, its node's second slot
-        loops[find(comp_parent, a)].update((a[1], b[1]))
+        loops[find(comp_parent, a)].update((vert_of[a], vert_of[b]))
     return ec, list(loops.values())
 
 
@@ -145,13 +158,17 @@ def crosses(a, b, c, d):
     return True
 
 
-def island_ruined(group, faces, uvs, edges, seams):
+def island_ruined(group, faces, uvs, edges, seams, uv_areas=None):
     """A flipped or collapsed face, a non-disk island, or two boundary
     segments crossing: what makes the engine throw the island's layout
     away and re-cut it. Crossings between two different islands do not
-    happen out of blender's packer, only inside one island.
+    happen out of blender's packer, only inside one island. uv_areas are
+    the per-face signed uv areas, when the caller has them.
     """
-    signed = [signed_area(uvs[f]) for f in group]
+    if uv_areas is None:
+        signed = [signed_area(uvs[f]) for f in group]
+    else:
+        signed = [uv_areas[f] for f in group]
     total = sum(signed)
     if total == 0 or any(s * total <= 0 for s in signed):
         return True
@@ -539,11 +556,24 @@ def _spatial_parameter(verts, faces, group):
     return ts, lo, hi - lo
 
 
-def whole_mesh_fragment_floor(verts, faces):
+def whole_mesh_fragment_floor(areas3d):
     """The crumb floor reads the whole mesh, not the scan: split_moves scans
     one piece of a joined output per call, and a small piece must not shrink
     the floor under its own crumbs."""
-    return FRAGMENT_SHARE * sum(polygon_area(verts, face) for face in faces)
+    return FRAGMENT_SHARE * sum(areas3d)
+
+
+def face_measures(verts, faces, uvs):
+    """Per face, the 3d area, the signed uv area and the uv centroid. Every
+    scan pass reads these, so a caller scanning many pieces computes them
+    once."""
+    areas3d = [polygon_area(verts, face) for face in faces]
+    uv_areas = [signed_area(pts) for pts in uvs]
+    centroids = [
+        (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+        for pts in uvs
+    ]
+    return areas3d, uv_areas, centroids
 
 
 def split_islands(
@@ -557,6 +587,7 @@ def split_islands(
     relief_cache=None,
     fragment_floor=None,
     groups_clean=False,
+    measures=None,
 ):
     """Extra seam edges that cut ruined uv islands into smaller pieces.
 
@@ -575,7 +606,8 @@ def split_islands(
     for a caller that knows the rest is unchanged, and fragment_floor is
     the crumb floor of the whole mesh, for a caller scanning it in pieces.
     groups_clean says the caller already dropped every ruined group from
-    groups, so only the pieces cut off them get the ruined check.
+    groups, so only the pieces cut off them get the ruined check. measures
+    is face_measures of the whole mesh, shared the same way.
     """
     if edges is None:
         edges = face_edges(faces)
@@ -583,12 +615,15 @@ def split_islands(
         groups = island_groups(faces, seams, edges)
     if relief_cache is None:
         relief_cache = []
+    if measures is None:
+        measures = face_measures(verts, faces, uvs)
+    areas3d, uv_areas, uv_centroids = measures
 
     def cut_relief():
         # most calls find nothing to cut. a caller scanning many pieces of one
         # mesh shares the cache
         if not relief_cache:
-            weighted, _, _ = build(verts, faces)
+            weighted = weighted_normals(verts, faces)
             relief_cache.append(crease_relief(verts, faces, weighted, edges))
         return relief_cache[0]
 
@@ -597,17 +632,10 @@ def split_islands(
     # uv lengths scaled by sqrt(3d area over uv area), so every length compares
     # at even texel density. the engine packs each island at its own scale
     def measure(group):
-        centroids = {}
-        areas = {}
-        for f in group:
-            pts = uvs[f]
-            centroids[f] = (
-                sum(p[0] for p in pts) / len(pts),
-                sum(p[1] for p in pts) / len(pts),
-            )
-            areas[f] = abs(signed_area(pts))
+        centroids = {f: uv_centroids[f] for f in group}
+        areas = {f: abs(uv_areas[f]) for f in group}
         size = sum(areas.values())
-        area3d = sum(polygon_area(verts, faces[f]) for f in group)
+        area3d = sum(areas3d[f] for f in group)
         if len(group) < 2 or size <= 0 or area3d <= 0:
             return None
         cx = sum(areas[f] * centroids[f][0] for f in group) / size
@@ -632,12 +660,12 @@ def split_islands(
         return ts, lo, length, size, areas, math.sqrt(area3d / size)
 
     # an island too small to cut still takes up the atlas
-    total = sum(polygon_area(verts, faces[f]) for g in groups for f in g)
+    total = sum(areas3d[f] for g in groups for f in g)
     if total <= 0:
         return extra
     cap = math.sqrt(total / SPLIT_TARGET)
     if fragment_floor is None:
-        fragment_floor = whole_mesh_fragment_floor(verts, faces)
+        fragment_floor = whole_mesh_fragment_floor(areas3d)
 
     # an island is what the unwrap made one: faces joined by unseamed edges
     queue = collections.deque((group, groups_clean) for group in groups)
@@ -649,12 +677,15 @@ def split_islands(
         ts, lo, length, size, areas, density = m
         # the cap in this island's own uv units
         local_cap = cap / density
-        ruined = not known_clean and island_ruined(group, faces, uvs, edges, seams)
+        ruined = not known_clean and island_ruined(
+            group, faces, uvs, edges, seams, uv_areas
+        )
         # a ruined island's uv bins still place a good cut, a crushed one's
         # do not
         crushed = (
             not ruined
-            and flatten_distortion(verts, faces, uvs, group) > SPLIT_DISTORTION
+            and flatten_distortion(verts, faces, uvs, group, uv_areas)
+            > SPLIT_DISTORTION
         )
         clean = not ruined and not crushed
         if clean:
@@ -702,7 +733,7 @@ def split_islands(
             continue
         pieces = split_pieces(group, links, new)
         pieces = absorb_fragments(
-            pieces, links, new, lambda f: polygon_area(verts, faces[f]), fragment_floor
+            pieces, links, new, lambda f: areas3d[f], fragment_floor
         )
         if not new:
             continue
@@ -734,19 +765,25 @@ def split_moves(verts, faces, uvs, starts, ranges=None):
     flipped triangle the engine ships is left for Relax Island: re-unwraps
     tried here made those islands worse, not better."""
     edges = face_edges(faces)
-    uv_at = [dict(zip(face, uvs[fi])) for fi, face in enumerate(faces)]
-    seams = {
-        key
-        for key, owners in edges.items()
-        if len(owners) == 2
-        and any(uv_at[owners[0]][v] != uv_at[owners[1]][v] for v in key)
-    }
+    seams = uv_seams(faces, uvs, edges)
+    measures = face_measures(verts, faces, uvs)
+    areas3d, uv_areas, _ = measures
     groups = island_groups(faces, seams, edges)
-    groups = [g for g in groups if not island_ruined(g, faces, uvs, edges, seams)]
+    groups = [
+        g for g in groups if not island_ruined(g, faces, uvs, edges, seams, uv_areas)
+    ]
     if ranges is None:
         scanned = groups
         extra = split_islands(
-            verts, faces, seams, uvs, None, groups, edges, groups_clean=True
+            verts,
+            faces,
+            seams,
+            uvs,
+            None,
+            groups,
+            edges,
+            groups_clean=True,
+            measures=measures,
         )
     else:
         # each piece's engine output has its own uv scale, so its length cap
@@ -754,7 +791,7 @@ def split_moves(verts, faces, uvs, starts, ranges=None):
         scanned = []
         extra = set()
         relief_cache = []
-        fragment_floor = whole_mesh_fragment_floor(verts, faces)
+        fragment_floor = whole_mesh_fragment_floor(areas3d)
         for start, stop in ranges:
             scoped = [g for g in groups if start <= g[0] < stop]
             scanned += scoped
@@ -769,6 +806,7 @@ def split_moves(verts, faces, uvs, starts, ranges=None):
                 relief_cache,
                 fragment_floor,
                 groups_clean=True,
+                measures=measures,
             )
     if not extra:
         return []

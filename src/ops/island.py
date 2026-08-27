@@ -2,6 +2,7 @@ import bmesh
 import bpy
 
 from ..engines import get_engine
+from ..hard_surface import apply_seams
 from ..job import AreaUVs, IslandUVs, ProxyIslandUVs
 from ..logger import logger
 from ..manager import manager
@@ -10,11 +11,13 @@ from ..seams import (
     FLIP_NOISE,
     face_edges,
     flatten_distortion,
+    island_groups,
     pair,
     rectify_targets,
     signed_area,
     split_moves,
     uv_island_groups,
+    uv_seams,
 )
 from ..ui.panels import describe_settings, fix_settings
 from ..unwrap import Unwrap
@@ -273,7 +276,9 @@ def rectify_islands(obj):
         return
     faces = face_vertices(mesh)
     uvs = face_uvs(mesh)
-    groups = uv_island_groups(faces, uvs, face_edges(faces))
+    edges = face_edges(faces)
+    seams = uv_seams(faces, uvs, edges)
+    groups = island_groups(faces, seams, edges)
     plans = rectify_targets(uvs, groups)
     if not plans:
         return
@@ -282,14 +287,13 @@ def rectify_islands(obj):
         flatten_distortion(coords, faces, uvs, group) for group, _, _ in plans
     ]
 
-    bm = new_bmesh(obj)
-    uvl = bm.loops.layers.uv.active
-    bm.faces.ensure_lookup_table()
     # the unwrap splits charts by seam marks, not by the uv map, so without
     # this neighboring islands weld at their shared edges and pull against
     # the pins
-    for edge in bm.edges:
-        edge.seam = edge_splits_uv(edge, uvl)
+    apply_seams(mesh, seams)
+    bm = new_bmesh(obj)
+    uvl = bm.loops.layers.uv.active
+    bm.faces.ensure_lookup_table()
     for group, targets, inner in plans:
         for fi in group:
             for corner, loop in enumerate(bm.faces[fi].loops):

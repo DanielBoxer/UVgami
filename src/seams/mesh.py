@@ -83,15 +83,21 @@ def turn_angle(weighted, owners):
     return math.degrees(math.acos(max(-1.0, min(1.0, dot))))
 
 
-def build(verts, faces):
-    """Per-face weighted normals and areas, plus edge -> owning faces."""
-    weighted, areas = [], []
+def weighted_normals(verts, faces):
+    """Per-face normals scaled by twice the area of the first three corners."""
+    weighted = []
     for face in faces:
         a, b, c = (verts[i] for i in face[:3])
-        n = cross([b[i] - a[i] for i in range(3)], [c[i] - a[i] for i in range(3)])
-        weighted.append(n)
-        areas.append(norm(n) / 2)
-    return weighted, areas, face_edges(faces)
+        weighted.append(
+            cross([b[i] - a[i] for i in range(3)], [c[i] - a[i] for i in range(3)])
+        )
+    return weighted
+
+
+def build(verts, faces):
+    """Per-face weighted normals and areas, plus edge -> owning faces."""
+    weighted = weighted_normals(verts, faces)
+    return weighted, [norm(n) / 2 for n in weighted], face_edges(faces)
 
 
 def signed_area(pts):
@@ -127,28 +133,31 @@ def island_groups(faces, seams, edges):
     return list(members.values())
 
 
+def uv_seams(faces, uvs, edges):
+    """The uv map's own seams: edges whose faces don't share their corner
+    uvs. Boundary edges are never seams."""
+    seams = set()
+    for (u, v), owners in edges.items():
+        if len(owners) < 2:
+            continue
+        first = faces[owners[0]]
+        first_uv = uvs[owners[0]]
+        at_u = first_uv[first.index(u)]
+        at_v = first_uv[first.index(v)]
+        for g in owners[1:]:
+            face = faces[g]
+            face_uv = uvs[g]
+            if face_uv[face.index(u)] != at_u or face_uv[face.index(v)] != at_v:
+                seams.add((u, v))
+                break
+    return seams
+
+
 def uv_island_groups(faces, uvs, edges):
     """Faces grouped into uv islands: joined by interior edges whose corner
     uvs agree on both faces, so the grouping follows the uv map itself and
     needs no seam marks."""
-    parent = list(range(len(faces)))
-
-    def corner_uv(f, v):
-        return uvs[f][faces[f].index(v)]
-
-    for (u, v), owners in edges.items():
-        if len(owners) != 2:
-            continue
-        f, g = owners
-        if corner_uv(f, u) == corner_uv(g, u) and corner_uv(f, v) == corner_uv(g, v):
-            a, b = find(parent, f), find(parent, g)
-            if a != b:
-                parent[a] = b
-
-    members = collections.defaultdict(list)
-    for fi in range(len(faces)):
-        members[find(parent, fi)].append(fi)
-    return list(members.values())
+    return island_groups(faces, uv_seams(faces, uvs, edges), edges)
 
 
 def vertex_components(faces):

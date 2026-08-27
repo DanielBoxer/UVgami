@@ -5,28 +5,26 @@ import bpy
 # from ..proxy import bounds_frame, snap_cuts, vertex_map
 from ..seams import face_edges, uv_island_groups
 from ..similar import find_stacks
-from ..utils.mesh import edit_restore, select_uvs, validate_obj
+from ..utils.mesh import (
+    corner_uvs,
+    edit_restore,
+    face_vertices,
+    select_uvs,
+    validate_obj,
+)
 
 
-def _edit_meshes():
-    return [
-        obj for obj in bpy.context.objects_in_mode_unique_data if obj.type == "MESH"
-    ]
-
-
-def _deselect_stacked_duplicates(obj):
-    """Find the object's stacked duplicate islands and deselect their mesh
-    faces, which drops them from every uv operator while sync is off, so the
-    pack leaves them in place. Returns per stack the kept island's anchor and
-    reference loops with their uvs, which recover the transform the pack
-    applied, and the duplicate faces to move along."""
-    bm = bmesh.from_edit_mesh(obj.data)
-    uv_layer = bm.loops.layers.uv.active
-    if uv_layer is None:
+def island_stacks(obj):
+    """The object's stacked duplicate islands. Read in bulk, which comes
+    back empty for an object in edit mode, so it runs before the session.
+    Returns per stack the kept island's anchor and reference loops with
+    their uvs, which recover the transform the pack applied, and the
+    duplicate faces to move along."""
+    mesh = obj.data
+    if mesh.uv_layers.active is None:
         return []
-    bm.faces.ensure_lookup_table()
-    faces = [tuple(v.index for v in face.verts) for face in bm.faces]
-    uvs = [[tuple(loop[uv_layer].uv) for loop in face.loops] for face in bm.faces]
+    faces = face_vertices(mesh)
+    uvs = corner_uvs(mesh)
 
     stacks = []
     groups = uv_island_groups(faces, uvs, face_edges(faces))
@@ -42,8 +40,6 @@ def _deselect_stacked_duplicates(obj):
             # a zero size island can't recover a transform, pack it normally
             continue
         duplicate_faces = [fi for group in duplicates for fi in group]
-        for fi in duplicate_faces:
-            bm.faces[fi].select = False
         kept_loops = {}
         for fi in kept:
             for ci, uv in enumerate(uvs[fi]):
@@ -59,6 +55,18 @@ def _deselect_stacked_duplicates(obj):
             )
         )
     return stacks
+
+
+def _deselect_stacked_duplicates(obj, stacks):
+    """Deselect the duplicates' mesh faces, which drops them from every uv
+    operator while sync is off, so the pack leaves them in place."""
+    if not stacks:
+        return
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    for stack in stacks:
+        for fi in stack[-1]:
+            bm.faces[fi].select = False
 
 
 def _restack(obj, stacks):
@@ -97,10 +105,17 @@ def _restack(obj, stacks):
     bmesh.update_edit_mesh(obj.data)
 
 
-def pack():
-    # blender's merge_overlap can't keep stacks together, it also glues the
-    # accidental overlaps of a multi piece output into one blob, so exact
-    # stacks are packed as one island and the duplicates moved after
+def pack_objects(objects):
+    """Pack these objects' uvs together in one edit session."""
+    edit_restore(objects, pack, {obj: island_stacks(obj) for obj in objects})
+
+
+def pack(stacks_of):
+    """Inside the edit session, with island_stacks per object.
+
+    Blender's merge_overlap can't keep stacks together, it also glues the
+    accidental overlaps of a multi piece output into one blob, so exact
+    stacks are packed as one island and the duplicates moved after."""
     tool_settings = bpy.context.scene.tool_settings
     old_sync = tool_settings.use_uv_select_sync
     # with sync on, uv operators follow the mesh selection their own way per
@@ -112,13 +127,14 @@ def pack():
         # 3d area, which floats compute a few ulps apart on a rotated twin,
         # and that noise breaks the exact uv match. the duplicates sit out
         # both operators and snap to their kept island after
-        stacked = [(obj, _deselect_stacked_duplicates(obj)) for obj in _edit_meshes()]
+        for obj, stacks in stacks_of.items():
+            _deselect_stacked_duplicates(obj, stacks)
         if bpy.context.scene.uvgami.fix_scale:
             bpy.ops.uv.average_islands_scale()
         bpy.ops.uv.pack_islands(
             margin=bpy.context.scene.uvgami.margin, rotate_method="AXIS_ALIGNED"
         )
-        for obj, stacks in stacked:
+        for obj, stacks in stacks_of.items():
             _restack(obj, stacks)
         bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.uv.select_all(action="DESELECT")
@@ -184,9 +200,9 @@ class UVGAMI_OT_pack(bpy.types.Operator):
             if combine_uvs:
                 valid_objs.append(obj)
             else:
-                edit_restore([obj], pack)
+                pack_objects([obj])
 
         if combine_uvs:
-            edit_restore(valid_objs, pack)
+            pack_objects(valid_objs)
 
         return {"FINISHED"}
