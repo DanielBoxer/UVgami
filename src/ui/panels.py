@@ -417,9 +417,12 @@ def draw_proxy(layout, props):
     """Shared with the uv editor settings."""
     sub = toggle(layout, props, "use_proxy", "Proxy", "MOD_DECIM")
     if sub is not None:
-        row = sub.row()
-        row.label(text="Proxy Faces", icon="MESH_DATA")
+        row = sub.row(align=True)
+        row.label(text="Faces", icon="MESH_DATA")
         row.prop(props, "proxy_faces")
+        button = row.row(align=True)
+        button.ui_units_x = 1.4
+        button.operator("uvgami.preview_proxy", text="", icon="MOD_DECIM")
 
 
 def draw_timeout(layout, props):

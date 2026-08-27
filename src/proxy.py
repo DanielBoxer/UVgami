@@ -44,22 +44,41 @@ def triangle_count(obj):
 def make_proxy(obj, target_faces):
     """Decimate obj in place to roughly target_faces triangles.
 
-    Collapsing leaves vertices with no face behind, which the engine reads as
-    non-manifold vertices and refuses, so they go before the mesh is used."""
+    obj has to be visible in the view layer and carry no other modifiers,
+    since the decimate is baked by evaluating the whole object."""
     triangles = triangle_count(obj)
     if triangles <= target_faces:
         return False
-    bpy.context.view_layer.objects.active = obj
     modifier = obj.modifiers.new("UVgami Proxy", "DECIMATE")
     modifier.ratio = target_faces / triangles
-    bpy.ops.object.modifier_apply(modifier=modifier.name)
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    baked = bpy.data.meshes.new_from_object(
+        obj.evaluated_get(depsgraph),
+        preserve_all_data_layers=True,
+        depsgraph=depsgraph,
+    )
 
+    stale = obj.data
+    obj.data = baked
+    obj.modifiers.remove(modifier)
+    bpy.data.meshes.remove(stale)
+
+    if triangle_count(obj) == triangles:
+        # a hidden object is left out of the depsgraph
+        raise RuntimeError(f"{obj.name} was not decimated, it has to be visible")
+
+    drop_loose_vertices(obj)
+    return True
+
+
+def drop_loose_vertices(obj):
+    """Collapsing leaves vertices with no face behind, which the engine reads
+    as non-manifold vertices and refuses."""
     bm = new_bmesh(obj)
     loose = [v for v in bm.verts if not v.link_faces]
     if loose:
         bmesh.ops.delete(bm, geom=loose, context="VERTS")
     set_bmesh(bm, obj)
-    return True
 
 
 def bounds_frame(obj):

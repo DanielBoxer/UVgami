@@ -29,6 +29,7 @@ from .src.ops.guides import (
     UVGAMI_OT_exit_draw,
     UVGAMI_OT_clear_draw,
 )
+from .src.ops.proxy import UVGAMI_OT_preview_proxy
 from .src.ops.uv import UVGAMI_OT_pack
 from .src.ops.island import (
     UVGAMI_OT_unwrap_area,
@@ -90,6 +91,7 @@ classes = (
     UVGAMI_OT_exit_draw,
     UVGAMI_OT_clear_draw,
     UVGAMI_OT_pack,
+    UVGAMI_OT_preview_proxy,
     UVGAMI_OT_unwrap_island,
     UVGAMI_OT_relax_island,
     UVGAMI_OT_combine_islands,

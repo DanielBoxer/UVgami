@@ -155,8 +155,10 @@ def queue_island(obj, group, bbox, area, k, input_path, props):
         path = path.parent / f"{path.stem}1.obj"
     export_obj(temp, path, False)
     vertex_count = len(temp.data.vertices)
+    # make_proxy swaps in a mesh of its own
+    mesh = temp.data
     bpy.data.objects.remove(temp, do_unlink=True)
-    bpy.data.meshes.remove(island_mesh)
+    bpy.data.meshes.remove(mesh)
 
     job = (
         ProxyIslandUVs(list(group), bbox, area)
