@@ -6,6 +6,7 @@ adapts a Blender mesh onto these calls, so this module stays unit-testable
 and can run off the main thread."""
 
 import collections
+import functools
 import shutil
 import subprocess
 import tempfile
@@ -15,6 +16,7 @@ from pathlib import Path
 
 from .cancel import Cancelled, check_cancelled
 from .mesh import face_edges
+from .parallel import seam_edges_parallel
 from .pipeline import seam_edges
 from .regions import CREASE_ANGLE
 from .symmetry import mirror_seams
@@ -211,6 +213,7 @@ def preseed_uvs(
     marked_seams=frozenset(),
     mirrors=None,
     cancelled=None,
+    python=None,
 ):
     """Seam the strip-merged feature boundaries and flatten.
 
@@ -222,7 +225,8 @@ def preseed_uvs(
     the plane. Returns (seams, uvs) where uvs is per-face corner lists,
     None for faces outside only. Returns None when the subset is closed and
     the seam set came out empty, which cannot flatten: the caller falls back
-    to a scratch unwrap.
+    to a scratch unwrap. python is (executable, leading args) for the seam
+    worker processes, None runs the passes here.
 
     A ruined island ships as-is on purpose: the engine rejects it and its
     own cut search replaces it, which benches better than repairing here."""
@@ -234,7 +238,12 @@ def preseed_uvs(
     else:
         forced = set(marked_seams) if marked == "ADD" else None
         detect = faces if only is None else [faces[i] for i in subset]
-        seams = seam_edges(
+        run = (
+            seam_edges
+            if python is None
+            else functools.partial(seam_edges_parallel, python)
+        )
+        seams = run(
             verts, detect, angle, weights=weights, forced=forced, cancelled=cancelled
         )
     if mirrors:

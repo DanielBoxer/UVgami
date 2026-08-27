@@ -43,6 +43,7 @@ from .mesh import (
     uvs_collapsed,
     vertex_components,
 )
+from .parallel import seam_edges_parallel
 from .pipeline import is_hard_surface, seam_edges
 from .preseed import (
     FlattenEngine,
@@ -121,6 +122,7 @@ __all__ = [
     "region_topology",
     "reroute_boundaries",
     "seam_edges",
+    "seam_edges_parallel",
     "signed_area",
     "snap_paths",
     "split_islands",

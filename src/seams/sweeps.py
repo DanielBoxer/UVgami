@@ -422,7 +422,17 @@ def merge_shed(group, relabel, label, verts, faces, edges, areas, min_width):
             relabel[i] = into
 
 
-def split_sweeps(verts, faces, weighted, areas, edges, label, min_width=0):
+def split_sweeps(
+    verts,
+    faces,
+    weighted,
+    areas,
+    edges,
+    label,
+    min_width=0,
+    model_area=None,
+    face_ids=None,
+):
     """Split swept regions into wall and cap parts, seaming their rims.
 
     See SWEEP_BAND: this stops a cylinder-like region from keeping its end
@@ -435,11 +445,14 @@ def split_sweeps(verts, faces, weighted, areas, edges, label, min_width=0):
     alone. This is where a coarse bent tube gets its runs: its cross-section
     turns past CREASE_ANGLE, so sweep_rims never sees it whole, but the
     merges rebuild it into one region by the time this pass runs.
+    model_area and face_ids are the whole mesh's when faces is one loose
+    part of it, see straight_runs.
     """
     members = collections.defaultdict(list)
     for i, r in label.items():
         members[r].append(i)
-    model_area = sum(areas)
+    if model_area is None:
+        model_area = sum(areas)
 
     relabel = {}
     for r, group in members.items():
@@ -473,7 +486,7 @@ def split_sweeps(verts, faces, weighted, areas, edges, label, min_width=0):
                 return by_normals(run) or by_positions(run)
 
             snap = valley_snap(verts, faces, edges, entries)
-            for run, _ in straight_runs(group, entries, edges, either, snap):
+            for run, _ in straight_runs(group, entries, edges, either, snap, face_ids):
                 for i in run:
                     relabel[i] = run[0]
             merge_shed(group, relabel, label, verts, faces, edges, areas, min_width)
@@ -704,7 +717,7 @@ def profile_panels(wall, axis, entries, edges, areas):
     return {i: find(parent, i) for i in wall}
 
 
-def straight_runs(group, entries, edges, fit_of=None, snap=None):
+def straight_runs(group, entries, edges, fit_of=None, snap=None, face_ids=None):
     """Contiguous pieces of a bent swept cluster, each straight enough to
     pass the wall test against its own axis, with that axis.
 
@@ -716,7 +729,11 @@ def straight_runs(group, entries, edges, fit_of=None, snap=None):
     per growth step. fit_of overrides the normal-based test with another
     judge of a piece: it gets the faces, returns the axis or None. snap
     gets (flat, ends, cut) and may move the cut a few growth rings back
-    to a better boundary, a valley say, returning the new cut."""
+    to a better boundary, a valley say, returning the new cut. face_ids
+    maps each face to its id in the whole mesh when group is part of a
+    loose part run alone: a run grows from wherever the pick set iterates
+    first, and an int set iterates by the ids in it and the order they
+    went in, so the whole mesh's ids give the whole run's starts."""
     in_group = set(group)
     adjacency = collections.defaultdict(list)
     for owners in edges.values():
@@ -730,11 +747,14 @@ def straight_runs(group, entries, edges, fit_of=None, snap=None):
         fit_of = normal_fit(entries)
 
     remaining = set(group)
+    ids = list(group) if face_ids is None else [face_ids[i] for i in group]
+    picks = set(ids)
+    local = dict(zip(ids, group))
     runs = []
     seed = None
     while remaining:
         if seed is None or seed not in remaining:
-            start = next(iter(remaining))
+            start = local[next(iter(picks))]
             seed = spread_rings(adjacency, start, remaining)[-1][0]
         layers = spread_rings(adjacency, seed, remaining)
         flat, ends = [], []
@@ -762,7 +782,9 @@ def straight_runs(group, entries, edges, fit_of=None, snap=None):
                 low, axis = span, fit
             else:
                 # nothing straight near this seed
-                remaining.difference_update(flat[: ends[span - 1]])
+                dropped = flat[: ends[span - 1]]
+                remaining.difference_update(dropped)
+                picks.difference_update(ids_of(dropped, face_ids))
                 seed = layers[span][0] if span < count else None
                 continue
         high = None
@@ -785,11 +807,16 @@ def straight_runs(group, entries, edges, fit_of=None, snap=None):
         run = flat[: ends[low - 1]]
         runs.append((run, axis))
         remaining.difference_update(run)
+        picks.difference_update(ids_of(run, face_ids))
         seed = layers[low][0] if low < count else None
     return runs
 
 
-def sweep_rims(verts, faces):
+def ids_of(faces, face_ids):
+    return faces if face_ids is None else [face_ids[i] for i in faces]
+
+
+def sweep_rims(verts, faces, model_area=None, face_ids=None):
     """Rim seams for swept shapes, read before any merge pass.
 
     absorb never checks how far a boundary turns, so a coarse cylinder's
@@ -801,13 +828,16 @@ def sweep_rims(verts, faces):
     contour instead of the ragged cluster border. A cluster too bent for
     one axis splits into straight runs, each rimmed apart from the next.
     Returns the rim edges as vertex pairs, to be forced so no merge
-    crosses them, plus the wall faces themselves."""
+    crosses them, plus the wall faces themselves. model_area and face_ids
+    are the whole mesh's when faces is one loose part of it, see
+    straight_runs."""
     weighted, areas, edges = build(verts, faces)
     root = partition(faces, weighted, edges, CREASE_ANGLE)
     groups = collections.defaultdict(list)
     for i in range(len(faces)):
         groups[root(i)].append(i)
-    model_area = sum(areas)
+    if model_area is None:
+        model_area = sum(areas)
 
     walls = set()
     wall_axis = {}
@@ -867,7 +897,9 @@ def sweep_rims(verts, faces):
         if off_wall > SWEEP_BAND * total or norm(resultant) / total > WALL_ROUND:
             if band > SWEEP_BAND * total:
                 entries = {i: (w, n) for i, w, n in normals}
-                for run, run_axis in straight_runs(group, entries, edges):
+                for run, run_axis in straight_runs(
+                    group, entries, edges, face_ids=face_ids
+                ):
                     run_axial = {}
                     run_total = 0.0
                     for i in run:

@@ -1,3 +1,6 @@
+import sys
+
+import bpy
 import numpy
 
 from .ops.guides import SEAM_RESTRICTIONS_GROUP
@@ -29,6 +32,13 @@ def flatten_engine():
     if error is not None:
         raise FlattenError(error)
     return FlattenEngine(path, get_extension_dir_path() / "preseed")
+
+
+def seam_workers():
+    """The interpreter the seam worker processes run on: Blender's own
+    python, started the way Blender starts it (isolated from the user's
+    site and PYTHONPATH)."""
+    return sys.executable, list(bpy.app.python_args)
 
 
 def seam_restrictions(obj):
@@ -156,6 +166,7 @@ def preseed_work(obj, angle, marked="NONE", weights=None, auto=False, mirrors=No
     faces = face_vertices(mesh)
     marks = marked_seams(mesh) if (marked != "NONE" or auto) else frozenset()
     engine = flatten_engine()
+    python = seam_workers()
 
     def compute(cancelled=None):
         only = None
@@ -176,6 +187,7 @@ def preseed_work(obj, angle, marked="NONE", weights=None, auto=False, mirrors=No
             marks,
             mirrors,
             cancelled,
+            python,
         )
         if result is None:
             return None
@@ -230,6 +242,7 @@ def build_seam_uvs(obj, angle=CREASE_ANGLE, marked="NONE", weights=None, only=No
         weights,
         only,
         marked_seams(mesh) if marked != "NONE" else frozenset(),
+        python=seam_workers(),
     )
     if result is None:
         return False
