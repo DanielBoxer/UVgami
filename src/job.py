@@ -274,6 +274,7 @@ class Transfer:
         self.task = None
         self.progress = 0.0
         self.loop_count = 0
+        self.settled = False
 
     def start(self, input_mesh, output):
         """Extract the meshes and start the worker. None means poll()
@@ -312,6 +313,7 @@ class Transfer:
     def cancel(self):
         """Stop a running worker, for a cancel, a stop or a file load. The
         output only makes sense with its uvs applied, so it goes too."""
+        self.settled = True
         self.task.cancel()
         self._discard()
         if check_exists(self.output):

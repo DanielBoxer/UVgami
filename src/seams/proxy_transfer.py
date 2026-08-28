@@ -19,7 +19,12 @@ from .mesh import face_edges
 
 # dense vertices looked up between two progress reports
 LOOKUP_CHUNK = 20000
-LOOKUP_PROGRESS = 0.9
+# each stage's measured share of the transfer, the straightening is the rest
+LOOKUP_SHARE = 0.08
+TEAR_SHARE = 0.10
+REDRAW_SHARE = 0.11
+WELD_SHARE = 0.13
+ABSORB_SHARE = 0.29
 
 # a vertex's corners closer than this share of its mean uv edge are one uv
 WELD_FRACTION = 0.5
@@ -875,9 +880,16 @@ def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=Non
     it stands over and the point on it, in the proxy's space. cancelled is
     polled between lookup chunks."""
 
+    done = 0.0
+
     def report(fraction):
         if progress is not None:
             progress(fraction)
+
+    def finished(share):
+        nonlocal done
+        done += share
+        report(done)
 
     positions, normals = _proxy_space(dense, proxy)
     proxy_map = ProxyMap(proxy)
@@ -890,7 +902,8 @@ def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=Non
         face_of_vertex[start:stop], surface[start:stop] = nearest_faces(
             positions[start:stop], normals[start:stop]
         )
-        report(LOOKUP_PROGRESS * min(stop, len(positions)) / max(len(positions), 1))
+        report(LOOKUP_SHARE * min(stop, len(positions)) / max(len(positions), 1))
+    finished(LOOKUP_SHARE)
     # read at the point under the vertex, a map continued off its face
     # diverges at a crease
     uvs = proxy_map.maps.uv(face_of_vertex, surface)
@@ -905,14 +918,18 @@ def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=Non
     )
     torn_face = numpy.zeros(len(mesh.sizes), dtype=bool)
     torn_face[mesh.face_of[torn_corner]] = True
+    finished(TEAR_SHARE)
 
     check_cancelled(cancelled)
     corner_uvs, drawn_by = _redraw_torn_faces(
         proxy_map, face_of_vertex, surface, uvs, mesh, torn_face
     )
+    finished(REDRAW_SHARE)
     corner_uvs = _weld(corner_uvs, drawn_by, uvs, proxy_map, mesh)
+    finished(WELD_SHARE)
     check_cancelled(cancelled)
     corner_uvs = _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh)
+    finished(ABSORB_SHARE)
     check_cancelled(cancelled)
     corner_uvs = _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh)
     seams = _corner_tears(mesh.corners, mesh.following, corner_uvs, 0.0)

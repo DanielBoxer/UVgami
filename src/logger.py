@@ -5,15 +5,29 @@ class Info:
     def __init__(self):
         self.started = time.strftime("%H:%M:%S")
         self.time = 0
+        # these three add up to self.time
+        self.pre_processing_time = 0
+        self.unwrap_time = 0
+        self.post_processing_time = 0
         self.errors = []
         self.status = "In Progress"
         self.objects = []
         self.engine = ""
         self.settings = ""
 
+    def get_time(self):
+        text = f"{self.time:.2f}s"
+        if self.unwrap_time:
+            text += (
+                f" (pre-processing {self.pre_processing_time:.2f}s,"
+                f" unwrap {self.unwrap_time:.2f}s,"
+                f" post-processing {self.post_processing_time:.2f}s)"
+            )
+        return text
+
     def get_info(self):
         """One line for the run."""
-        fields = [self.started, self.status, f"{self.time:.2f}s"]
+        fields = [self.started, self.status, self.get_time()]
         if self.engine:
             fields.append(self.engine)
         fields.append(", ".join(self.objects))
@@ -28,6 +42,8 @@ class Logger:
     def __init__(self):
         self.unwrap_info = []
         self.start_time = 0
+        self.unwrap_start = None
+        self.unwrap_end = None
 
     def new_info(self):
         info = Info()
@@ -54,9 +70,27 @@ class Logger:
 
     def start_timer(self):
         self.start_time = time.perf_counter()
+        self.unwrap_start = None
+        self.unwrap_end = None
+
+    def mark_unwrapping(self):
+        """Called while any engine still has work. Everything before the first
+        call is pre-processing, everything after the last is post-processing."""
+        self.unwrap_end = time.perf_counter()
+        if self.unwrap_start is None:
+            self.unwrap_start = self.unwrap_end
 
     def update_time(self):
-        self.get_latest().time = time.perf_counter() - self.start_time
+        info = self.get_latest()
+        info.time = time.perf_counter() - self.start_time
+        if self.unwrap_start is None:
+            info.pre_processing_time = info.time
+            return
+        info.pre_processing_time = self.unwrap_start - self.start_time
+        info.unwrap_time = self.unwrap_end - self.unwrap_start
+        info.post_processing_time = (
+            info.time - info.pre_processing_time - info.unwrap_time
+        )
 
 
 logger = Logger()

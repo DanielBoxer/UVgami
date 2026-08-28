@@ -188,9 +188,7 @@ class UVGAMI_OT_cancel_background(bpy.types.Operator):
             )
             if transfer is None:
                 return {"CANCELLED"}
-            # dropped like stop_all, or the dispatch timer reports it failed
-            transfer.job.cancel()
-            manager.pending_transfers.remove(transfer)
+            manager.cancel_transfer(transfer)
         tag_redraw()
         self.report({"INFO"}, "Cancelled")
         return {"FINISHED"}

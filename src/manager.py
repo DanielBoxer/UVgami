@@ -30,6 +30,9 @@ from .utils.ui import popup, set_status, switch_shading, tag_redraw
 # how long a clean run's status bar message stays up
 STATUS_SECONDS = 5
 SETTLE_TICK_SECONDS = 0.05
+# the uv transfer's share of a piece's progress, held back from the start or
+# the bar drops when the engine hands over
+TRANSFER_PROGRESS_SHARE = 0.4
 # a sidebar rebuild mid click drops the click
 PANEL_REDRAW_SECONDS = 1.0
 
@@ -99,6 +102,7 @@ class UnwrapManager:
         self._to_import = []
         # one per proxy finish still running in its worker thread
         self.pending_transfers = []
+        self.cancelled_transfers = set()
         self.transfer_uv_failed = False
         self.transfer_uv_fail_detail = ""
         self.transfer_uv_reason_known = False
@@ -254,6 +258,8 @@ class UnwrapManager:
                         else:
                             failed.append((unwrap, ret_code))
 
+            if self._running or self._queue:
+                logger.mark_unwrapping()
             logger.update_time()
             self._update_progress_bar()
 
@@ -303,14 +309,30 @@ class UnwrapManager:
                 return
             time.sleep(SETTLE_TICK_SECONDS)
 
+    def _piece_progress(self, unwrap, engine_progress, transfer_progress):
+        """One piece's (done, running, remaining). A piece with a uv transfer
+        splits its bar between the engine and the transfer."""
+        job = unwrap.transfer_uvs_job
+        if job is None or job.settled:
+            return numpy.array(engine_progress)
+        share = TRANSFER_PROGRESS_SHARE
+        # a job waiting on the rest of its group has not started reporting
+        transferred = transfer_progress.get(job, 0.0)
+        engine = numpy.array(engine_progress) * (1 - share)
+        return engine + (share * transferred, 0, share * (1 - transferred))
+
     def _update_progress_bar(self):
+        transfer_progress = {
+            entry.job: entry.job.progress for entry in self.pending_transfers
+        }
         # unexported pieces sit at (0, 0, 1) until they start reporting
-        progress = [numpy.array(unwrap.progress) for unwrap in self.active]
-        progress += [numpy.array((1, 0, 0))] * len(self.results)
-        # a running transfer holds the bar below done until it applies
+        progress = [
+            self._piece_progress(unwrap, unwrap.progress, transfer_progress)
+            for unwrap in self.active
+        ]
         progress += [
-            numpy.array((t.job.progress, 0, 1 - t.job.progress))
-            for t in self.pending_transfers
+            self._piece_progress(unwrap, (1, 0, 0), transfer_progress)
+            for unwrap, _ in self.results
         ]
         if not progress:
             return
@@ -548,6 +570,7 @@ class UnwrapManager:
     def _settle_transfer(self, job, output, pack_index, report):
         """Everything after a transfer's report: pack list, hide state, grid,
         collection."""
+        job.settled = True
         props = self.props
         input_mesh = self.input[job]
         if report.applied:
@@ -711,20 +734,31 @@ class UnwrapManager:
 
         self.record_result(unwrap, Result.INVALID)
 
+    def _reached_scene(self, unwrap):
+        """Whether a finished piece's unwrap is in the scene. A discarded or
+        unsettled group is never imported, and a cancelled transfer deletes
+        the output it was about to read."""
+        group = unwrap.join_job
+        if group is not None and (group.discard or not group.is_settled()):
+            return False
+        return unwrap.transfer_uvs_job not in self.cancelled_transfers
+
     def _result_counts(self):
-        """Per-result piece counts. A finished piece whose group was discarded
-        or never settled was not imported, so it counts as cancelled."""
+        """Per-result piece counts. A finished piece that never reached the
+        scene counts as cancelled."""
         counts = dict.fromkeys(Result, 0)
         for unwrap, result in self.results:
-            group = unwrap.join_job
-            if (
-                result is Result.FINISHED
-                and group is not None
-                and (group.discard or not group.is_settled())
-            ):
+            if result is Result.FINISHED and not self._reached_scene(unwrap):
                 result = Result.CANCELLED
             counts[result] += 1
         return counts
+
+    def cancel_transfer(self, entry):
+        """Drop a proxy finish the user cancelled. Its piece already recorded
+        FINISHED, so the counts have to take it back."""
+        entry.job.cancel()
+        self.pending_transfers.remove(entry)
+        self.cancelled_transfers.add(entry.job)
 
     def _finish_batch(self):
         """Called when all unwraps are done (completed, failed, or cancelled)."""
@@ -823,6 +857,8 @@ class UnwrapManager:
             )
 
     def log_final_status(self):
+        # called here so the last import, transfer and pack are in the time
+        logger.update_time()
         counts = self._result_counts()
         cancelled = counts[Result.CANCELLED] == len(self.results)
         logger.change_status("Cancelled" if cancelled else "Complete")
