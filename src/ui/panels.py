@@ -209,7 +209,7 @@ def draw_queue(box):
     for entry in manager.preparing:
         _draw_background_row(box, entry.name, entry.name)
 
-    # proxy unwraps whose finish is still running
+    # transfers whose worker is still running
     for transfer in manager.pending_transfers:
         _draw_background_row(box, f"{transfer.name} (finishing)", transfer.name)
 
@@ -217,7 +217,7 @@ def draw_queue(box):
 
 
 def _draw_background_row(box, label, name):
-    """A preseed or proxy finish, with the cancel that drops it."""
+    """A preseed or transfer, with the cancel that drops it."""
     row = box.box().row()
     row.label(text=label, icon="SORTTIME")
     row.operator("uvgami.cancel_background", text="", icon="CANCEL").name = name

@@ -25,23 +25,17 @@ LOOKUP_PROGRESS = 0.9
 WELD_FRACTION = 0.5
 
 
-def cut_edges(faces, corner_uvs):
-    """Proxy edges the uv map is torn across, as vertex index pairs.
-
-    An edge already on the mesh boundary is a cut the original has of its own,
-    so only interior tears count."""
-
-    def corner(f, v):
-        return corner_uvs[f][faces[f].index(v)]
-
-    torn = set()
-    for (u, v), owners in face_edges(faces).items():
-        if len(owners) != 2:
-            continue
-        f, g = owners
-        if corner(f, u) != corner(g, u) or corner(f, v) != corner(g, v):
-            torn.add((u, v))
-    return torn
+def uv_tears(faces, corner_uvs, tolerance=0.0):
+    """Edges whose faces put a shared corner at different uvs, as (low, high)
+    vertex pairs. Boundary edges have one face and never count."""
+    sizes = [len(face) for face in faces]
+    corners = numpy.fromiter(
+        (v for face in faces for v in face), dtype=numpy.int64, count=sum(sizes)
+    )
+    uvs = numpy.array(
+        [uv for face in corner_uvs for uv in face], dtype=numpy.float64
+    ).reshape(-1, 2)
+    return _corner_tears(corners, following_corners(sizes), uvs, tolerance)
 
 
 def edge_adjacency(edges):
@@ -260,8 +254,18 @@ class ProxyMap:
         self.links = proxy_links(faces, corner_uvs)
         self.edge_links = proxy_edge_links(faces, corner_uvs)
         self.crossings = CutCrossings(
-            proxy["positions"], faces, cut_edges(faces, corner_uvs)
+            proxy["positions"], faces, uv_tears(faces, corner_uvs)
         )
+
+
+def following_corners(face_sizes):
+    """Each corner's next corner around its face, faces laid out one after
+    another."""
+    sizes = numpy.asarray(face_sizes, dtype=numpy.int64)
+    starts = numpy.cumsum(sizes) - sizes
+    face_of = numpy.repeat(numpy.arange(len(sizes)), sizes)
+    local = numpy.arange(len(face_of)) - starts[face_of]
+    return starts[face_of] + (local + 1) % sizes[face_of]
 
 
 class DenseMesh:
@@ -275,10 +279,7 @@ class DenseMesh:
         self.positions = positions
         self.starts = numpy.cumsum(self.sizes) - self.sizes
         self.face_of = numpy.repeat(numpy.arange(len(self.sizes)), self.sizes)
-        local = numpy.arange(len(self.corners)) - self.starts[self.face_of]
-        self.following = (
-            self.starts[self.face_of] + (local + 1) % self.sizes[self.face_of]
-        )
+        self.following = following_corners(self.sizes)
         self.twin = _twins(self.corners, self.following)
         self.lengths = numpy.linalg.norm(
             positions[self.corners] - positions[self.corners[self.following]], axis=1
@@ -822,24 +823,46 @@ def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
     return corner_uvs
 
 
-def uv_tears(mesh, corner_uvs):
-    """Edges whose faces disagree on a corner uv, as (low, high) vertex
-    pairs. Boundary edges have one face and never count."""
-    corners, following = mesh.corners, mesh.following
+def _corner_tears(corners, following, corner_uvs, tolerance):
+    """uv_tears on a corner table, corner_uvs one row per corner."""
     tail = corners
     head = corners[following]
-    at_low = numpy.where((tail < head)[:, None], corner_uvs, corner_uvs[following])
-    at_high = numpy.where((tail < head)[:, None], corner_uvs[following], corner_uvs)
+    low_first = (tail < head)[:, None]
+    at_low = numpy.where(low_first, corner_uvs, corner_uvs[following])
+    at_high = numpy.where(low_first, corner_uvs[following], corner_uvs)
     keys = _edge_keys(corners, following)
     unique, first, group = numpy.unique(keys, return_index=True, return_inverse=True)
-    differs = numpy.any(at_low != at_low[first][group], axis=1) | numpy.any(
-        at_high != at_high[first][group], axis=1
-    )
-    torn = unique[numpy.unique(group[differs])]
+    agrees = numpy.all(numpy.abs(at_low - at_low[first][group]) <= tolerance, axis=1)
+    agrees &= numpy.all(numpy.abs(at_high - at_high[first][group]) <= tolerance, axis=1)
+    torn = unique[numpy.unique(group[~agrees])]
     return {(int(key >> 32), int(key & 0xFFFFFFFF)) for key in torn.tolist()}
 
 
-def finish_proxy(dense, proxy, nearest_faces, progress=None, cancelled=None):
+def dense_subset(dense, faces):
+    """The dense arrays cut down to these faces, their vertices renumbered
+    from zero. Returns the subset and each new vertex's old index."""
+    sizes = numpy.asarray(dense["face_sizes"], dtype=numpy.int64)
+    starts = numpy.cumsum(sizes) - sizes
+    faces = numpy.asarray(faces, dtype=numpy.int64)
+    kept_sizes = sizes[faces]
+    kept_starts = numpy.cumsum(kept_sizes) - kept_sizes
+    offsets = numpy.arange(int(kept_sizes.sum())) - numpy.repeat(
+        kept_starts, kept_sizes
+    )
+    corners = numpy.asarray(dense["corners"], dtype=numpy.int64)
+    corners = corners[numpy.repeat(starts[faces], kept_sizes) + offsets]
+    used, local = numpy.unique(corners, return_inverse=True)
+    subset = {
+        "positions": numpy.asarray(dense["positions"], dtype=numpy.float64)[used],
+        "normals": numpy.asarray(dense["normals"], dtype=numpy.float64)[used],
+        "matrix": dense["matrix"],
+        "corners": local,
+        "face_sizes": kept_sizes,
+    }
+    return subset, used
+
+
+def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=None):
     """(seams, uvs) for the dense mesh, uvs one row per corner.
 
     nearest_faces(positions, normals) gives each dense vertex the proxy face
@@ -886,6 +909,6 @@ def finish_proxy(dense, proxy, nearest_faces, progress=None, cancelled=None):
     corner_uvs = _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh)
     check_cancelled(cancelled)
     corner_uvs = _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh)
-    seams = uv_tears(mesh, corner_uvs)
+    seams = _corner_tears(mesh.corners, mesh.following, corner_uvs, 0.0)
     report(1.0)
     return seams, corner_uvs

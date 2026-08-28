@@ -15,9 +15,10 @@ spec.loader.exec_module(sys.modules["seams"])
 from seams import Cancelled, face_edges  # noqa: E402
 from seams.proxy_transfer import (  # noqa: E402
     AffineMaps,
-    cut_edges,
-    finish_proxy,
+    dense_subset,
     snap_cuts,
+    transfer_projected,
+    uv_tears,
 )
 
 IDENTITY = numpy.eye(4)
@@ -113,17 +114,34 @@ def plane_locator(proxy):
     return nearest_faces
 
 
-def test_cut_edges_finds_only_the_torn_interior_edge():
+def test_uv_tears_finds_only_the_torn_interior_edge():
     verts, faces = quad_grid(2)
     uvs = grid_uvs(verts, faces)
     uvs[0] = [(u + SHIFT, v) for u, v in uvs[0]]
-    assert cut_edges(faces, uvs) == {(1, 4), (3, 4)}
+    assert uv_tears(faces, uvs) == {(1, 4), (3, 4)}
 
 
-def test_cut_edges_skips_boundary_edges():
+def test_uv_tears_skips_boundary_edges():
     verts, faces = quad_grid(1)
     uvs = grid_uvs(verts, faces)
-    assert cut_edges(faces, uvs) == set()
+    assert uv_tears(faces, uvs) == set()
+
+
+def test_uv_tears_ignores_a_gap_under_the_tolerance():
+    verts, faces = quad_grid(2)
+    uvs = grid_uvs(verts, faces)
+    uvs[0] = [(u + 1e-7, v) for u, v in uvs[0]]
+    assert uv_tears(faces, uvs) == {(1, 4), (3, 4)}
+    assert uv_tears(faces, uvs, tolerance=1e-6) == set()
+
+
+def test_dense_subset_renumbers_the_kept_faces():
+    verts, faces = quad_grid(2)
+    subset, used = dense_subset(dense_arrays(verts, faces), [3, 0])
+    assert used.tolist() == [0, 1, 3, 4, 5, 7, 8]
+    assert subset["face_sizes"].tolist() == [4, 4]
+    assert subset["corners"].tolist() == [3, 4, 6, 5, 0, 1, 3, 2]
+    numpy.testing.assert_array_equal(subset["positions"], numpy.asarray(verts)[used])
 
 
 def test_snap_cuts_follows_real_edges():
@@ -144,7 +162,7 @@ def test_affine_map_continues_past_the_face():
 
 
 @pytest.mark.parametrize("faces_of", [lambda faces: faces, triangulated])
-def test_finish_proxy_reads_a_continuous_map_exactly(faces_of):
+def test_transfer_projected_reads_a_continuous_map_exactly(faces_of):
     verts, faces = quad_grid(GRID)
     faces = faces_of(faces)
     proxy_verts, proxy_faces = quad_grid(1, GRID)
@@ -153,7 +171,7 @@ def test_finish_proxy_reads_a_continuous_map_exactly(faces_of):
     dense = dense_arrays(verts, faces)
     reported = []
 
-    seams, uvs = finish_proxy(dense, proxy, plane_locator(proxy), reported.append)
+    seams, uvs = transfer_projected(dense, proxy, plane_locator(proxy), reported.append)
 
     expected = numpy.array(verts)[dense["corners"]][:, :2]
     assert numpy.allclose(uvs, expected)
@@ -162,7 +180,7 @@ def test_finish_proxy_reads_a_continuous_map_exactly(faces_of):
     assert reported[-1] == 1.0
 
 
-def test_finish_proxy_matches_the_meshes_in_the_proxy_space():
+def test_transfer_projected_matches_the_meshes_in_the_proxy_space():
     verts, faces = quad_grid(GRID)
     offset = numpy.eye(4)
     offset[0, 3] = 5.0
@@ -172,7 +190,7 @@ def test_finish_proxy_matches_the_meshes_in_the_proxy_space():
     proxy = proxy_arrays(proxy_verts, proxy_faces, grid_uvs(proxy_verts, proxy_faces))
     dense = dense_arrays(verts, faces, offset)
 
-    _, uvs = finish_proxy(dense, proxy, plane_locator(proxy))
+    _, uvs = transfer_projected(dense, proxy, plane_locator(proxy))
 
     expected = numpy.array(verts)[dense["corners"]][:, :2] + (5.0, 0.0)
     assert numpy.allclose(uvs, expected)
@@ -187,12 +205,12 @@ def torn_columns(faces, verts):
     return left, straddling, right
 
 
-def test_finish_proxy_tears_the_dense_mesh_along_the_proxy_cut():
+def test_transfer_projected_tears_the_dense_mesh_along_the_proxy_cut():
     verts, faces = quad_grid(GRID)
     proxy = split_proxy()
     dense = dense_arrays(verts, faces)
 
-    seams, uvs = finish_proxy(dense, proxy, plane_locator(proxy))
+    seams, uvs = transfer_projected(dense, proxy, plane_locator(proxy))
 
     xy = numpy.array(verts)[dense["corners"]][:, :2]
     corner_face = numpy.repeat(numpy.arange(len(faces)), 4)
@@ -206,7 +224,7 @@ def test_finish_proxy_tears_the_dense_mesh_along_the_proxy_cut():
     assert seams == {(y * side + 3, (y + 1) * side + 3) for y in range(GRID)}
 
 
-def test_finish_proxy_never_tears_between_linked_proxy_faces():
+def test_transfer_projected_never_tears_between_linked_proxy_faces():
     """The left panel's two triangles share vertices at the same uvs, so
     however far their maps disagree the dense edges between them are not
     tears, and the straddling faces above and below the diagonal, drawn
@@ -215,7 +233,7 @@ def test_finish_proxy_never_tears_between_linked_proxy_faces():
     proxy = split_proxy(right_corner_uv=(SHIFT + 2.0, GRID + 2.0))
     dense = dense_arrays(verts, faces)
 
-    seams, uvs = finish_proxy(dense, proxy, plane_locator(proxy))
+    seams, uvs = transfer_projected(dense, proxy, plane_locator(proxy))
 
     side = GRID + 1
     assert seams == {(y * side + 3, (y + 1) * side + 3) for y in range(GRID)}
@@ -229,7 +247,7 @@ def test_finish_proxy_never_tears_between_linked_proxy_faces():
         assert numpy.array_equal(uvs[on_straddlers[0]], uvs[on_straddlers[1]])
 
 
-def test_finish_proxy_pulls_a_zigzag_seam_onto_one_edge_row():
+def test_transfer_projected_pulls_a_zigzag_seam_onto_one_edge_row():
     """A cut through the middle of a triangle strip gives the up and down
     triangles opposite sides, so the seam would zigzag along every
     diagonal. It is pulled onto one of the strip's two edge rows."""
@@ -240,14 +258,14 @@ def test_finish_proxy_pulls_a_zigzag_seam_onto_one_edge_row():
     proxy["positions"] = [(y, x, z) for x, y, z in proxy["positions"]]
     dense = dense_arrays(verts, faces)
 
-    seams, _ = finish_proxy(dense, proxy, plane_locator(proxy))
+    seams, _ = transfer_projected(dense, proxy, plane_locator(proxy))
 
     side = GRID + 1
     rows = [{(y * side + x, y * side + x + 1) for x in range(GRID)} for y in (2, 3)]
     assert seams in rows
 
 
-def test_finish_proxy_straightens_a_staircase_onto_the_diagonals():
+def test_transfer_projected_straightens_a_staircase_onto_the_diagonals():
     """A cut at 45 degrees between two rows of a triangulated grid: the side
     labelling gives a staircase of horizontal and vertical edges, but the
     grid's diagonals run parallel to the cut and are shorter, so the seam
@@ -267,7 +285,7 @@ def test_finish_proxy_straightens_a_staircase_onto_the_diagonals():
     proxy = proxy_arrays(proxy_verts, proxy_faces, uvs)
     dense = dense_arrays(verts, faces)
 
-    seams, _ = finish_proxy(dense, proxy, plane_locator(proxy))
+    seams, _ = transfer_projected(dense, proxy, plane_locator(proxy))
 
     side = GRID + 1
 
@@ -280,7 +298,7 @@ def test_finish_proxy_straightens_a_staircase_onto_the_diagonals():
     assert len(seams) - len(off_diagonal) >= GRID - 1
 
 
-def test_finish_proxy_stops_on_cancel():
+def test_transfer_projected_stops_on_cancel():
     verts, faces = quad_grid(GRID)
     proxy = split_proxy()
     calls = []
@@ -290,7 +308,7 @@ def test_finish_proxy_stops_on_cancel():
         return plane_locator(proxy)(points, normals)
 
     with pytest.raises(Cancelled):
-        finish_proxy(
+        transfer_projected(
             dense_arrays(verts, faces), proxy, counting, cancelled=lambda: True
         )
     assert calls == []

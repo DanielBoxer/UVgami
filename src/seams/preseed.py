@@ -102,8 +102,8 @@ class FlattenRun:
 
 class FlattenEngine:
     """Client for the engine's flatten mode. Each call gets its own subdir of
-    workdir: the preview operator, a builder thread and transfer_cuts can all
-    flatten at once, and shared filenames would swap uvs between them."""
+    workdir: the preview operator and a builder thread can flatten at once,
+    and shared filenames would swap uvs between them."""
 
     def __init__(self, engine_path, workdir):
         self.engine_path = str(engine_path)

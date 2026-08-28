@@ -13,6 +13,7 @@ from ..job import (
     HideInput,
     Join,
     Preserve,
+    ProxyCopyUVs,
     ProxyUVs,
     Result,
     # Symmetrise,
@@ -435,7 +436,7 @@ def input_job(props, proxied):
 
     proxied says the mesh was decimated, one under Proxy Faces never is."""
     if proxied:
-        return ProxyUVs(props.transfer_uvs)
+        return ProxyUVs() if props.transfer_uvs else ProxyCopyUVs()
     if props.transfer_uvs:
         return TransferUVs()
     return None

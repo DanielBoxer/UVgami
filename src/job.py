@@ -16,7 +16,7 @@ from .hard_surface import (
     flatten_engine,
     marked_seams,
 )
-from .proxy import finish_transfer, transfer_cuts, transfer_inputs
+from .proxy import face_locator, transfer_inputs
 from .seams import (
     FlattenError,
     face_edges,
@@ -28,13 +28,12 @@ from .seams import (
     stack_mirrored,
     uv_area_fit,
 )
-from .seams.proxy_transfer import cut_edges
+from .seams.proxy_transfer import dense_subset, transfer_projected, uv_tears
+from .seams.uv_transfer import transfer_exact
 from .similar import mirror_permutations
-from .uv_transfer import plan_transfer
 from .utils.geometry import cut_on_axes, set_origin
 from .utils.mesh import (
     check_exists,
-    corner_uvs,
     face_uvs,
     face_vertices,
     loop_starts,
@@ -72,10 +71,11 @@ def world_positions(obj):
     return flat.reshape(-1, 3) @ matrix[:3, :3].T + matrix[:3, 3]
 
 
-def output_mesh_data(output, output_uv):
+def output_mesh_data(output):
     """World positions, polygons and per-face loop uvs of an engine output
-    object, in the plain form plan_transfer takes."""
+    object, in the plain form transfer_exact takes."""
     output_data = output.data
+    output_uv = output_data.uv_layers.active
 
     output_positions = world_positions(output)
     output_polygons = face_vertices(output_data)
@@ -239,72 +239,142 @@ class HideInput:
             input_mesh.hide_set(True)
 
 
-class TransferUVs:
+def in_object_mode(target, func, *args):
+    """Run func with target in object mode, which mesh reads and writes
+    need."""
+    if target.mode == "OBJECT":
+        return func(*args)
+    old_active = bpy.context.view_layer.objects.active
+    old_mode = target.mode
+    bpy.ops.object.mode_set(mode="OBJECT")
+    try:
+        return func(*args)
+    finally:
+        if check_exists(old_active):
+            bpy.context.view_layer.objects.active = old_active
+            bpy.ops.object.mode_set(mode=old_mode)
+
+
+class Transfer:
+    """Reads the output's uv map onto the input mesh and deletes the output.
+    The read is bpy-free and runs on a worker thread, poll() writes the
+    result once it is done, so the input is untouched until then."""
+
     # whether the manager should repack the input mesh in place of the
     # deleted output at session end
     repack_input = True
     allows_missing_pieces = True
+    # a copy of the input the result went onto, in place of the output
+    replacement = None
 
-    def finish(self, input_mesh, output):
+    def __init__(self):
+        self.input_mesh = None
+        self.output = None
+        self.target = None
+        self.task = None
+        self.progress = 0.0
+        self.loop_count = 0
+
+    def start(self, input_mesh, output):
+        """Extract the meshes and start the worker. None means poll()
+        finishes it, a report means it failed before starting."""
         if not check_exists(input_mesh) or not check_exists(output):
             return TransferReport(False, 0, "input or output object missing")
-
-        output_uv = output.data.uv_layers.active
-        if output_uv is None:
+        if output.data.uv_layers.active is None:
             return TransferReport(False, 0, "output mesh has no uv layer")
+        self.input_mesh = input_mesh
+        self.output = output
+        self.target = self._target(input_mesh)
+        inputs = in_object_mode(self.target, self._extract, self.target, output)
+        self.loop_count = len(self.target.data.loops)
+        self.task = BackgroundTask(lambda cancelled: self._compute(inputs, cancelled))
+        return None
 
-        # exit edit mode to read and write mesh data, restore it no matter what
-        old_active = bpy.context.view_layer.objects.active
-        was_in_edit = input_mesh.mode == "EDIT"
-        try:
-            if was_in_edit:
-                bpy.context.view_layer.objects.active = input_mesh
-                bpy.ops.object.mode_set(mode="OBJECT")
+    def poll(self):
+        """None while the worker runs, the final report once it is done."""
+        if not self.task.done():
+            return None
+        result = self.task.result()
+        if not check_exists(self.target) or not check_exists(self.output):
+            return self._fail("input or output object missing")
+        if len(self.target.data.loops) != self.loop_count:
+            # an undo while it ran swapped the mesh out under us
+            return self._fail("mesh changed during the unwrap")
+        failure = self._failure(result)
+        if failure is not None:
+            return self._fail(*failure)
+        split_count = in_object_mode(self.target, self._apply, self.target, result)
+        # delete the output only once the whole result applied
+        bpy.data.objects.remove(self.output, do_unlink=True)
+        self._show()
+        return TransferReport(True, split_count, "")
 
-            plan = plan_transfer(
-                *self._extract(input_mesh, output, output_uv),
-                repack=self.repack_input,
-                partial=self.allows_missing_pieces,
-            )
-            if not plan.ok:
-                return TransferReport(
-                    False, 0, f"{plan.reason}: {plan.detail}", plan.reason
-                )
+    def cancel(self):
+        """Stop a running worker, for a cancel, a stop or a file load. The
+        output only makes sense with its uvs applied, so it goes too."""
+        self.task.cancel()
+        self._discard()
+        if check_exists(self.output):
+            bpy.data.objects.remove(self.output, do_unlink=True)
 
-            self._apply(input_mesh, plan)
-        finally:
-            if was_in_edit:
-                bpy.context.view_layer.objects.active = input_mesh
-                bpy.ops.object.mode_set(mode="EDIT")
-            bpy.context.view_layer.objects.active = old_active
+    def _report(self, fraction):
+        self.progress = fraction
 
-        # delete the output only once the whole plan applied
-        bpy.data.objects.remove(output, do_unlink=True)
-        input_mesh.hide_set(False)
-        return TransferReport(True, len(plan.split_faces), "")
+    def _fail(self, detail, reason=""):
+        self._discard()
+        return TransferReport(False, 0, detail, reason)
 
-    def _extract(self, input_mesh, output, output_uv):
-        input_positions = world_positions(input_mesh)
-        input_polygons = face_vertices(input_mesh.data)
+    def _target(self, input_mesh):
+        """The object the uvs are written onto."""
+        return input_mesh
 
-        return (input_positions, input_polygons) + output_mesh_data(output, output_uv)
+    def _failure(self, result):
+        """(detail, reason) when the read came back with nothing to apply."""
+        return None
 
-    def _apply(self, input_mesh, plan):
+    def _discard(self):
+        """Drop what start() made besides the worker."""
+
+    def _show(self):
+        self.input_mesh.hide_set(False)
+
+
+class TransferUVs(Transfer):
+    """Read an output that has the input's own vertices, its unwrap
+    triangulated, back onto it by position."""
+
+    def _extract(self, target, output):
+        return (world_positions(target), face_vertices(target.data)) + output_mesh_data(
+            output
+        )
+
+    def _compute(self, inputs, cancelled):
+        return transfer_exact(
+            *inputs, repack=self.repack_input, partial=self.allows_missing_pieces
+        )
+
+    def _failure(self, plan):
+        if plan.ok:
+            return None
+        return f"{plan.reason}: {plan.detail}", plan.reason
+
+    def _apply(self, target, plan):
         if plan.split_faces:
-            self._apply_with_splits(input_mesh, plan)
-            return
+            self._apply_with_splits(target, plan)
+            return len(plan.split_faces)
 
-        input_data = input_mesh.data
-        if not input_data.uv_layers:
-            input_data.uv_layers.new(name="UVMap")
+        data = target.data
+        if not data.uv_layers:
+            data.uv_layers.new(name="UVMap")
 
-        coords = numpy.empty((len(input_data.loops), 2))
-        input_data.uv_layers.active.data.foreach_get("uv", coords.ravel())
+        coords = numpy.empty((len(data.loops), 2))
+        data.uv_layers.active.data.foreach_get("uv", coords.ravel())
         coords[list(plan.loop_uvs)] = list(plan.loop_uvs.values())
-        set_loop_uvs(input_data, coords)
+        set_loop_uvs(data, coords)
 
-        apply_seams_except_faces(input_data, plan.untouched_faces, plan.seam_edges)
-        input_data.update()
+        apply_seams_except_faces(data, plan.untouched_faces, plan.seam_edges)
+        data.update()
+        return 0
 
     def _apply_with_splits(self, input_mesh, plan):
         """Same as _apply, but rebuilds the faces a uv cut runs through. Goes
@@ -350,6 +420,19 @@ class TransferUVs:
         set_bmesh(bm, input_mesh)
 
 
+def _interior_edges(data, faces):
+    """The edges with one of these faces on each side, as (low, high) pairs."""
+    owner_count = {}
+    for fi in faces:
+        poly = data.polygons[fi].vertices
+        n = len(poly)
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            key = (a, b) if a < b else (b, a)
+            owner_count[key] = owner_count.get(key, 0) + 1
+    return {key for key, count in owner_count.items() if count == 2}
+
+
 class IslandUVs(TransferUVs):
     """Put an engine re-unwrap of one island back into the input mesh, scaled
     to the uv area it used to cover so the rest of the atlas stays put. Rides
@@ -359,6 +442,7 @@ class IslandUVs(TransferUVs):
     allows_missing_pieces = False
 
     def __init__(self, faces, bbox, area, mirrored=False):
+        super().__init__()
         self.faces = faces
         self.bbox = bbox
         self.area = area
@@ -380,9 +464,9 @@ class IslandUVs(TransferUVs):
                 (verts, [(-u, v) for u, v in part_uvs]) for verts, part_uvs in parts
             ]
 
-    def _extract(self, input_mesh, output, output_uv):
-        data = input_mesh.data
-        matrix = input_mesh.matrix_world
+    def _extract(self, target, output):
+        data = target.data
+        matrix = target.matrix_world
 
         used = sorted({v for fi in self.faces for v in data.polygons[fi].vertices})
         self.orig_vert = used
@@ -399,7 +483,7 @@ class IslandUVs(TransferUVs):
             base += poly.loop_total
             polygons.append([local[v] for v in poly.vertices])
 
-        return (positions, polygons) + output_mesh_data(output, output_uv)
+        return (positions, polygons) + output_mesh_data(output)
 
     def _fit(self, plan):
         """Scale the engine's layout back to the island's old uv area, centered
@@ -422,9 +506,9 @@ class IslandUVs(TransferUVs):
                 (verts, [move(uv) for uv in part_uvs]) for verts, part_uvs in parts
             ]
 
-    def _apply(self, input_mesh, plan):
+    def _apply(self, target, plan):
         self._fit(plan)
-        data = input_mesh.data
+        data = target.data
         ov = self.orig_vert
         seams = {
             ((ov[a], ov[b]) if ov[a] < ov[b] else (ov[b], ov[a]))
@@ -433,20 +517,12 @@ class IslandUVs(TransferUVs):
 
         # only edges interior to the island get the plan's seams, the island
         # boundary and the rest of the mesh keep their marks
-        owner_count = {}
-        for fi in self.faces:
-            poly = data.polygons[fi].vertices
-            n = len(poly)
-            for i in range(n):
-                a, b = poly[i], poly[(i + 1) % n]
-                key = (a, b) if a < b else (b, a)
-                owner_count[key] = owner_count.get(key, 0) + 1
-        interior = {key for key, count in owner_count.items() if count == 2}
+        interior = _interior_edges(data, self.faces)
 
         split_faces = {self.faces[fi]: parts for fi, parts in plan.split_faces.items()}
         if split_faces:
-            self._apply_island_splits(input_mesh, plan, split_faces, seams, interior)
-            return
+            self._apply_island_splits(target, plan, split_faces, seams, interior)
+            return len(plan.split_faces)
 
         uvs = [None] * len(data.polygons)
         for i, fi in enumerate(self.faces):
@@ -456,6 +532,7 @@ class IslandUVs(TransferUVs):
 
         apply_interior_seams(data, interior, seams)
         data.update()
+        return 0
 
     def _apply_island_splits(self, input_mesh, plan, split_faces, seams, interior):
         """Same as _apply, but rebuilds the island faces a uv cut runs
@@ -550,201 +627,99 @@ class AreaUVs(IslandUVs):
                 plan.loop_uvs[k] = old
 
 
-class ProxyUVs:
-    """Cut the original along the unwrapped proxy's seams and unwrap it.
+class ProxyUVs(Transfer):
+    """Read the unwrapped proxy's uv map onto the original, which was never
+    unwrapped itself, cutting it where the map is torn."""
 
-    The finish runs in a worker thread on extracted arrays, and poll() applies
-    seams and uvs in one step once it is done. The original is untouched until
-    then, so nothing is left half done while it runs."""
+    # a missing piece is a hole in the proxy map
+    allows_missing_pieces = False
 
-    def __init__(self, transfer):
-        self.repack_input = transfer
-        # the duplicate that stands in for the deleted output, transfer off only
-        self.replacement = None
-        self.input_mesh = None
-        self.target = None
-        self.output = None
-        self.task = None
-        self.progress = 0.0
+    def _extract(self, target, output):
+        return transfer_inputs(target, output)
 
-    @staticmethod
-    def _in_object_mode(func, *args):
-        # mesh writes need object mode
-        old_active = bpy.context.view_layer.objects.active
-        old_mode = old_active.mode if old_active is not None else "OBJECT"
-        if old_mode != "OBJECT":
-            bpy.ops.object.mode_set(mode="OBJECT")
-        try:
-            return func(*args)
-        finally:
-            if (
-                old_active is not None
-                and check_exists(old_active)
-                and (old_mode != "OBJECT")
-            ):
-                bpy.context.view_layer.objects.active = old_active
-                bpy.ops.object.mode_set(mode=old_mode)
+    def _compute(self, inputs, cancelled):
+        dense, proxy = inputs
+        nearest_faces = face_locator(proxy["positions"], proxy["faces"])
+        return transfer_projected(dense, proxy, nearest_faces, self._report, cancelled)
 
-    def start(self, input_mesh, output):
-        """Extract the meshes and start the finish thread. None means poll()
-        finishes it, a report means it failed before starting."""
-        if not check_exists(input_mesh) or not check_exists(output):
-            return TransferReport(False, 0, "input or output object missing")
-        if output.data.uv_layers.active is None:
-            return TransferReport(False, 0, "output mesh has no uv layer")
-
-        target = input_mesh
-        if not self.repack_input:
-            # never linked to a collection, or the copy shows up beside
-            # the original
-            target = input_mesh.copy()
-            target.data = input_mesh.data.copy()
-            bm = new_bmesh(target)
-            triangulate(bm)
-            set_bmesh(bm, target)
-
-        dense, proxy = self._in_object_mode(transfer_inputs, target, output)
-
-        self.task = BackgroundTask(
-            lambda cancelled: finish_transfer(dense, proxy, self._report, cancelled)
-        )
-        self.input_mesh = input_mesh
-        self.target = target
-        self.output = output
-        return None
-
-    def _report(self, fraction):
-        self.progress = fraction
-
-    def poll(self):
-        """None while the finish runs, the final report once it is done."""
-        if not self.task.done():
-            return None
-        seams, uvs = self.task.result()
-        input_mesh, target, output = self.input_mesh, self.target, self.output
-        if not check_exists(target) or not check_exists(output):
-            return self._fail("input or output object missing")
-        if len(uvs) != len(target.data.loops):
-            # an undo while it ran swapped the mesh out under us
-            return self._fail("mesh changed during the unwrap")
-        self._in_object_mode(self._apply, target, seams, uvs)
-
-        bpy.data.objects.remove(output, do_unlink=True)
-        if target is input_mesh:
-            input_mesh.hide_set(False)
-        else:
-            # no HideInput job exists when a transfer job holds the slot
-            input_mesh.hide_set(True)
-            # renamed only now, the deleted output held this name
-            target.name = f"{input_mesh.name}_unwrapped"
-            self.replacement = target
-        return TransferReport(True, 0, "")
-
-    @staticmethod
-    def _apply(target, seams, uvs):
+    def _apply(self, target, result):
+        seams, uvs = result
         data = target.data
         apply_seams(data, seams)
         if not data.uv_layers:
             data.uv_layers.new()
         set_loop_uvs(data, uvs)
+        return 0
 
-    def _fail(self, detail):
-        if self.target is not self.input_mesh and check_exists(self.target):
+
+class ProxyCopyUVs(ProxyUVs):
+    """Proxy with transfer off: the map goes onto a triangulated duplicate of
+    the original, which stands in for the deleted output."""
+
+    repack_input = False
+
+    def _target(self, input_mesh):
+        # never linked to a collection, or the copy shows up beside the original
+        target = input_mesh.copy()
+        target.data = input_mesh.data.copy()
+        bm = new_bmesh(target)
+        triangulate(bm)
+        set_bmesh(bm, target)
+        return target
+
+    def _show(self):
+        # no HideInput job exists when a transfer job holds the slot
+        self.input_mesh.hide_set(True)
+        # renamed only now, the deleted output held this name
+        self.target.name = f"{self.input_mesh.name}_unwrapped"
+        self.replacement = self.target
+
+    def _discard(self):
+        if check_exists(self.target):
             bpy.data.objects.remove(self.target, do_unlink=True)
-        return TransferReport(False, 0, detail)
-
-    def cancel(self):
-        """Stop a still-running finish, for a cancel, a stop or a file load.
-        Its two objects only make sense with the uvs applied, so they go
-        too."""
-        self.task.cancel()
-        for obj in (self.target, self.output):
-            if obj is not None and obj is not self.input_mesh and check_exists(obj):
-                bpy.data.objects.remove(obj, do_unlink=True)
 
 
-class ProxyIslandUVs:
+class ProxyIslandUVs(ProxyUVs):
     """Put a proxy re-unwrap of one island back into the input mesh, scaled to
-    the uv area it used to cover like IslandUVs. The island is rebuilt at full
+    the uv area it used to cover like IslandUVs. The island is read at full
     density to take the proxy's cuts."""
 
     repack_input = False
 
     def __init__(self, faces, bbox, area):
+        super().__init__()
         self.faces = faces
         self.bbox = bbox
         self.area = area
+        self.orig_vert = []
 
-    def finish(self, input_mesh, output):
-        if not check_exists(input_mesh) or not check_exists(output):
-            return TransferReport(False, 0, "input or output object missing")
-        if output.data.uv_layers.active is None:
-            return TransferReport(False, 0, "output mesh has no uv layer")
+    def _extract(self, target, output):
+        dense, proxy = transfer_inputs(target, output)
+        dense, self.orig_vert = dense_subset(dense, self.faces)
+        return dense, proxy
 
-        # mesh writes need object mode
-        old_active = bpy.context.view_layer.objects.active
-        was_in_edit = input_mesh.mode == "EDIT"
-        try:
-            if was_in_edit:
-                bpy.context.view_layer.objects.active = input_mesh
-                bpy.ops.object.mode_set(mode="OBJECT")
-
-            data = input_mesh.data
-            used = sorted({v for fi in self.faces for v in data.polygons[fi].vertices})
-            local = {v: i for i, v in enumerate(used)}
-            island_mesh = bpy.data.meshes.new("uvgami_island")
-            island_mesh.from_pydata(
-                [data.vertices[v].co.copy() for v in used],
-                [],
-                [[local[v] for v in data.polygons[fi].vertices] for fi in self.faces],
-            )
-            temp = bpy.data.objects.new("uvgami_island", island_mesh)
-            bpy.context.scene.collection.objects.link(temp)
-            temp.matrix_world = input_mesh.matrix_world.copy()
-            try:
-                transfer_cuts(temp, output)
-                self._apply(data, used, island_mesh)
-            finally:
-                bpy.data.objects.remove(temp, do_unlink=True)
-                bpy.data.meshes.remove(island_mesh)
-        finally:
-            if was_in_edit:
-                bpy.context.view_layer.objects.active = input_mesh
-                bpy.ops.object.mode_set(mode="EDIT")
-            bpy.context.view_layer.objects.active = old_active
-
-        bpy.data.objects.remove(output, do_unlink=True)
-        input_mesh.hide_set(False)
-        return TransferReport(True, 0, "")
-
-    def _apply(self, data, used, island_mesh):
-        polygons = corner_uvs(island_mesh)
+    def _apply(self, target, result):
+        seams, uvs = result
+        data = target.data
+        sizes = [data.polygons[fi].loop_total for fi in self.faces]
+        polygons = [
+            part.tolist() for part in numpy.split(uvs, numpy.cumsum(sizes)[:-1])
+        ]
         move = uv_area_fit(polygons, self.area, self.bbox)
+        uvs_by_face = [None] * len(data.polygons)
+        for fi, points in zip(self.faces, polygons):
+            uvs_by_face[fi] = [move(uv) for uv in points]
+        apply_face_uvs(data, uvs_by_face, self.faces)
 
-        uvs = [None] * len(data.polygons)
-        for fi, pts in zip(self.faces, polygons):
-            uvs[fi] = [move(uv) for uv in pts]
-        apply_face_uvs(data, uvs, self.faces)
-
-        seams = set()
-        for a, b in marked_seams(island_mesh):
-            a, b = used[a], used[b]
-            seams.add((a, b) if a < b else (b, a))
-
+        ov = self.orig_vert.tolist()
+        seams = {
+            ((ov[a], ov[b]) if ov[a] < ov[b] else (ov[b], ov[a])) for a, b in seams
+        }
         # only interior edges take the new seams, the island boundary and the
         # rest of the mesh keep their marks
-        owner_count = {}
-        for fi in self.faces:
-            poly = data.polygons[fi].vertices
-            n = len(poly)
-            for i in range(n):
-                a, b = poly[i], poly[(i + 1) % n]
-                key = (a, b) if a < b else (b, a)
-                owner_count[key] = owner_count.get(key, 0) + 1
-        interior = {key for key, count in owner_count.items() if count == 2}
-
-        apply_interior_seams(data, interior, seams)
+        apply_interior_seams(data, _interior_edges(data, self.faces), seams)
         data.update()
+        return 0
 
 
 # the engine round trips positions through 9 decimal obj text, so an output
@@ -913,7 +888,7 @@ class Symmetrise:
         """The half output's uv cuts as whole mesh edges, its vertices
         matched to the whole copy's by position."""
         out_faces = face_vertices(output.data)
-        torn = cut_edges(out_faces, face_uvs(output.data))
+        torn = uv_tears(out_faces, face_uvs(output.data))
         if not torn:
             return set()
         tree = mathutils.kdtree.KDTree(len(verts))

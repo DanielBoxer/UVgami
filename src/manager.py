@@ -7,13 +7,13 @@ import bpy
 import numpy
 
 from .batch import BatchProcess, last_meaningful_line
-from .job import Join, ProxyUVs, Result, TransferReport
+from .job import Join, Result, TransferReport
 from .logger import logger
 from .ops.grid import add_grid, make_grid_img, make_grid_mat
 from .ops.uv import pack_objects, show_seams
 from .progress_bar import progress_bar
 from .reroute_seams import reroute_seams
-from .uv_transfer import AMBIGUOUS_GEOMETRY
+from .seams.uv_transfer import AMBIGUOUS_GEOMETRY
 from .similar import write_twin_output
 from .utils.geometry import set_origin
 from .utils.io import import_obj
@@ -278,8 +278,8 @@ class UnwrapManager:
 
             self._fill_slots()
 
-            # an empty queue is not the end, an exporter or a proxy finish
-            # may still be running
+            # an empty queue is not the end, an exporter or a transfer may
+            # still be running
             if (
                 not self._running
                 and not self._queue
@@ -307,7 +307,7 @@ class UnwrapManager:
         # unexported pieces sit at (0, 0, 1) until they start reporting
         progress = [numpy.array(unwrap.progress) for unwrap in self.active]
         progress += [numpy.array((1, 0, 0))] * len(self.results)
-        # a running proxy finish holds the bar below done until it applies
+        # a running transfer holds the bar below done until it applies
         progress += [
             numpy.array((t.job.progress, 0, 1 - t.job.progress))
             for t in self.pending_transfers
@@ -514,10 +514,9 @@ class UnwrapManager:
                     if obj == output:
                         pack_index = i
                         break
-            # the proxy finish reads the whole original
             group = unwrap.join_job
             missing_pieces = group is not None and len(group.finished) < group.expected
-            if missing_pieces and isinstance(job, ProxyUVs):
+            if missing_pieces and not job.allows_missing_pieces:
                 failed = group.expected - len(group.finished)
                 self.transfer_uv_reason_known = True
                 report = TransferReport(
@@ -525,26 +524,19 @@ class UnwrapManager:
                 )
                 self._settle_transfer(job, output, pack_index, report)
                 return
-            if isinstance(job, ProxyUVs):
-                report = job.start(self.input[job], output)
-                if report is None:
-                    # _finish_transfers settles it when the process exits
-                    self.pending_transfers.append(
-                        PendingTransfer(
-                            job,
-                            output,
-                            pack_index,
-                            unwrap.input_name,
-                            time.monotonic(),
-                        )
+            report = job.start(self.input[job], output)
+            if report is None:
+                # _finish_transfers settles it when the worker is done
+                self.pending_transfers.append(
+                    PendingTransfer(
+                        job, output, pack_index, unwrap.input_name, time.monotonic()
                     )
-                    # unlinked while it waits, or it sits in the scene
-                    # beside the original
-                    for collection in output.users_collection:
-                        collection.objects.unlink(output)
-                    return
-            else:
-                report = job.finish(self.input[job], output)
+                )
+                # unlinked while it waits, or it sits in the scene beside
+                # the original
+                for collection in output.users_collection:
+                    collection.objects.unlink(output)
+                return
             self._settle_transfer(job, output, pack_index, report)
             return
 
@@ -555,19 +547,17 @@ class UnwrapManager:
 
     def _settle_transfer(self, job, output, pack_index, report):
         """Everything after a transfer's report: pack list, hide state, grid,
-        collection. Shared with the proxy finishes, which report later."""
+        collection."""
         props = self.props
         input_mesh = self.input[job]
         if report.applied:
             self.transfer_uv_split_count += report.split_count
             if pack_index is not None and job.repack_input:
                 self._pack_output_objects[pack_index] = input_mesh
-            replacement = getattr(job, "replacement", None)
+            replacement = job.replacement
             if replacement is None:
                 self._add_auto_grid(props, input_mesh)
                 return
-            # proxy with transfer off: a duplicate of the original replaces
-            # the deleted output
             if pack_index is not None:
                 self._pack_output_objects[pack_index] = replacement
             output = replacement
@@ -593,7 +583,7 @@ class UnwrapManager:
         move_to_collection(output, collection)
 
     def _finish_transfers(self):
-        """Apply proxy finishes whose worker thread is done."""
+        """Apply transfers whose worker thread is done."""
         timeout_minutes = bpy.context.scene.uvgami.unwrap_timeout
         for entry in list(self.pending_transfers):
             job, output, pack_index = entry.job, entry.output, entry.pack_index

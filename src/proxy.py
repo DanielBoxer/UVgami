@@ -5,8 +5,8 @@ cut is decided on a few thousand triangles instead of the whole mesh. The
 original is never unwrapped, each of its vertices takes the uv of the nearest
 proxy face, so the cuts land where the proxy's tears project onto it.
 
-The pipeline is seams.proxy_transfer, plain data only. This module reads the
-meshes into arrays and applies the results, so the work between can run in a
+The pipeline is seams.proxy_transfer, plain data only. This module builds the
+proxy and reads the meshes into arrays for it, so the work can run in a
 worker thread."""
 
 import bmesh
@@ -16,16 +16,8 @@ from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
-from .hard_surface import apply_seams
 from .seams import proxy_transfer
-from .utils.mesh import (
-    corner_uvs,
-    face_vertices,
-    loop_totals,
-    new_bmesh,
-    set_bmesh,
-    set_loop_uvs,
-)
+from .utils.mesh import corner_uvs, face_vertices, loop_totals, new_bmesh, set_bmesh
 
 
 def triangle_count(obj):
@@ -320,21 +312,3 @@ def transfer_inputs(input_mesh, output):
         "corner_uvs": corner_uvs(out_data),
     }
     return dense, proxy
-
-
-def finish_transfer(dense, proxy, progress=None, cancelled=None):
-    """Read the proxy's uvs onto extracted dense arrays. No bpy, so this is
-    the half that runs off the main thread."""
-    nearest_faces = face_locator(proxy["positions"], proxy["faces"])
-    return proxy_transfer.finish_proxy(dense, proxy, nearest_faces, progress, cancelled)
-
-
-def transfer_cuts(input_mesh, output):
-    """Seam and uv the original from the proxy's uv map."""
-    dense, proxy = transfer_inputs(input_mesh, output)
-    seams, uvs = finish_transfer(dense, proxy)
-    data = input_mesh.data
-    apply_seams(data, seams)
-    if not data.uv_layers:
-        data.uv_layers.new()
-    set_loop_uvs(data, uvs)

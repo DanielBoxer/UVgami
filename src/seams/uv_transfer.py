@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .proxy_transfer import uv_tears
+
 # planner is bpy-free: it turns plain mesh data into a complete uv transfer plan
 # or a structured failure. loops are numbered consecutively in polygon order,
 # matching blender's poly.loop_start layout.
@@ -276,34 +278,7 @@ def _weld_overlaps(parts, part_out_faces, anchor, welded_uvs, layout, repack):
 SEAM_TOLERANCE = 1e-6
 
 
-def _seams_from_uvs(faces):
-    """The edges the faces either side put in different uv places. Read off
-    the transferred layout because a weld moves a cut onto the input face's
-    outer edges, where the engine's own seam list doesn't have it."""
-    sides = {}
-    for verts, uvs in faces:
-        n = len(verts)
-        for i in range(n):
-            a, b = verts[i], verts[(i + 1) % n]
-            ends = (uvs[i], uvs[(i + 1) % n])
-            sides.setdefault((a, b) if a < b else (b, a), []).append(
-                ends if a < b else ends[::-1]
-            )
-
-    seams = set()
-    for edge, all_ends in sides.items():
-        first = all_ends[0]
-        for other in all_ends[1:]:
-            if any(
-                abs(p[0] - q[0]) > SEAM_TOLERANCE or abs(p[1] - q[1]) > SEAM_TOLERANCE
-                for p, q in zip(first, other)
-            ):
-                seams.add(edge)
-                break
-    return seams
-
-
-def plan_transfer(
+def transfer_exact(
     input_positions,
     input_polygons,
     output_positions,
@@ -313,7 +288,10 @@ def plan_transfer(
     repack=True,
     partial=False,
 ):
-    """repack says a pack runs on the result, which sets how strict the weld
+    """Plan the output's uvs onto an input with the same vertex positions,
+    each output face matched to the input face on its vertices.
+
+    repack says a pack runs on the result, which sets how strict the weld
     overlap check has to be. partial lets input faces the output doesn't reach
     keep their uvs, for an output missing whole pieces."""
     in_pos = np.asarray(input_positions, dtype=float)
@@ -474,6 +452,8 @@ def plan_transfer(
     if len(untouched) == len(input_polygons):
         return TransferFailure("incomplete_coverage", "no input face got uvs")
 
+    # a weld moves a cut onto the input face's outer edges, off the engine's
+    # seam list
     faces = []
     for fi, poly in enumerate(input_polygons):
         if fi in untouched:
@@ -484,5 +464,7 @@ def plan_transfer(
             faces.append((poly, [loop_uvs[base + c] for c in range(len(poly))]))
         else:
             faces.extend(parts)
-
-    return TransferPlan(loop_uvs, split_faces, _seams_from_uvs(faces), untouched)
+    seams = uv_tears(
+        [verts for verts, _ in faces], [uvs for _, uvs in faces], SEAM_TOLERANCE
+    )
+    return TransferPlan(loop_uvs, split_faces, seams, untouched)

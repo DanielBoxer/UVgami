@@ -1,16 +1,18 @@
 import importlib.util
 import math
+import sys
 from pathlib import Path
 
 import pytest
 
-# loaded from file so importing doesn't touch the blender addon package
+# loaded from file, the addon package imports bpy
+PKG = Path(__file__).parents[2] / "src" / "seams"
 spec = importlib.util.spec_from_file_location(
-    "addon_uv_transfer", Path(__file__).parents[2] / "src" / "uv_transfer.py"
+    "seams", PKG / "__init__.py", submodule_search_locations=[str(PKG)]
 )
-uv_transfer = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(uv_transfer)
-plan_transfer = uv_transfer.plan_transfer
+sys.modules["seams"] = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sys.modules["seams"])
+from seams.uv_transfer import transfer_exact  # noqa: E402
 
 # unit square as two triangles sharing edge v0-v2
 SQUARE_POS = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
@@ -30,7 +32,7 @@ def test_exact_reordered_faces_and_verts():
         [(0, 0), (1, 0), (1, 1)],
     ]
 
-    plan = plan_transfer(SQUARE_POS, SQUARE_FACES, out_pos, out_faces, out_uvs)
+    plan = transfer_exact(SQUARE_POS, SQUARE_FACES, out_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -61,7 +63,7 @@ def test_seam_duplicates_map_many_to_one():
         [(0, 0), (1, 0), (1, 1)],
         [(2, 0), (2, 1), (3, 1)],
     ]
-    plan = plan_transfer(SQUARE_POS, SQUARE_FACES, out_pos, out_faces, out_uvs)
+    plan = transfer_exact(SQUARE_POS, SQUARE_FACES, out_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.loop_uvs == {
@@ -84,7 +86,7 @@ def test_triangulated_quad_assigns_all_corners():
         [(0, 0), (1, 1), (0, 1)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -117,7 +119,7 @@ def test_seam_through_quad_welds_the_cut_off():
         [(1, 0), (2, 1), (1, 1)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -149,7 +151,7 @@ def test_far_chart_scale_is_ignored():
         [(5, 5), (5.5, 5.5), (5, 5.5)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -175,7 +177,7 @@ def test_mirrored_anchor_reflects_the_flap():
         [(5, 5), (5.5, 5.5), (5, 5.5)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -203,7 +205,7 @@ def test_stretched_anchor_does_not_square_its_stretch():
         [(5, 5), (6, 6), (5, 6)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -229,7 +231,7 @@ def test_bent_quad_flap_keeps_its_3d_shape():
         [(5, 5), (6, 6), (5, 6)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -255,7 +257,7 @@ def test_ngon_chain_welds_part_by_part():
         [(10, 0), (12, 5), (10, 4)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -284,7 +286,7 @@ def test_weld_landing_on_its_island_splits():
         [(1, 1), (0.3, 0.7), (0.9, 1.5)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.loop_uvs == {
@@ -317,7 +319,7 @@ def test_weld_moves_the_cut_to_the_faces_outer_edge():
         [(1.05, 1.0), (0.3, 0.7), (0.9, 1.5)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.split_faces == {}
@@ -348,7 +350,7 @@ def test_without_a_pack_another_islands_overlap_splits():
         [(1.05, 1.0), (0.3, 0.7), (0.9, 1.5)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs, repack=False)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs, repack=False)
 
     assert plan.ok
     assert plan.split_faces == {
@@ -377,7 +379,7 @@ def test_vertex_only_cut_splits_in_input_winding():
         [(5, 6), (6, 5), (6, 6)],
     ]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.loop_uvs == {}
@@ -399,7 +401,7 @@ def test_conflicting_triangle_cannot_be_split():
         [(5, 5), (6, 5), (6, 6)],
     ]
 
-    result = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    result = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert not result.ok
     assert result.reason == "ambiguous_geometry"
@@ -414,7 +416,7 @@ def test_coincident_input_faces_each_take_their_own_output():
     out_faces = [[0, 1, 2], [3, 4, 5]]
     out_uvs = [[(0, 0), (1, 0), (0, 1)], [(2, 0), (3, 0), (2, 1)]]
 
-    plan = plan_transfer(in_pos, in_faces, in_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, in_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.loop_uvs == {
@@ -437,7 +439,7 @@ def test_cut_copy_near_a_second_vertex_is_ambiguous():
     out_faces = [[0, 1, 2], [3, 1, 4]]
     out_uvs = [[(0, 0), (1, 0), (0, 1)], [(2, 0), (3, 0), (2, 1)]]
 
-    result = plan_transfer(in_pos, in_faces, out_pos, out_faces, out_uvs)
+    result = transfer_exact(in_pos, in_faces, out_pos, out_faces, out_uvs)
 
     assert not result.ok
     assert result.reason == "ambiguous_geometry"
@@ -453,7 +455,7 @@ def test_merged_output_still_matches_by_position():
     out_faces = [[0, 1, 2], [1, 2, 3]]
     out_uvs = [[(0, 0), (1, 0), (0, 1)], [(1, 0), (0, 1), (1, 1)]]
 
-    plan = plan_transfer(in_pos, in_faces, out_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, in_faces, out_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.loop_uvs == {
@@ -474,7 +476,7 @@ def test_small_piece_far_from_the_origin_matches():
     out_faces = [[0, 1, 2]]
     out_uvs = [[(0, 0), (1, 0), (0, 1)]]
 
-    plan = plan_transfer(in_pos, [[0, 1, 2]], out_pos, out_faces, out_uvs)
+    plan = transfer_exact(in_pos, [[0, 1, 2]], out_pos, out_faces, out_uvs)
 
     assert plan.ok
     assert plan.loop_uvs == {0: (0.0, 0.0), 1: (1.0, 0.0), 2: (0.0, 1.0)}
@@ -485,7 +487,7 @@ def test_unmatched_output_face_fails():
     out_faces = [[1, 3, 0]]
     out_uvs = [[(0, 0), (1, 0), (1, 1)]]
 
-    result = plan_transfer(SQUARE_POS, SQUARE_FACES, SQUARE_POS, out_faces, out_uvs)
+    result = transfer_exact(SQUARE_POS, SQUARE_FACES, SQUARE_POS, out_faces, out_uvs)
 
     assert not result.ok
     assert result.reason == "face_match"
@@ -498,7 +500,7 @@ FIRST_TRIANGLE_UVS = [[(0, 0), (1, 0), (0, 1)]]
 
 
 def test_missing_piece_fails_unless_partial():
-    result = plan_transfer(
+    result = transfer_exact(
         LOOSE_POS, LOOSE_FACES, LOOSE_POS[:3], [[0, 1, 2]], FIRST_TRIANGLE_UVS
     )
 
@@ -507,7 +509,7 @@ def test_missing_piece_fails_unless_partial():
 
 
 def test_partial_leaves_the_missing_piece_alone():
-    plan = plan_transfer(
+    plan = transfer_exact(
         LOOSE_POS,
         LOOSE_FACES,
         LOOSE_POS[:3],
@@ -524,7 +526,7 @@ def test_partial_leaves_the_missing_piece_alone():
 
 
 def test_partial_with_nothing_covered_fails():
-    result = plan_transfer(LOOSE_POS, LOOSE_FACES, [], [], [], partial=True)
+    result = transfer_exact(LOOSE_POS, LOOSE_FACES, [], [], [], partial=True)
 
     assert not result.ok
     assert result.reason == "incomplete_coverage"
