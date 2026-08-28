@@ -177,6 +177,17 @@ class CutCrossings:
         along /= numpy.maximum(numpy.linalg.norm(along, axis=1), 1e-30)[:, None]
         normal /= numpy.maximum(numpy.linalg.norm(normal, axis=1), 1e-30)[:, None]
         self.axes = numpy.stack([along, numpy.cross(normal, along)], axis=1)
+        # most proxy faces touch no cut
+        width = int(numpy.max((per_face >= 0).sum(axis=1), initial=0))
+        candidates = per_face[:, :width]
+        self.valid = candidates >= 0
+        self.touches_cut = self.valid.any(axis=1)
+        ends = self.cut_ends[numpy.maximum(candidates, 0)]
+        face = numpy.repeat(numpy.arange(len(faces)), width)
+        shape = (len(faces), width, 2)
+        self.cut_p = self._flat(face, ends[:, :, 0].reshape(-1, 3)).reshape(shape)
+        self.cut_q = self._flat(face, ends[:, :, 1].reshape(-1, 3)).reshape(shape)
+        self.flat_middle = self._flat(numpy.arange(len(faces)), self.middle)
 
     def _flat(self, faces, points):
         return numpy.einsum("nij,nj->ni", self.axes[faces], points - self.origin[faces])
@@ -189,22 +200,16 @@ class CutCrossings:
         crossed = numpy.zeros(len(faces_a), dtype=bool)
         if not len(self.cut_ends):
             return crossed
-        for start in range(0, len(faces_a), CROSSING_CHUNK):
-            stop = start + CROSSING_CHUNK
-            fa, fb = faces_a[start:stop], faces_b[start:stop]
-            candidates = self.per_face[fa]
-            valid = candidates >= 0
-            ends = self.cut_ends[numpy.maximum(candidates, 0)]
-            shape = ends.shape[:2]
-            axes = numpy.repeat(self.axes[fa], shape[1], axis=0)
-            origin = numpy.repeat(self.origin[fa], shape[1], axis=0)
-            p = numpy.einsum("nij,nj->ni", axes, ends[:, :, 0].reshape(-1, 3) - origin)
-            q = numpy.einsum("nij,nj->ni", axes, ends[:, :, 1].reshape(-1, 3) - origin)
-            p = p.reshape(*shape, 2)
-            q = q.reshape(*shape, 2)
-            a = self._flat(fa, points_a[start:stop])[:, None, :]
-            b = self._flat(fa, points_b[start:stop])[:, None, :]
-            middle_a = self._flat(fa, self.middle[fa])[:, None, :]
+        active = numpy.flatnonzero(self.touches_cut[faces_a])
+        for start in range(0, len(active), CROSSING_CHUNK):
+            rows = active[start : start + CROSSING_CHUNK]
+            fa, fb = faces_a[rows], faces_b[rows]
+            valid = self.valid[fa]
+            p = self.cut_p[fa]
+            q = self.cut_q[fa]
+            a = self._flat(fa, points_a[rows])[:, None, :]
+            b = self._flat(fa, points_b[rows])[:, None, :]
+            middle_a = self.flat_middle[fa][:, None, :]
             middle_b = self._flat(fa, self.middle[fb])[:, None, :]
 
             def orient(u, v, w):
@@ -225,7 +230,7 @@ class CutCrossings:
                 | (numpy.abs(orient(a, b, p)) <= touch)
                 | (numpy.abs(orient(a, b, q)) <= touch)
             )
-            crossed[start:stop] = numpy.any(apart & spans & valid, axis=1)
+            crossed[rows] = numpy.any(apart & spans & valid, axis=1)
         return crossed
 
     def nearest(self, face, point):
@@ -383,23 +388,24 @@ def _weld_ring(corner_uvs, drawn_by, proxy_map, mesh, v):
     tolerance = WELD_FRACTION * edge_lengths.mean()
     uvs = corner_uvs[ring]
     faces = drawn_by[ring]
-    remaining = list(range(len(ring)))
-    while remaining:
-        cluster = [remaining.pop()]
-        grew = True
-        while grew:
-            grew = False
-            for i in list(remaining):
-                joins = any(
-                    _linked(proxy_map.edge_links, faces[i], faces[j])
-                    or numpy.linalg.norm(uvs[i] - uvs[j]) <= tolerance
-                    for j in cluster
-                )
-                if joins:
-                    cluster.append(i)
-                    remaining.remove(i)
-                    grew = True
+    joins = _linked(proxy_map.edge_links, faces[:, None], faces[None, :])
+    joins |= numpy.linalg.norm(uvs[:, None] - uvs[None, :], axis=2) <= tolerance
+    for cluster in _connected(joins):
         corner_uvs[ring[cluster]] = uvs[cluster].mean(axis=0)
+
+
+def _connected(joins):
+    """Index groups connected through a symmetric boolean matrix."""
+    unassigned = numpy.ones(len(joins), dtype=bool)
+    while unassigned.any():
+        members = numpy.zeros(len(joins), dtype=bool)
+        members[numpy.flatnonzero(unassigned)[-1]] = True
+        grown = members | numpy.any(joins[members], axis=0)
+        while grown.sum() > members.sum():
+            members = grown
+            grown = members | numpy.any(joins[members], axis=0)
+        unassigned &= ~members
+        yield numpy.flatnonzero(members)
 
 
 def _weld(corner_uvs, drawn_by, native, proxy_map, mesh):
