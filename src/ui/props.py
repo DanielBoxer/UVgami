@@ -137,7 +137,7 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
         description="How many triangles the decimated copy keeps",
         min=100,
         max=100000,
-        default=2000,
+        default=20000,
     )
     # weights
     use_weights: bpy.props.BoolProperty(

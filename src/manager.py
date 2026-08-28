@@ -514,7 +514,7 @@ class UnwrapManager:
                     if obj == output:
                         pack_index = i
                         break
-            # the proxy finish flattens the whole original, so it can't skip parts
+            # the proxy finish reads the whole original
             group = unwrap.join_job
             missing_pieces = group is not None and len(group.finished) < group.expected
             if missing_pieces and isinstance(job, ProxyUVs):

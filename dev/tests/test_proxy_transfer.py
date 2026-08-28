@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-# loaded from file so it doesn't need the bpy-only addon package
+# loaded from file, the addon package imports bpy
 PKG = Path(__file__).parents[2] / "src" / "seams"
 spec = importlib.util.spec_from_file_location(
     "seams", PKG / "__init__.py", submodule_search_locations=[str(PKG)]
@@ -14,15 +14,17 @@ sys.modules["seams"] = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sys.modules["seams"])
 from seams import Cancelled, face_edges  # noqa: E402
 from seams.proxy_transfer import (  # noqa: E402
+    AffineMaps,
     cut_edges,
     finish_proxy,
-    match_within_parts,
-    moved_weights,
-    repair_islands,
     snap_cuts,
 )
 
 IDENTITY = numpy.eye(4)
+GRID = 6
+SHIFT = 10.0
+# the proxy cut sits between dense columns 2 and 3
+CUT_X = 2.5
 
 
 def quad_grid(size, spacing=1.0):
@@ -37,6 +39,14 @@ def quad_grid(size, spacing=1.0):
     return verts, faces
 
 
+def triangulated(faces):
+    return [
+        f
+        for quad in faces
+        for f in ([quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]])
+    ]
+
+
 def grid_uvs(verts, faces):
     return [[(verts[v][0], verts[v][1]) for v in face] for face in faces]
 
@@ -45,68 +55,75 @@ def grid_edges(faces):
     return numpy.array(sorted(face_edges(faces)), dtype=numpy.int64)
 
 
-def up_normals(verts):
-    return [(0.0, 0.0, 1.0)] * len(verts)
+def dense_arrays(verts, faces, matrix=IDENTITY):
+    return {
+        "positions": verts,
+        "normals": [(0.0, 0.0, 1.0)] * len(verts),
+        "matrix": matrix,
+        "corners": numpy.array([v for face in faces for v in face], dtype=numpy.int64),
+        "face_sizes": numpy.array([len(face) for face in faces], dtype=numpy.int64),
+    }
 
 
-def torn_proxy(spacing=2.0):
-    """A 2x2 quad proxy whose first face is torn away from its neighbours."""
-    verts, faces = quad_grid(2, spacing)
+def proxy_arrays(verts, faces, uvs, matrix=IDENTITY):
+    return {"positions": verts, "faces": faces, "corner_uvs": uvs, "matrix": matrix}
+
+
+def split_proxy(right_corner_uv=None):
+    """Two proxy panels over the dense grid, torn at CUT_X: the left panel's
+    uvs shifted by SHIFT, split into two triangles along its diagonal.
+    right_corner_uv replaces the uv of the left panel's top left corner, to
+    bend one triangle's map away from the other's."""
+    verts = [
+        (0.0, 0.0, 0.0),
+        (CUT_X, 0.0, 0.0),
+        (CUT_X, GRID, 0.0),
+        (0.0, GRID, 0.0),
+        (GRID, 0.0, 0.0),
+        (GRID, GRID, 0.0),
+    ]
+    faces = [[0, 1, 2], [0, 2, 3], [1, 4, 5], [1, 5, 2]]
     uvs = grid_uvs(verts, faces)
-    uvs[0] = [(u + 10.0, v) for u, v in uvs[0]]
-    return verts, faces, uvs
+    for f in (0, 1):
+        uvs[f] = [(u + SHIFT, v) for u, v in uvs[f]]
+    if right_corner_uv is not None:
+        uvs[1][2] = right_corner_uv
+    return proxy_arrays(verts, faces, uvs)
 
 
-class StubEngine:
-    def __init__(self):
-        self.verts = None
-        self.faces = None
-        self.seams = None
+def plane_locator(proxy):
+    """nearest_faces for flat proxies: the triangle a point falls in, or the
+    one it is least outside of."""
+    positions = numpy.asarray(proxy["positions"], dtype=numpy.float64)[:, :2]
+    triangles = positions[numpy.array([face[:3] for face in proxy["faces"]])]
 
-    def flatten(self, verts, faces, seams, cancelled=None, progress=None):
-        self.verts, self.faces, self.seams = verts, faces, set(seams)
-        return [[(0.25, 0.75)] * len(face) for face in faces]
+    def barycentric(point, tri):
+        a, b, c = tri
+        matrix = numpy.array([b - a, c - a]).T
+        s, t = numpy.linalg.solve(matrix, point - a)
+        return numpy.array([1 - s - t, s, t])
+
+    def nearest_faces(points, normals):
+        found = []
+        for point in numpy.asarray(points)[:, :2]:
+            lowest = [barycentric(point, tri).min() for tri in triangles]
+            found.append(int(numpy.argmax(lowest)))
+        return numpy.array(found), numpy.asarray(points, dtype=numpy.float64)
+
+    return nearest_faces
 
 
 def test_cut_edges_finds_only_the_torn_interior_edge():
     verts, faces = quad_grid(2)
     uvs = grid_uvs(verts, faces)
-    assert cut_edges(faces, uvs) == set()
-
-    uvs[0] = [(u + 10.0, v) for u, v in uvs[0]]
-    # face 0 is (0, 1, 4, 3): (1, 4) and (3, 4) are its interior edges
+    uvs[0] = [(u + SHIFT, v) for u, v in uvs[0]]
     assert cut_edges(faces, uvs) == {(1, 4), (3, 4)}
 
 
 def test_cut_edges_skips_boundary_edges():
-    verts, faces = quad_grid(2)
+    verts, faces = quad_grid(1)
     uvs = grid_uvs(verts, faces)
-    uvs[0] = [(u + 10.0, v) for u, v in uvs[0]]
-    boundary = {key for key, owners in face_edges(faces).items() if len(owners) == 1}
-    assert boundary
-    assert not (cut_edges(faces, uvs) & boundary)
-
-
-def test_moved_weights_moves_onto_output_indices():
-    assert moved_weights(None, [0, 1]) is None
-    assert moved_weights({5: 1.0}, [0, 1]) is None
-    assert moved_weights({0: 0.5, 2: 1.0}, [2, 7, 0]) == {0: 1.0, 2: 0.5}
-
-
-def test_repair_islands_opens_an_annulus():
-    verts, faces = quad_grid(3)
-    del faces[4]  # the middle quad, leaving an inner boundary loop
-    cuts = repair_islands(verts, faces, set())
-    assert cuts
-    edges = set(face_edges(faces))
-    assert cuts <= edges
-
-
-def test_repair_islands_leaves_a_disk_alone():
-    verts, faces = quad_grid(3)
-    assert repair_islands(verts, faces, set()) == set()
-    torn = {(1, 5)}
-    assert repair_islands(verts, faces, torn) == torn
+    assert cut_edges(faces, uvs) == set()
 
 
 def test_snap_cuts_follows_real_edges():
@@ -116,122 +133,164 @@ def test_snap_cuts_follows_real_edges():
     assert snap_cuts(verts, edges, mapped, {(0, 1)}) == {(0, 1), (1, 2), (2, 3)}
 
 
-def nearest_by_position(dense, proxy):
-    """The matcher finish_proxy takes, by distance alone."""
-    dense_positions = numpy.asarray(dense["positions"], dtype=numpy.float64)
-    proxy_positions = numpy.asarray(proxy["positions"], dtype=numpy.float64)
-
-    def nearest(dense_indices, proxy_indices):
-        dense_indices = numpy.asarray(dense_indices)
-        candidates = dense_positions[dense_indices]
-        mapped = []
-        for i in proxy_indices:
-            distances = numpy.linalg.norm(candidates - proxy_positions[i], axis=1)
-            mapped.append(int(dense_indices[distances.argmin()]))
-        return mapped
-
-    return nearest
-
-
-def plane_inputs():
-    """A 4x4 dense grid and its torn 2x2 proxy."""
-    dense_verts, dense_faces = quad_grid(4)
-    proxy_verts, proxy_faces, proxy_uvs = torn_proxy()
-    dense = {
-        "positions": dense_verts,
-        "faces": dense_faces,
-        "edges": grid_edges(dense_faces),
-        "normals": up_normals(dense_verts),
-        "matrix": IDENTITY,
-    }
-    proxy = {
-        "positions": proxy_verts,
-        "faces": proxy_faces,
-        "corner_uvs": proxy_uvs,
-        "normals": up_normals(proxy_verts),
-        "matrix": IDENTITY,
-    }
-    return dense, proxy
-
-
-def test_match_within_parts_keeps_a_stray_on_its_own_part():
-    dense_parts = [0, 0, 0, 1, 1, 1]
-    proxy_parts = [0, 0, 1, 1, 1]
-    calls = []
-
-    def nearest(dense_indices, proxy_indices):
-        calls.append((list(dense_indices), list(proxy_indices)))
-        if len(calls) == 1:
-            # proxy vert 2 is on part 1 but lands on part 0's vert 2
-            return [0, 1, 2, 4, 5]
-        return [3]
-
-    assert match_within_parts(dense_parts, proxy_parts, nearest) == [0, 1, 3, 4, 5]
-    assert calls[1] == ([3, 4, 5], [2])
-
-
-def test_finish_proxy_matches_each_part_within_itself():
-    """Two stacked grids: the proxy tear on the upper one snaps to the upper
-    dense grid even though its first row of vertices sits nearer the lower one."""
-    lower_verts, lower_faces = quad_grid(4)
-    upper_verts = [(x, y, 0.3) for x, y, _ in lower_verts]
-    dense_faces = lower_faces + [[v + len(lower_verts) for v in f] for f in lower_faces]
-    dense_verts = lower_verts + upper_verts
-    proxy_verts, proxy_faces, proxy_uvs = torn_proxy()
-    upper_proxy = [(x, y, 0.05 if y == 0 else 0.3) for x, y, _ in proxy_verts]
-    dense = {
-        "positions": dense_verts,
-        "faces": dense_faces,
-        "edges": grid_edges(dense_faces),
-        "normals": up_normals(dense_verts),
-        "matrix": IDENTITY,
-    }
-    proxy = {
-        "positions": proxy_verts + upper_proxy,
-        "faces": proxy_faces + [[v + len(proxy_verts) for v in f] for f in proxy_faces],
-        "corner_uvs": grid_uvs(proxy_verts, proxy_faces) + proxy_uvs,
-        "normals": up_normals(proxy_verts + upper_proxy),
-        "matrix": IDENTITY,
-    }
-    seams, _ = finish_proxy(
-        dense, proxy, None, StubEngine(), nearest_by_position(dense, proxy)
+def test_affine_map_continues_past_the_face():
+    maps = AffineMaps(
+        [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+        [[0, 1, 2]],
+        [[(0.0, 0.0), (2.0, 0.0), (0.0, 2.0)]],
     )
-    lower_seams = {(2, 7), (7, 12), (10, 11), (11, 12)}
-    assert seams == {
-        (a + len(lower_verts), b + len(lower_verts)) for a, b in lower_seams
-    }
+    uv = maps.uv(numpy.array([0, 0]), [(0.25, 0.25, 0.0), (3.0, -1.0, 5.0)])
+    assert numpy.allclose(uv, [(0.5, 0.5), (6.0, -2.0)])
 
 
-def test_finish_proxy_cuts_the_dense_mesh_and_returns_its_uvs():
-    dense, proxy = plane_inputs()
-    engine = StubEngine()
+@pytest.mark.parametrize("faces_of", [lambda faces: faces, triangulated])
+def test_finish_proxy_reads_a_continuous_map_exactly(faces_of):
+    verts, faces = quad_grid(GRID)
+    faces = faces_of(faces)
+    proxy_verts, proxy_faces = quad_grid(1, GRID)
+    proxy_faces = triangulated(proxy_faces)
+    proxy = proxy_arrays(proxy_verts, proxy_faces, grid_uvs(proxy_verts, proxy_faces))
+    dense = dense_arrays(verts, faces)
     reported = []
-    seams, uvs = finish_proxy(
-        dense, proxy, None, engine, nearest_by_position(dense, proxy), reported.append
-    )
 
-    # the proxy tear runs from dense vert 2 to 12 and from 10 to 12
-    assert seams == {(2, 7), (7, 12), (10, 11), (11, 12)}
-    assert engine.seams == seams
-    assert engine.faces == dense["faces"]
-    assert len(engine.verts) == len(dense["positions"])
-    assert len(uvs) == len(dense["faces"])
-    assert uvs[0] == [(0.25, 0.75)] * 4
+    seams, uvs = finish_proxy(dense, proxy, plane_locator(proxy), reported.append)
+
+    expected = numpy.array(verts)[dense["corners"]][:, :2]
+    assert numpy.allclose(uvs, expected)
+    assert seams == set()
     assert reported == sorted(reported)
     assert reported[-1] == 1.0
 
 
+def test_finish_proxy_matches_the_meshes_in_the_proxy_space():
+    verts, faces = quad_grid(GRID)
+    offset = numpy.eye(4)
+    offset[0, 3] = 5.0
+    proxy_verts, proxy_faces = quad_grid(1, GRID)
+    proxy_faces = triangulated(proxy_faces)
+    proxy_verts = [(x + 5.0, y, z) for x, y, z in proxy_verts]
+    proxy = proxy_arrays(proxy_verts, proxy_faces, grid_uvs(proxy_verts, proxy_faces))
+    dense = dense_arrays(verts, faces, offset)
+
+    _, uvs = finish_proxy(dense, proxy, plane_locator(proxy))
+
+    expected = numpy.array(verts)[dense["corners"]][:, :2] + (5.0, 0.0)
+    assert numpy.allclose(uvs, expected)
+
+
+def torn_columns(faces, verts):
+    """Face indices by the dense column the proxy cut runs through."""
+    xs = numpy.array([[verts[v][0] for v in face] for face in faces])
+    left = numpy.flatnonzero(xs.max(axis=1) <= 2)
+    straddling = numpy.flatnonzero((xs.min(axis=1) == 2) & (xs.max(axis=1) == 3))
+    right = numpy.flatnonzero(xs.min(axis=1) >= 3)
+    return left, straddling, right
+
+
+def test_finish_proxy_tears_the_dense_mesh_along_the_proxy_cut():
+    verts, faces = quad_grid(GRID)
+    proxy = split_proxy()
+    dense = dense_arrays(verts, faces)
+
+    seams, uvs = finish_proxy(dense, proxy, plane_locator(proxy))
+
+    xy = numpy.array(verts)[dense["corners"]][:, :2]
+    corner_face = numpy.repeat(numpy.arange(len(faces)), 4)
+    left, straddling, right = torn_columns(faces, verts)
+    # a straddling face is drawn on its first corner's side, the shifted one
+    shifted = numpy.isin(corner_face, numpy.concatenate([left, straddling]))
+    assert numpy.allclose(uvs[shifted], xy[shifted] + (SHIFT, 0.0))
+    kept = numpy.isin(corner_face, right)
+    assert numpy.allclose(uvs[kept], xy[kept])
+    side = GRID + 1
+    assert seams == {(y * side + 3, (y + 1) * side + 3) for y in range(GRID)}
+
+
+def test_finish_proxy_never_tears_between_linked_proxy_faces():
+    """The left panel's two triangles share vertices at the same uvs, so
+    however far their maps disagree the dense edges between them are not
+    tears, and the straddling faces above and below the diagonal, drawn
+    through one map each, weld at their shared corners."""
+    verts, faces = quad_grid(GRID)
+    proxy = split_proxy(right_corner_uv=(SHIFT + 2.0, GRID + 2.0))
+    dense = dense_arrays(verts, faces)
+
+    seams, uvs = finish_proxy(dense, proxy, plane_locator(proxy))
+
+    side = GRID + 1
+    assert seams == {(y * side + 3, (y + 1) * side + 3) for y in range(GRID)}
+    _, straddling, _ = torn_columns(faces, verts)
+    corners = dense["corners"]
+    for v in range(side + 3, GRID * side, side):
+        on_straddlers = [
+            f * 4 + i for f in straddling for i in range(4) if corners[f * 4 + i] == v
+        ]
+        assert len(on_straddlers) == 2
+        assert numpy.array_equal(uvs[on_straddlers[0]], uvs[on_straddlers[1]])
+
+
+def test_finish_proxy_pulls_a_zigzag_seam_onto_one_edge_row():
+    """A cut through the middle of a triangle strip gives the up and down
+    triangles opposite sides, so the seam would zigzag along every
+    diagonal. It is pulled onto one of the strip's two edge rows."""
+    verts, faces = quad_grid(GRID)
+    faces = triangulated(faces)
+    proxy = split_proxy()
+    # the cut runs along y instead of x
+    proxy["positions"] = [(y, x, z) for x, y, z in proxy["positions"]]
+    dense = dense_arrays(verts, faces)
+
+    seams, _ = finish_proxy(dense, proxy, plane_locator(proxy))
+
+    side = GRID + 1
+    rows = [{(y * side + x, y * side + x + 1) for x in range(GRID)} for y in (2, 3)]
+    assert seams in rows
+
+
+def test_finish_proxy_straightens_a_staircase_onto_the_diagonals():
+    """A cut at 45 degrees between two rows of a triangulated grid: the side
+    labelling gives a staircase of horizontal and vertical edges, but the
+    grid's diagonals run parallel to the cut and are shorter, so the seam
+    is redrawn along them."""
+    verts, faces = quad_grid(GRID)
+    faces = triangulated(faces)
+    # two proxy triangles either side of the line y = x + 0.5
+    proxy_verts = [
+        (-1.0, -0.5, 0.0),
+        (7.0, 7.5, 0.0),
+        (-1.0, 8.0, 0.0),
+        (8.0, -1.0, 0.0),
+    ]
+    proxy_faces = [[0, 1, 2], [0, 3, 1]]
+    uvs = grid_uvs(proxy_verts, proxy_faces)
+    uvs[0] = [(u + SHIFT, v) for u, v in uvs[0]]
+    proxy = proxy_arrays(proxy_verts, proxy_faces, uvs)
+    dense = dense_arrays(verts, faces)
+
+    seams, _ = finish_proxy(dense, proxy, plane_locator(proxy))
+
+    side = GRID + 1
+
+    def diagonal(a, b):
+        return b - a == side + 1
+
+    off_diagonal = [edge for edge in seams if not diagonal(*edge)]
+    # the run's two ends sit on the grid boundary and may keep a step each
+    assert len(off_diagonal) <= 2, off_diagonal
+    assert len(seams) - len(off_diagonal) >= GRID - 1
+
+
 def test_finish_proxy_stops_on_cancel():
-    dense, proxy = plane_inputs()
-    engine = StubEngine()
+    verts, faces = quad_grid(GRID)
+    proxy = split_proxy()
+    calls = []
+
+    def counting(points, normals):
+        calls.append(len(points))
+        return plane_locator(proxy)(points, normals)
+
     with pytest.raises(Cancelled):
         finish_proxy(
-            dense,
-            proxy,
-            None,
-            engine,
-            nearest_by_position(dense, proxy),
-            cancelled=lambda: True,
+            dense_arrays(verts, faces), proxy, counting, cancelled=lambda: True
         )
-    # cancelled before the flatten was asked for anything
-    assert engine.faces is None
+    assert calls == []

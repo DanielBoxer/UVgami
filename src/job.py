@@ -592,10 +592,6 @@ class ProxyUVs:
             return TransferReport(False, 0, "input or output object missing")
         if output.data.uv_layers.active is None:
             return TransferReport(False, 0, "output mesh has no uv layer")
-        try:
-            engine = flatten_engine()
-        except FlattenError as error:
-            return TransferReport(False, 0, str(error))
 
         target = input_mesh
         if not self.repack_input:
@@ -607,12 +603,10 @@ class ProxyUVs:
             triangulate(bm)
             set_bmesh(bm, target)
 
-        dense, proxy, weights = self._in_object_mode(transfer_inputs, target, output)
+        dense, proxy = self._in_object_mode(transfer_inputs, target, output)
 
         self.task = BackgroundTask(
-            lambda cancelled: finish_transfer(
-                dense, proxy, weights, engine, self._report, cancelled
-            )
+            lambda cancelled: finish_transfer(dense, proxy, self._report, cancelled)
         )
         self.input_mesh = input_mesh
         self.target = target
@@ -626,14 +620,11 @@ class ProxyUVs:
         """None while the finish runs, the final report once it is done."""
         if not self.task.done():
             return None
-        try:
-            seams, uvs = self.task.result()
-        except FlattenError as error:
-            return self._fail(str(error))
+        seams, uvs = self.task.result()
         input_mesh, target, output = self.input_mesh, self.target, self.output
         if not check_exists(target) or not check_exists(output):
             return self._fail("input or output object missing")
-        if len(uvs) != len(target.data.polygons):
+        if len(uvs) != len(target.data.loops):
             # an undo while it ran swapped the mesh out under us
             return self._fail("mesh changed during the unwrap")
         self._in_object_mode(self._apply, target, seams, uvs)
@@ -655,7 +646,7 @@ class ProxyUVs:
         apply_seams(data, seams)
         if not data.uv_layers:
             data.uv_layers.new()
-        apply_face_uvs(data, uvs)
+        set_loop_uvs(data, uvs)
 
     def _fail(self, detail):
         if self.target is not self.input_mesh and check_exists(self.target):
@@ -713,8 +704,6 @@ class ProxyIslandUVs:
             try:
                 transfer_cuts(temp, output)
                 self._apply(data, used, island_mesh)
-            except FlattenError as error:
-                return TransferReport(False, 0, str(error))
             finally:
                 bpy.data.objects.remove(temp, do_unlink=True)
                 bpy.data.meshes.remove(island_mesh)

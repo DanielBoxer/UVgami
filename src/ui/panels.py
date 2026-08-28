@@ -484,7 +484,7 @@ class UVGAMI_PT_weights(bpy.types.Panel):
     def draw(self, context):
         props = context.scene.uvgami
         layout = self.layout
-        # the proxy flatten takes no stretch file
+        # proxy mode never unwraps the original
         engine = active_engine(props.engine)
         stretch_ignored = engine.uses_proxy(props) and props.reduce_stretching
         # active, not enabled: painting turns the checkbox on itself, so the
