@@ -40,7 +40,8 @@ def uv_tears(faces, corner_uvs, tolerance=0.0):
     uvs = numpy.array(
         [uv for face in corner_uvs for uv in face], dtype=numpy.float64
     ).reshape(-1, 2)
-    return _corner_tears(corners, following_corners(sizes), uvs, tolerance)
+    following = following_corners(sizes)
+    return _edge_tears(corners, corners[following], uvs, uvs[following], tolerance)
 
 
 def edge_adjacency(edges):
@@ -238,20 +239,25 @@ class CutCrossings:
             crossed[rows] = numpy.any(apart & spans & valid, axis=1)
         return crossed
 
-    def nearest(self, face, point):
-        """The cut touching face nearest to point, -1 when none does."""
-        candidates = self.per_face[face]
-        candidates = candidates[candidates >= 0]
-        if not len(candidates):
-            return -1
-        p = self.cut_ends[candidates, 0]
-        q = self.cut_ends[candidates, 1]
+    def nearest(self, faces, points):
+        """The cut touching each face nearest to its point, -1 when none
+        does."""
+        candidates = self.per_face[faces]
+        valid = candidates >= 0
+        if not valid.any():
+            return numpy.full(len(faces), -1, dtype=numpy.int64)
+        ends = self.cut_ends[numpy.maximum(candidates, 0)]
+        p, q = ends[:, :, 0], ends[:, :, 1]
         along = q - p
-        t = numpy.einsum("ij,ij->i", point - p, along) / numpy.maximum(
-            numpy.einsum("ij,ij->i", along, along), 1e-30
+        offset = points[:, None, :] - p
+        t = numpy.einsum("nkj,nkj->nk", offset, along) / numpy.maximum(
+            numpy.einsum("nkj,nkj->nk", along, along), 1e-30
         )
-        closest = p + numpy.clip(t, 0, 1)[:, None] * along
-        return int(candidates[numpy.linalg.norm(closest - point, axis=1).argmin()])
+        closest = p + numpy.clip(t, 0, 1)[:, :, None] * along
+        distance = numpy.linalg.norm(closest - points[:, None, :], axis=2)
+        distance[~valid] = numpy.inf
+        best = candidates[numpy.arange(len(faces)), distance.argmin(axis=1)]
+        return numpy.where(valid.any(axis=1), best, -1)
 
 
 class ProxyMap:
@@ -290,33 +296,61 @@ class DenseMesh:
         self.starts = numpy.cumsum(self.sizes) - self.sizes
         self.face_of = numpy.repeat(numpy.arange(len(self.sizes)), self.sizes)
         self.following = following_corners(self.sizes)
+        self.preceding = numpy.empty_like(self.following)
+        self.preceding[self.following] = numpy.arange(len(self.following))
         self.twin = _twins(self.corners, self.following)
         self.lengths = numpy.linalg.norm(
             positions[self.corners] - positions[self.corners[self.following]], axis=1
         )
         self._ring_order = numpy.argsort(self.corners, kind="stable")
         self._ring_sorted = self.corners[self._ring_order]
+        self._one_corner = numpy.zeros(len(positions), dtype=numpy.int64)
+        self._one_corner[self.corners] = numpy.arange(len(self.corners))
 
     def face(self, f):
         """Face f's corners."""
         start = int(self.starts[f])
         return range(start, start + int(self.sizes[f]))
 
-    def ring(self, v):
-        """Vertex v's corners."""
-        lo, hi = numpy.searchsorted(self._ring_sorted, [v, v + 1])
-        return self._ring_order[lo:hi]
+    def suspect(self, corner_uvs):
+        """Whether each corner's edge can be torn: an end vertex has corners
+        that disagree."""
+        split = numpy.zeros(len(self._one_corner), dtype=bool)
+        differs = numpy.any(
+            corner_uvs != corner_uvs[self._one_corner[self.corners]], axis=1
+        )
+        split[self.corners[differs]] = True
+        return split[self.corners] | split[self.corners[self.following]]
+
+    def corners_of(self, faces):
+        """These faces' corners, face by face."""
+        faces = numpy.asarray(faces, dtype=numpy.int64)
+        return _ranges(self.starts[faces], self.sizes[faces])
+
+    def rings(self, vertices):
+        """These vertices' corners, and for each corner the position in
+        vertices of the vertex it is of."""
+        vertices = numpy.asarray(vertices, dtype=numpy.int64)
+        lo = numpy.searchsorted(self._ring_sorted, vertices)
+        sizes = numpy.searchsorted(self._ring_sorted, vertices + 1) - lo
+        of = numpy.repeat(numpy.arange(len(vertices)), sizes)
+        return self._ring_order[_ranges(lo, sizes)], of
 
 
-def _edge_keys(corners, following):
-    tail, head = corners, corners[following]
+def _ranges(starts, sizes):
+    """The ranges starts[i] to starts[i] + sizes[i], one after another."""
+    offsets = numpy.cumsum(sizes) - sizes
+    return numpy.repeat(starts - offsets, sizes) + numpy.arange(int(sizes.sum()))
+
+
+def _edge_keys(tail, head):
     return (numpy.minimum(tail, head) << 32) | numpy.maximum(tail, head)
 
 
 def _twins(corners, following):
     """Each corner's twin, the corner of the one other face on its edge, -1
     on a boundary or non-manifold edge."""
-    keys = _edge_keys(corners, following)
+    keys = _edge_keys(corners, corners[following])
     order = numpy.argsort(keys, kind="stable")
     _, first, counts = numpy.unique(keys[order], return_index=True, return_counts=True)
     paired = first[counts == 2]
@@ -382,43 +416,53 @@ def _redraw_torn_faces(proxy_map, face_of_vertex, surface, uvs, mesh, torn):
     return corner_uvs, drawn_by
 
 
-def _weld_ring(corner_uvs, drawn_by, proxy_map, mesh, v):
-    """Corners of vertex v drawn through proxy faces either side of one
+def _weld_vertices(corner_uvs, drawn_by, proxy_map, mesh, vertices):
+    """Each vertex's corners drawn through proxy faces either side of one
     uncut edge, or sitting within its weld distance of each other, set to
     one value."""
-    ring = mesh.ring(v)
-    edge_lengths = numpy.linalg.norm(
-        corner_uvs[ring] - corner_uvs[mesh.following[ring]], axis=1
-    )
-    tolerance = WELD_FRACTION * edge_lengths.mean()
-    uvs = corner_uvs[ring]
-    faces = drawn_by[ring]
-    joins = _linked(proxy_map.edge_links, faces[:, None], faces[None, :])
-    joins |= numpy.linalg.norm(uvs[:, None] - uvs[None, :], axis=2) <= tolerance
-    for cluster in _connected(joins):
-        corner_uvs[ring[cluster]] = uvs[cluster].mean(axis=0)
+    corners, of = mesh.rings(vertices)
+    if not len(corners):
+        return
+    uvs = corner_uvs[corners]
+    edge_lengths = numpy.linalg.norm(uvs - corner_uvs[mesh.following[corners]], axis=1)
+    sizes = numpy.bincount(of, minlength=len(vertices))
+    tolerance = WELD_FRACTION * numpy.bincount(of, edge_lengths, len(vertices)) / sizes
+    # every ordered corner pair within one ring
+    pair_counts = sizes**2
+    pair_of = numpy.repeat(numpy.arange(len(vertices)), pair_counts)
+    pair_starts = numpy.cumsum(pair_counts) - pair_counts
+    local = numpy.arange(len(pair_of)) - pair_starts[pair_of]
+    starts = numpy.cumsum(sizes) - sizes
+    a = starts[pair_of] + local // sizes[pair_of]
+    b = starts[pair_of] + local % sizes[pair_of]
+    joins = _linked(proxy_map.edge_links, drawn_by[corners[a]], drawn_by[corners[b]])
+    joins |= numpy.linalg.norm(uvs[a] - uvs[b], axis=1) <= tolerance[pair_of]
+    cluster = _components(len(corners), a[joins], b[joins])
+    sums = numpy.zeros((len(corners), 2))
+    numpy.add.at(sums, cluster, uvs)
+    counts = numpy.bincount(cluster, minlength=len(corners))
+    corner_uvs[corners] = (sums / numpy.maximum(counts, 1)[:, None])[cluster]
 
 
-def _connected(joins):
-    """Index groups connected through a symmetric boolean matrix."""
-    unassigned = numpy.ones(len(joins), dtype=bool)
-    while unassigned.any():
-        members = numpy.zeros(len(joins), dtype=bool)
-        members[numpy.flatnonzero(unassigned)[-1]] = True
-        grown = members | numpy.any(joins[members], axis=0)
-        while grown.sum() > members.sum():
-            members = grown
-            grown = members | numpy.any(joins[members], axis=0)
-        unassigned &= ~members
-        yield numpy.flatnonzero(members)
+def _components(count, a, b):
+    """Each index's lowest index reachable through the (a, b) pairs, which
+    hold both orders of every pair."""
+    label = numpy.arange(count)
+    while True:
+        grown = label.copy()
+        numpy.minimum.at(grown, a, label[b])
+        if numpy.array_equal(grown, label):
+            return label
+        label = grown
 
 
 def _weld(corner_uvs, drawn_by, native, proxy_map, mesh):
     """Every vertex with a moved corner welded. The rest share their vertex
     uv already and have no gap to close."""
     moved = numpy.flatnonzero(numpy.any(corner_uvs != native[mesh.corners], axis=1))
-    for v in numpy.unique(mesh.corners[moved]).tolist():
-        _weld_ring(corner_uvs, drawn_by, proxy_map, mesh, v)
+    _weld_vertices(
+        corner_uvs, drawn_by, proxy_map, mesh, numpy.unique(mesh.corners[moved])
+    )
     return corner_uvs
 
 
@@ -426,15 +470,30 @@ def _face_map(corner_uvs, mesh, g):
     """The uv map of dense face g as an affine function of position, from
     its first three corners. It carries the uv gradient the mesh has right
     there, where a proxy face's map can be far steeper."""
-    ring = numpy.arange(int(mesh.starts[g]), int(mesh.starts[g]) + 3)
-    p = mesh.positions[mesh.corners[ring]]
-    u = corner_uvs[ring]
-    jacobian = (u[1:] - u[0]).T @ numpy.linalg.pinv((p[1:] - p[0]).T)
+    start = int(mesh.starts[g])
+    p = mesh.positions[mesh.corners[start : start + 3]]
+    u = corner_uvs[start : start + 3]
+    edge_1, edge_2 = (p[1] - p[0]).tolist(), (p[2] - p[0]).tolist()
+    normal = _cross(edge_1, edge_2)
+    area = sum(a * a for a in normal)
+    # the dual basis of the two edges in the face's plane
+    scale = 1 / area if area else 0.0
+    dual_1 = [a * scale for a in _cross(edge_2, normal)]
+    dual_2 = [a * scale for a in _cross(normal, edge_1)]
+    jacobian = numpy.outer(u[1] - u[0], dual_1) + numpy.outer(u[2] - u[0], dual_2)
 
     def at(points):
         return u[0] + (numpy.asarray(points) - p[0]) @ jacobian.T
 
     return at
+
+
+def _cross(a, b):
+    return [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 
 
 def _draw_like_neighbour(corner_uvs, drawn_by, mesh, f, g):
@@ -457,6 +516,10 @@ def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
     the uvs its new neighbours have there, a corner none of them has is
     drawn through their map, and the vertices are welded again."""
     corners, following, twin = mesh.corners, mesh.following, mesh.twin
+    paired = numpy.flatnonzero((twin >= 0) & mesh.suspect(corner_uvs))
+    torn = paired[_torn_at_twin(corner_uvs, mesh, paired)]
+    seam = numpy.zeros(len(corners), dtype=bool)
+    seam[torn] = True
 
     def across(c):
         """The twin face's uvs and map for corner c's tail and head."""
@@ -464,15 +527,6 @@ def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
         if corners[t] == corners[c]:
             return corner_uvs[t], corner_uvs[following[t]], drawn_by[t]
         return corner_uvs[following[t]], corner_uvs[t], drawn_by[t]
-
-    def seam(c):
-        if twin[c] < 0:
-            return False
-        tail_uv, head_uv, _ = across(c)
-        return bool(
-            numpy.any(tail_uv != corner_uvs[c])
-            or numpy.any(head_uv != corner_uvs[following[c]])
-        )
 
     def side_of(anchor, seams):
         """The corner uvs the face gets on its anchor edge's far side, with
@@ -507,7 +561,7 @@ def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
 
     def move(f):
         ring = mesh.face(f)
-        seams = [c for c in ring if seam(c)]
+        seams = [c for c in ring if seam[c]]
         if not seams:
             return False
         plain = [c for c in ring if twin[c] >= 0 and c not in seams]
@@ -531,12 +585,14 @@ def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
         for corner, uv in target.items():
             corner_uvs[corner] = uv
             drawn_by[corner] = face
-        for c in ring:
-            _weld_ring(corner_uvs, drawn_by, proxy_map, mesh, int(corners[c]))
+        _weld_vertices(corner_uvs, drawn_by, proxy_map, mesh, corners[ring])
+        # the weld can change every edge at the face's vertices
+        ring_corners, _ = mesh.rings(corners[ring])
+        touched = numpy.concatenate([ring_corners, mesh.preceding[ring_corners]])
+        touched = touched[twin[touched] >= 0]
+        seam[touched] = _torn_at_twin(corner_uvs, mesh, touched)
         return True
 
-    paired = numpy.flatnonzero(twin >= 0)
-    torn = paired[_torn_at_twin(corner_uvs, mesh, paired)]
     # no re-queueing, a moved face's neighbours erode small islands corner by corner
     for f in numpy.unique(mesh.face_of[torn]).tolist():
         move(f)
@@ -570,7 +626,9 @@ def _torn_at_twin(corner_uvs, mesh, paired):
 def _seam_corners(corner_uvs, mesh):
     """Corners whose edge is a seam, one per edge."""
     twin = mesh.twin
-    paired = numpy.flatnonzero((twin >= 0) & (numpy.arange(len(twin)) < twin))
+    paired = numpy.flatnonzero(
+        (twin >= 0) & (numpy.arange(len(twin)) < twin) & mesh.suspect(corner_uvs)
+    )
     return paired[_torn_at_twin(corner_uvs, mesh, paired)]
 
 
@@ -638,29 +696,27 @@ def _seam_runs(seam_corners, cut_of, mesh):
     return runs
 
 
-def _band(run_faces, mesh, rings_out):
-    """Faces within rings_out rings of the run's faces."""
-    band = set(run_faces)
-    frontier = set(run_faces)
+def _band(faces, mesh, rings_out):
+    """Faces within rings_out rings of these faces, sorted."""
+    band = frontier = numpy.unique(faces)
     for _ in range(rings_out):
-        grown = set()
-        for f in frontier:
-            for c in mesh.face(f):
-                if mesh.twin[c] >= 0:
-                    grown.add(int(mesh.face_of[mesh.twin[c]]))
-        frontier = grown - band
-        band |= grown
+        twin = mesh.twin[mesh.corners_of(frontier)]
+        grown = numpy.unique(mesh.face_of[twin[twin >= 0]])
+        frontier = numpy.setdiff1d(grown, band, assume_unique=True)
+        band = numpy.union1d(band, grown)
     return band
 
 
 def _shortest_path(band, start, end, mesh):
     """Vertex path from start to end along the band's edges, or None."""
+    band_corners = mesh.corners_of(band)
+    tails = mesh.corners[band_corners].tolist()
+    heads = mesh.corners[mesh.following[band_corners]].tolist()
+    lengths = mesh.lengths[band_corners].tolist()
     adjacent = collections.defaultdict(list)
-    for f in band:
-        for c in mesh.face(f):
-            a, b = int(mesh.corners[c]), int(mesh.corners[mesh.following[c]])
-            adjacent[a].append((b, float(mesh.lengths[c])))
-            adjacent[b].append((a, float(mesh.lengths[c])))
+    for a, b, length in zip(tails, heads, lengths):
+        adjacent[a].append((b, length))
+        adjacent[b].append((a, length))
     best = {start: 0.0}
     came_from = {}
     queue = [(0.0, start)]
@@ -684,27 +740,48 @@ def _shortest_path(band, start, end, mesh):
     return path[::-1]
 
 
-def _flood(band, seeds, blocked, mesh):
-    """Each band face's label spread from the seeds across edges that are
-    not blocked, None on a face two labels reach."""
-    labels = dict(seeds)
-    frontier = list(seeds)
-    clash = False
-    while frontier:
-        f, label = frontier.pop()
-        for c in mesh.face(f):
-            t = mesh.twin[c]
-            if t < 0 or c in blocked or int(t) in blocked:
-                continue
-            g = int(mesh.face_of[t])
-            if g not in band:
-                continue
-            if g in labels:
-                clash |= labels[g] != label
-                continue
-            labels[g] = label
-            frontier.append((g, label))
-    return None if clash else labels
+class _Band:
+    """A sorted set of faces with the edges inside it. Per corner: the local
+    index of its face, of the face across the edge, and of the corner across,
+    -1 when that face is outside the band."""
+
+    def __init__(self, faces, mesh):
+        self.faces = faces
+        self.corners = mesh.corners_of(faces)
+        self.sizes = mesh.sizes[faces]
+        self.starts = numpy.cumsum(self.sizes) - self.sizes
+        self.face = numpy.repeat(numpy.arange(len(faces)), self.sizes)
+        twin = mesh.twin[self.corners]
+        self.has_twin = twin >= 0
+        twin = numpy.maximum(twin, 0)
+        across = mesh.face_of[twin]
+        local = numpy.searchsorted(faces, across)
+        inside = self.has_twin & (local < len(faces))
+        inside &= faces[numpy.minimum(local, len(faces) - 1)] == across
+        self.across = numpy.where(inside, local, -1)
+        self.twin_at = numpy.where(inside, numpy.searchsorted(self.corners, twin), -1)
+
+    def sides(self, seeds, seed_sides, blocked):
+        """Each face's side spread from the seeded faces across edges not
+        blocked at either corner, -1 where no seed reaches, None when both
+        sides reach one face."""
+        passable = (self.across >= 0) & ~blocked
+        passable[passable] &= ~blocked[self.twin_at[passable]]
+        component = _components(
+            len(self.faces), self.face[passable], self.across[passable]
+        )
+        low = numpy.full(len(self.faces), 2)
+        numpy.minimum.at(low, component[seeds], seed_sides)
+        high = numpy.full(len(self.faces), -1)
+        numpy.maximum.at(high, component[seeds], seed_sides)
+        if numpy.any(low < high):
+            return None
+        return high[component]
+
+    def neighbours(self, f):
+        """The local faces across face f's edges, in corner order."""
+        start = self.starts[f]
+        return self.across[start : start + self.sizes[f]]
 
 
 def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
@@ -718,17 +795,14 @@ def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
     face_of, positions = mesh.face_of, mesh.positions
     cuts = proxy_map.crossings
     seam_corners = _seam_corners(corner_uvs, mesh)
-    seam_set = set(seam_corners.tolist()) | set(twin[seam_corners].tolist())
+    seam = numpy.zeros(len(corners), dtype=bool)
+    seam[seam_corners] = True
+    seam[twin[seam_corners]] = True
     midpoints = (
         positions[corners[seam_corners]] + positions[corners[following[seam_corners]]]
     ) / 2
-    cut_of = numpy.array(
-        [
-            cuts.nearest(int(drawn_by[c]), mid)
-            for c, mid in zip(seam_corners.tolist(), midpoints)
-        ],
-        dtype=numpy.int64,
-    )
+    cut_of = cuts.nearest(drawn_by[seam_corners], midpoints)
+    on_run = numpy.zeros(len(corners), dtype=bool)
 
     def side_faces(vertices, run_corners):
         """The faces left and right of the run, walking it in order."""
@@ -763,85 +837,78 @@ def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
         path = _shortest_path(inner, vertices[0], vertices[-1], mesh)
         if path is None or path == vertices:
             continue
-        band = _band(inner, mesh, SEED_RINGS)
-        seeds = [(f, "left") for f in left] + [(f, "right") for f in right]
-        was = _flood(band, seeds, seam_set, mesh)
+        band = _Band(_band(inner, mesh, SEED_RINGS), mesh)
+        seeds = numpy.searchsorted(band.faces, left + right)
+        seed_sides = numpy.repeat([0, 1], [len(left), len(right)])
+        was = band.sides(seeds, seed_sides, seam[band.corners])
         if was is None:
             continue
-        path_edges = {(a, b) for a, b in zip(path, path[1:])}
-        path_edges |= {(b, a) for a, b in path_edges}
-        run_set = set(run_corners) | set(twin[run_corners].tolist())
-        blocked = set()
-        for f in band:
-            for c in mesh.face(f):
-                edge = (int(corners[c]), int(corners[following[c]]))
-                if (c in seam_set and c not in run_set) or edge in path_edges:
-                    blocked.add(c)
-        outer = [
-            (f, was[f])
-            for f in band
-            if f in was
-            and any(
-                twin[c] >= 0 and int(face_of[twin[c]]) not in band for c in mesh.face(f)
-            )
-        ]
-        now = _flood(band, outer, blocked, mesh)
+        path = numpy.array(path, dtype=numpy.int64)
+        on_path = numpy.isin(
+            _edge_keys(corners[band.corners], corners[following[band.corners]]),
+            _edge_keys(path[:-1], path[1:]),
+        )
+        on_run[run_corners] = on_run[twin[run_corners]] = True
+        blocked = (seam[band.corners] & ~on_run[band.corners]) | on_path
+        on_run[run_corners] = on_run[twin[run_corners]] = False
+        rim = numpy.zeros(len(band.faces), dtype=bool)
+        rim[band.face[band.has_twin & (band.across < 0)]] = True
+        outer = numpy.flatnonzero(rim & (was >= 0))
+        now = band.sides(outer, was[outer], blocked)
         if now is None:
             continue
-        moved = [f for f in band if f in was and f in now and was[f] != now[f]]
+        moved = numpy.flatnonzero((was >= 0) & (now >= 0) & (was != now)).tolist()
         if not moved:
             continue
-        rims = {"left": rim_face(cut, left), "right": rim_face(cut, right)}
-        if (
-            rims["left"] is None
-            or rims["right"] is None
-            or rims["left"] == rims["right"]
-        ):
+        rims = [rim_face(cut, left), rim_face(cut, right)]
+        if rims[0] is None or rims[1] is None or rims[0] == rims[1]:
             continue
         # drawn like a neighbour already on the new side, outermost first
+        same_side = {
+            f: [g for g in band.neighbours(f).tolist() if g >= 0 and now[g] == now[f]]
+            for f in moved
+        }
         waiting = set(moved)
         while waiting:
             progressed = False
             for f in sorted(waiting):
-                for c in mesh.face(f):
-                    t = twin[c]
-                    g = int(face_of[t]) if t >= 0 else -1
-                    if g >= 0 and g in now and now[g] == now[f] and g not in waiting:
-                        _draw_like_neighbour(corner_uvs, drawn_by, mesh, f, g)
+                for g in same_side[f]:
+                    if g not in waiting:
+                        _draw_like_neighbour(
+                            corner_uvs,
+                            drawn_by,
+                            mesh,
+                            int(band.faces[f]),
+                            int(band.faces[g]),
+                        )
                         waiting.discard(f)
                         progressed = True
                         break
             if not progressed:
                 for f in waiting:
                     face = rims[now[f]]
-                    ring = mesh.face(f)
+                    ring = mesh.face(int(band.faces[f]))
                     corner_uvs[ring] = proxy_map.maps.uv(
                         numpy.full(len(ring), face), positions[corners[ring]]
                     )
                     drawn_by[ring] = face
                 waiting.clear()
-        for f in moved:
-            for c in mesh.face(f):
-                _weld_ring(corner_uvs, drawn_by, proxy_map, mesh, int(corners[c]))
-        # the band's edges are the only ones whose seam state can have changed
-        band_corners = numpy.array(
-            [c for f in band for c in mesh.face(f)], dtype=numpy.int64
+        moved_corners = mesh.corners_of(band.faces[moved])
+        _weld_vertices(
+            corner_uvs, drawn_by, proxy_map, mesh, numpy.unique(corners[moved_corners])
         )
-        paired = band_corners[twin[band_corners] >= 0]
-        torn = _torn_at_twin(corner_uvs, mesh, paired)
-        seam_set -= set(paired.tolist())
-        seam_set |= set(paired[torn].tolist())
+        # the band's edges are the only ones whose seam state can have changed
+        paired = band.corners[band.has_twin]
+        seam[paired] = _torn_at_twin(corner_uvs, mesh, paired)
     return corner_uvs
 
 
-def _corner_tears(corners, following, corner_uvs, tolerance):
-    """uv_tears on a corner table, corner_uvs one row per corner."""
-    tail = corners
-    head = corners[following]
+def _edge_tears(tail, head, tail_uv, head_uv, tolerance):
+    """uv_tears on edges given as corner rows: the vertex and uv at each end."""
     low_first = (tail < head)[:, None]
-    at_low = numpy.where(low_first, corner_uvs, corner_uvs[following])
-    at_high = numpy.where(low_first, corner_uvs[following], corner_uvs)
-    keys = _edge_keys(corners, following)
+    at_low = numpy.where(low_first, tail_uv, head_uv)
+    at_high = numpy.where(low_first, head_uv, tail_uv)
+    keys = _edge_keys(tail, head)
     unique, first, group = numpy.unique(keys, return_index=True, return_inverse=True)
     agrees = numpy.all(numpy.abs(at_low - at_low[first][group]) <= tolerance, axis=1)
     agrees &= numpy.all(numpy.abs(at_high - at_high[first][group]) <= tolerance, axis=1)
@@ -932,6 +999,13 @@ def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=Non
     finished(ABSORB_SHARE)
     check_cancelled(cancelled)
     corner_uvs = _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh)
-    seams = _corner_tears(mesh.corners, mesh.following, corner_uvs, 0.0)
+    suspect = numpy.flatnonzero(mesh.suspect(corner_uvs))
+    seams = _edge_tears(
+        mesh.corners[suspect],
+        mesh.corners[mesh.following[suspect]],
+        corner_uvs[suspect],
+        corner_uvs[mesh.following[suspect]],
+        0.0,
+    )
     report(1.0)
     return seams, corner_uvs
