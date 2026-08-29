@@ -71,6 +71,8 @@ class UnwrapManager:
     def __init__(self):
         self._queue = deque()
         self._running = []
+        # reused across meshes
+        self._shared_processes = []
         self._pack_output_objects = []
         self.input = {}
         self.engine = None
@@ -170,8 +172,26 @@ class UnwrapManager:
             if unwrap.copy_of is not None:
                 continue
             self._queue.remove(unwrap)
-            unwrap.start_unwrap()
+            shared_args = engine.build_shared_args(self.engine_ctx, unwrap.path, props)
+            if shared_args is None:
+                unwrap.start_unwrap()
+            else:
+                self._send_to_shared_process(unwrap, shared_args)
             self._running.append(unwrap)
+
+    def _send_to_shared_process(self, unwrap, args):
+        """Spawning costs 50ms inside Blender, so processes are reused."""
+        process = next((p for p in self._shared_processes if p.is_idle), None)
+        if process is None:
+            process = BatchProcess(args, self.engine.build_env(self.engine_ctx))
+            self._shared_processes.append(process)
+        process.send(unwrap.path, unwrap)
+        unwrap.join_batch(process)
+
+    def _close_shared_processes(self):
+        for process in self._shared_processes:
+            process.close()
+        self._shared_processes.clear()
 
     def _start_batch_process(self, engine, props):
         """Unwrap every queued mesh in one engine process."""
@@ -221,10 +241,7 @@ class UnwrapManager:
                     and unwrap.started_at is not None
                     and time.monotonic() - unwrap.started_at > timeout_minutes * 60
                 ):
-                    can_stop = (
-                        self.engine.supports_early_stop and unwrap.batch_process is None
-                    )
-                    if can_stop:
+                    if self.engine.supports_early_stop:
                         # the stop flow above requests the map and force kills if ignored
                         unwrap.is_stopped = True
                         self.error_messages.append(
@@ -883,6 +900,7 @@ class UnwrapManager:
         self.is_active = False
         self._running.clear()
         self._queue.clear()
+        self._close_shared_processes()
         self._pack_output_objects.clear()
         self.input.clear()
 
@@ -917,6 +935,7 @@ class UnwrapManager:
         self.pending_transfers.clear()
         self._running.clear()
         self._queue.clear()
+        self._close_shared_processes()
         # a file load kills the builder timers that would have cleared these
         self.preparing.clear()
         self.pieces_still_arriving = 0

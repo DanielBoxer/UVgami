@@ -55,7 +55,8 @@ class EngineOutput:
 
 
 class BatchProcess:
-    """One engine process unwrapping many meshes sequentially.
+    """One engine process unwrapping many meshes sequentially, either every
+    mesh given on its argv or the ones sent to it one at a time.
 
     Tracks per-mesh state from the cli's start/done/failed stdout markers,
     keyed by input file stem."""
@@ -75,6 +76,8 @@ class BatchProcess:
         )
         self.started = set()
         self._results = {}
+        # None for an argv batch
+        self._sent = None
         self._reader = threading.Thread(target=self._read_output, daemon=True)
         self._reader.start()
         # stderr stays out of the stdout protocol, read by its own thread into
@@ -107,9 +110,42 @@ class BatchProcess:
             else:
                 parser.feed(line)
 
+    def send(self, path, sink):
+        """Write the next mesh to a process started without input paths. A
+        dead process refuses the write and answers through its exit code."""
+        self.sinks[path.stem] = sink
+        self._sent = path.stem
+        try:
+            print(f"unwrap {path}", file=self.process.stdin, flush=True)
+        except OSError:
+            pass
+
+    @property
+    def is_idle(self):
+        """Alive and done with the last mesh sent to it."""
+        if self.process.poll() is not None:
+            return False
+        return self._sent is None or self._sent in self._results
+
+    def close(self):
+        """End an idle process: a closed stdin is its signal to exit."""
+        try:
+            self.process.stdin.close()
+        except OSError:
+            # a dead engine refuses the flush in close
+            pass
+        self.process.wait()
+        # closing a pipe a reader is blocked on waits for that read
+        for thread in (self._reader, self._stderr_reader):
+            thread.join(timeout=1)
+        for pipe in (self.process.stdout, self.process.stderr):
+            pipe.close()
+
     def stderr_lines(self):
-        """Last stderr lines, waiting briefly for the reader to drain."""
-        self._stderr_reader.join(timeout=1)
+        """Last stderr lines, waiting briefly for the reader to drain. A live
+        process keeps its reader busy, so only a dead one is waited for."""
+        if self.process.poll() is not None:
+            self._stderr_reader.join(timeout=1)
         return self.stderr_tail
 
     def should_retry(self, stem):

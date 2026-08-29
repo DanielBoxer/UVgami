@@ -1,5 +1,6 @@
 import math
 import os
+import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -10,6 +11,7 @@ from uvgami_cli import optcuts
 from uvgami_cli.common import REPO_ROOT, UnwrapError, find_engine
 
 BUNDLED = REPO_ROOT / "engine-builds" / "windows" / "optcuts.exe"
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class FakeProcess:
@@ -185,6 +187,55 @@ def test_optcuts_smoke(cube, tmp_path):
     text = output.read_text()
     assert "vt " in text
     assert "f " in text
+
+
+@pytest.mark.smoke
+@pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled OptCuts binary not present")
+def test_optcuts_shared_process_matches_solo(tmp_path):
+    """Two meshes sent over stdin to one process must come out byte for byte as
+    each run alone: the process resets its search state between meshes."""
+    input_dir = tmp_path / "input"
+    solo_dir = tmp_path / "solo"
+    shared_dir = tmp_path / "shared"
+    for directory in (input_dir, solo_dir, shared_dir):
+        directory.mkdir()
+    cube = input_dir / "cube.obj"
+    shutil.copyfile(FIXTURES / "cube.obj", cube)
+    patch = input_dir / "patch.obj"
+    _write_bump_patch(patch)
+    # the pinned patch first, its pins must not leak into the cube
+    for obj in (patch, cube):
+        subprocess.run(
+            [str(BUNDLED), "-i", str(obj), "-o", str(solo_dir) + os.sep],
+            check=True,
+            timeout=300,
+            capture_output=True,
+        )
+    result = subprocess.run(
+        [str(BUNDLED), "-o", str(shared_dir) + os.sep],
+        input=f"unwrap {patch}\nunwrap {cube}\nunwrap {input_dir / 'none.obj'}\n",
+        text=True,
+        timeout=300,
+        capture_output=True,
+    )
+    assert result.returncode == 0
+    markers = [
+        line
+        for line in result.stdout.splitlines()
+        if line.startswith(("start:", "done:", "failed:"))
+    ]
+    assert markers == [
+        "start: patch",
+        "done: patch",
+        "start: cube",
+        "done: cube",
+        "start: none",
+        "failed: none 103",
+    ]
+    for obj in (patch, cube):
+        assert (shared_dir / obj.name).read_bytes() == (
+            solo_dir / obj.name
+        ).read_bytes()
 
 
 def _write_bump_patch(path, n=12, height=0.3, width=0.05):

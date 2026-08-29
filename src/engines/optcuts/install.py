@@ -3,10 +3,10 @@ import bpy
 from ..binary_engine import EngineRelease, InstallEngineTask
 
 # must match engine/optcuts/VERSION (check-engine-versions.yml fails on drift)
-OPTCUTS_VERSION = "1.20.4"
+OPTCUTS_VERSION = "1.21.0"
 # raise this to the release that adds a flag, a stdin command or an input file
 # the addon then sends
-OPTCUTS_MINIMUM_VERSION = "1.20.0"
+OPTCUTS_MINIMUM_VERSION = "1.21.0"
 OPTCUTS = EngineRelease(
     "optcuts", "Optcuts", OPTCUTS_VERSION, OPTCUTS_MINIMUM_VERSION, "2 MB"
 )

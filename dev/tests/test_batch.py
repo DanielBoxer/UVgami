@@ -44,6 +44,86 @@ def wait_result(batch_process, stem, timeout=10):
     raise AssertionError(f"no result for {stem}")
 
 
+SHARED_ENGINE = (
+    "import pathlib,sys\n"
+    "for line in sys.stdin:\n"
+    "    stem = pathlib.Path(line[7:].strip()).stem\n"
+    "    print(f'start: {stem}', flush=True)\n"
+    "    print('progress: 0.5 0 0.5', flush=True)\n"
+    "    print(f'done: {stem}', flush=True)\n"
+)
+
+
+def wait_idle(batch_process, timeout=10):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if batch_process.is_idle:
+            return
+        time.sleep(0.05)
+    raise AssertionError("process never went idle")
+
+
+def test_sent_meshes_run_in_turn():
+    sinks = {"a": Sink(), "b": Sink()}
+    batch_process = start(SHARED_ENGINE)
+    assert batch_process.is_idle
+    batch_process.send(Path("in/a.obj"), sinks["a"])
+    assert wait_result(batch_process, "a") == 0
+    wait_idle(batch_process)
+    batch_process.send(Path("in/b.obj"), sinks["b"])
+    assert wait_result(batch_process, "b") == 0
+    assert sinks["a"].progress_data.popleft() == "0.5 0 0.5\n"
+    assert sinks["b"].progress_data.popleft() == "0.5 0 0.5\n"
+    assert batch_process.process.poll() is None
+    batch_process.close()
+    assert batch_process.process.poll() == 0
+
+
+def test_shared_process_busy_until_done():
+    batch_process = start(
+        "import sys,time;sys.stdin.readline();"
+        "print('start: a',flush=True);time.sleep(30)"
+    )
+    try:
+        batch_process.send(Path("a.obj"), Sink())
+        deadline = time.monotonic() + 10
+        while "a" not in batch_process.started:
+            assert time.monotonic() < deadline, "start marker never arrived"
+            time.sleep(0.05)
+        assert not batch_process.is_idle
+    finally:
+        batch_process.process.kill()
+
+
+def test_send_to_dead_process_reports_its_exit_code():
+    batch_process = start("import sys;print('start: a');print('done: a');sys.exit(3)")
+    wait_dead(batch_process)
+    batch_process.send(Path("b.obj"), Sink())
+    assert not batch_process.is_idle
+    assert wait_result(batch_process, "b") == 3
+
+
+def test_stderr_lines_do_not_wait_on_a_live_process():
+    batch_process = start(
+        "import sys,time;print('start: a',flush=True);"
+        "print('bad mesh',file=sys.stderr,flush=True);"
+        "print('failed: a 101',flush=True);time.sleep(30)"
+    )
+    try:
+        assert wait_result(batch_process, "a") == 101
+        deadline = time.monotonic() + 10
+        while not batch_process.stderr_tail:
+            assert time.monotonic() < deadline, "stderr line never arrived"
+            time.sleep(0.05)
+        began = time.monotonic()
+        assert addon_batch.last_meaningful_line(batch_process.stderr_lines()) == (
+            "bad mesh"
+        )
+        assert time.monotonic() - began < 0.5
+    finally:
+        batch_process.process.kill()
+
+
 def test_markers_reported():
     batch_process = start("print('start: a');print('done: a');print('failed: b -2')")
     assert wait_result(batch_process, "a") == 0

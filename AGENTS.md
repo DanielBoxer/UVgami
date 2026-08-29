@@ -18,6 +18,7 @@ Blender addon that does automatic UV unwrapping. Three engines: optcuts (C++ bin
 
 - The dev venv is hand-built: the partuv CUDA stack was installed with `--extra partuv`, which is outside the default sync set. Bare `uv sync` uninstalls all of it, so sync with `uv sync --inexact`. Plain `uv run` is safe (inexact by default).
 - Engine stdout is a parsed protocol (`start:`/`done:`/`failed:`/`progress:` lines). Don't print extra lines to stdout there, use stderr.
+- Optcuts unwraps many meshes per process. A new global or static in `uvgami.cpp` must be reset in `resetMeshState`.
 - `src/` imports bpy, so only its bpy-free modules are unit-testable. `dev/tests/` shows which ones.
 - The addon runs one engine job per loose part. The CLI and bench feed the mesh whole, so a multi-part model can fail there but not in Blender.
 - The addon zip contains no engines. Each one downloads from its own GitHub release on first use, driven by `src/engines/binary_engine.py` (optcuts, xatlas) and `src/engines/partuv/install.py`.

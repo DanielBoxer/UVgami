@@ -135,7 +135,6 @@ void Optimizer::precompute(void) {
 }
 
 int Optimizer::solve(int maxIter) {
-    static bool lastPropagate = false;
     for (int iterI = 0; iterI < maxIter; iterI++) {
         computeGradient(result, scaffold, gradient);
         const double sqn_g = gradient.squaredNorm();

@@ -66,6 +66,7 @@ class Optimizer {
     bool useDense = false;
     int propagateFracture;
     bool fractureInitiated = false;
+    bool lastPropagate = false;
     bool allowEDecRelTol;
     bool mute;
     bool pardisoThreadAmt;

@@ -1,13 +1,16 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <condition_variable>
 #include <cstdlib>
 #include <deque>
+#include <limits>
 #include <string>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <vector>
 #include <thread>
@@ -109,10 +112,99 @@ const char *pathSeparator() {
 }
 uvgami::ChronoTimer mainTimer("unwrap time");
 
+std::string outputDirArg;
+
+// reset per mesh in resetMeshState like the globals above
+double minRestEdgeLength = std::numeric_limits<double>::quiet_NaN();
+int iterNum_bestFeasible = -1;
+uvgami::TriMesh triSoup_bestFeasible;
+double E_se_bestFeasible = DBL_MAX;
+// boundary and interior queries share an iterNum
+int lastStationaryIterNum = 0;
+std::map<double, std::vector<std::pair<double, double>>> configs_stationaryV;
+int oscillated_infeasible = 0;
+int stalledSolveIterations = 0;
+double stalledSolveEnergy = -1.0;
+int noProgressCount = 0;
+std::deque<std::pair<double, Eigen::Index>> recentSeamSets;
+
+// every value a fresh process starts with
+void resetMeshState() {
+    V = Eigen::MatrixXd();
+    UV = Eigen::MatrixXd();
+    N = Eigen::MatrixXd();
+    F = Eigen::MatrixXi();
+    FUV = Eigen::MatrixXi();
+    FN = Eigen::MatrixXi();
+    triSoup.clear();
+    vertAmt_input = 0;
+    triSoup_backup = uvgami::TriMesh();
+    optimizer = nullptr;
+    energyTerms.clear();
+    energyParams.clear();
+    rand1PInitCut = false;
+    pinnedMode = false;
+    noCutMode = false;
+    stitchMode = false;
+    stationaryCount = 0;
+    optimization_on = false;
+    iterNum = 0;
+    converged = 0;
+    outerLoopFinished = false;
+    energyChanges_bSplit.clear();
+    energyChanges_iSplit.clear();
+    energyChanges_merge.clear();
+    paths_bSplit.clear();
+    paths_iSplit.clear();
+    paths_merge.clear();
+    newVertPoses_bSplit.clear();
+    newVertPoses_iSplit.clear();
+    newVertPoses_merge.clear();
+    opType_queried = -1;
+    path_queried.clear();
+    newVertPos_queried = Eigen::MatrixXd();
+    reQuery = false;
+    filterExp_in = 0.6;
+    inSplitTotalAmt = 0;
+    canSaveMesh = false;
+    forceQuit = false;
+    forceQuitSave = false;
+    snapshot = false;
+    minRestEdgeLength = std::numeric_limits<double>::quiet_NaN();
+    iterNum_bestFeasible = -1;
+    triSoup_bestFeasible = uvgami::TriMesh();
+    E_se_bestFeasible = DBL_MAX;
+    lastStationaryIterNum = 0;
+    configs_stationaryV.clear();
+    oscillated_infeasible = 0;
+    stalledSolveIterations = 0;
+    stalledSolveEnergy = -1.0;
+    noProgressCount = 0;
+    recentSeamSets.clear();
+}
+
+void releaseMesh() {
+    for (auto &eI : energyTerms)
+        delete eI;
+    energyTerms.clear();
+    delete optimizer;
+    optimizer = nullptr;
+    if (!triSoup.empty())
+        delete triSoup[0];
+    triSoup.clear();
+}
+
+// "unwrap <path>" stdin lines, taken by main in order
+std::mutex pathQueueMutex;
+std::condition_variable pathQueued;
+std::deque<std::string> pathQueue;
+bool stdinClosed = false;
+
 void stdin_listener() {
     std::string line;
-    do {
-        std::cin >> line;
+    while (std::getline(std::cin, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         if (line == "stop") {
             forceQuit = true;
             forceQuitSave = true;
@@ -121,8 +213,26 @@ void stdin_listener() {
             forceQuitSave = false;
         } else if (line == "snapshot") {
             snapshot = true;
+        } else if (line.rfind("unwrap ", 0) == 0) {
+            std::lock_guard<std::mutex> lock(pathQueueMutex);
+            pathQueue.push_back(line.substr(7));
+            pathQueued.notify_one();
         }
-    } while (!line.empty());
+    }
+    std::lock_guard<std::mutex> lock(pathQueueMutex);
+    stdinClosed = true;
+    pathQueued.notify_one();
+}
+
+// empty once stdin closes
+std::string nextMeshPath() {
+    std::unique_lock<std::mutex> lock(pathQueueMutex);
+    pathQueued.wait(lock, [] { return !pathQueue.empty() || stdinClosed; });
+    if (pathQueue.empty())
+        return "";
+    std::string path = pathQueue.front();
+    pathQueue.pop_front();
+    return path;
 }
 
 void proceedOptimization(int proceedNum) {
@@ -267,12 +377,12 @@ double updateLambda(double measure_bound, double lambda_SD = energyParams[0],
 bool updateLambda_stationaryV(bool cancelMomentum = true,
                               bool checkConvergence = false) {
     // splits and merges only re-index the soup, rest edge lengths never change
-    static const double minRestEdgeLength = [] {
+    if (std::isnan(minRestEdgeLength)) {
         Eigen::MatrixXd edgeLengths;
         igl::edge_lengths(triSoup[channel_result]->V_rest,
                           triSoup[channel_result]->F, edgeLengths);
-        return edgeLengths.minCoeff();
-    }();
+        minRestEdgeLength = edgeLengths.minCoeff();
+    }
     const double eps_E_se =
         1.0e-3 * minRestEdgeLength / triSoup[channel_result]->virtualRadius;
 
@@ -289,14 +399,6 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
     // TODO?: stop when first violates bounds from feasible, don't go to best
     // feasible. check after each merge whether distortion is violated
     //  oscillation detection
-    static int iterNum_bestFeasible = -1;
-    static uvgami::TriMesh triSoup_bestFeasible;
-    static double E_se_bestFeasible = DBL_MAX;
-    static int lastStationaryIterNum =
-        0; // still necessary because boundary and interior query are with same
-           // iterNum
-    static std::map<double, std::vector<std::pair<double, double>>>
-        configs_stationaryV;
     if (iterNum != lastStationaryIterNum) {
         // not a roll back config
         const double lambda = 1.0 - energyParams[0];
@@ -392,7 +494,6 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
             // but revisiting the same stationary state means the split/merge
             // pair is cycling and spinning further cannot reach the bound.
             // give it a few chances to escape, then keep the current map
-            static int oscillated_infeasible = 0;
             if (++oscillated_infeasible >= 3)
                 return false;
         } else {
@@ -404,18 +505,6 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
     // convergence check
     if (checkConvergence) {
         if (measure_bound <= upperBound) {
-            // save info at first feasible stationaryVT for comparison
-            static bool saved = false;
-            if (!saved) {
-                //                logFile << "saving firstFeasibleS..." <<
-                //                std::endl; saveScreenshot(outputFolderPath +
-                //                "firstFeasibleS.png", 0.5, false, true);
-                //                //TODO: saved is before roll back...
-                //                triSoup[channel_result]->saveAsMesh(outputFolderPath
-                //                + "firstFeasibleS_mesh.obj", F);
-                saved = true;
-                //              logFile << "firstFeasibleS saved" << std::endl;
-            }
             if (measure_bound >= upperBound - convTol_upperBound) {
                 // DISABLE logFile << "all converged at measure = " <<
                 // measure_bound << ", b = " << upperBound <<
@@ -618,8 +707,6 @@ const size_t REVISIT_WINDOW = 8;
 
 bool preDrawFunc(void) {
     if (optimization_on) {
-        static int stalledSolveIterations = 0;
-        static double stalledSolveEnergy = -1.0;
         while (!converged) {
             proceedOptimization(1);
             // check per iteration, not per phase: a stop or viewer request
@@ -703,8 +790,6 @@ bool preDrawFunc(void) {
         // one step, never sees either. seam energy and vertex count identify
         // the seam set, distortion stays out because the lambda
         // renormalization wobbles it ~1e-6 relative on a frozen map
-        static int noProgressCount = 0;
-        static std::deque<std::pair<double, Eigen::Index>> recentSeamSets;
         const Eigen::Index V_now = triSoup[channel_result]->V_rest.rows();
         bool revisited = false;
         for (const auto &seamSet : recentSeamSets) {
@@ -1218,6 +1303,34 @@ static void reportTerminate() {
     std::_Exit(90);
 }
 
+static std::string meshStem(const std::string &meshFilePath) {
+    const std::string fileName =
+        meshFilePath.substr(meshFilePath.find_last_of(pathSeparator()) + 1);
+    return fileName.substr(0, fileName.find_last_of('.'));
+}
+
+// the mesh name is appended to outputFolderPath later
+static int prepareOutputFolder(const std::string &meshFilePath) {
+    if (outputDirArg.empty()) {
+        const std::filesystem::path inputFolderPath =
+            std::filesystem::path(meshFilePath).parent_path();
+        outputFolderPath =
+            std::string(inputFolderPath.parent_path().u8string()) +
+            pathSeparator() + "output" + pathSeparator();
+    } else {
+        outputFolderPath = outputDirArg;
+    }
+    if (!std::filesystem::exists(outputFolderPath) &&
+        !std::filesystem::create_directory(outputFolderPath)) {
+        printf("Failed to create output directory %s\n",
+               outputFolderPath.c_str());
+        return -1;
+    }
+    return 0;
+}
+
+static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV);
+
 int main(int argc, char *argv[]) {
     std::set_terminate(reportTerminate);
     // igl::parallel_for spawns a thread per core on every call and the
@@ -1226,8 +1339,6 @@ int main(int argc, char *argv[]) {
     igl::default_num_threads(1);
     std::string meshFileName;
     lambda_init = 0.999;
-    std::filesystem::path inputFolderPath;
-    bool hasUV = false;
     bool ignoreUV = false;
     bool flattenMode = false;
     bool packOnlyMode = false;
@@ -1237,8 +1348,11 @@ int main(int argc, char *argv[]) {
 
     try {
         TCLAP::CmdLine cmd("uvgami command line", ' ', UVGAMI_VERSION);
-        TCLAP::ValueArg<std::string> inputArg("i", "input", "Input mesh", true,
-                                              "", "string", cmd);
+        TCLAP::ValueArg<std::string> inputArg(
+            "i", "input",
+            "Input mesh. Without it, mesh paths are read from stdin as "
+            "\"unwrap <path>\" lines until it closes",
+            false, "", "string", cmd);
         TCLAP::ValueArg<std::string> outputArg(
             "o", "output", "Output directory", false, "", "string", cmd);
         TCLAP::ValueArg<double> lambdaInitArg("L", "lambda_init",
@@ -1286,13 +1400,8 @@ int main(int argc, char *argv[]) {
         if (ignoreUVArg.isSet())
             ignoreUV = ignoreUVArg.getValue();
         meshFileName = inputArg.getValue();
-        inputFolderPath = std::filesystem::path(meshFileName).parent_path();
         if (outputArg.isSet())
-            outputFolderPath = outputArg.getValue();
-        else
-            outputFolderPath =
-                std::string(inputFolderPath.parent_path().u8string()) +
-                pathSeparator() + "output" + pathSeparator();
+            outputDirArg = outputArg.getValue();
         if (lambdaInitArg.isSet()) {
             lambda_init = lambdaInitArg.getValue();
             if (lambda_init < 0.0 || lambda_init >= 1.0)
@@ -1306,22 +1415,53 @@ int main(int argc, char *argv[]) {
                   << std::endl;
         return 1;
     }
-    // create output folder
-    if (!std::filesystem::exists(outputFolderPath) &&
-        !std::filesystem::create_directory(outputFolderPath)) {
-        printf("Failed to create output directory %s\n",
-               outputFolderPath.c_str());
-        return -1;
-    }
-    if (flattenMode)
+    if (flattenMode) {
+        if (meshFileName.empty()) {
+            std::cerr << "error: flatten needs -i" << std::endl;
+            return 1;
+        }
+        const int folderCode = prepareOutputFolder(meshFileName);
+        if (folderCode != 0)
+            return folderCode;
         return uvgami::runFlatten(meshFileName, outputFolderPath, flattenIters,
                                   packOnlyMode);
+    }
 
-    // Load mesh
-    std::string meshFilePath = meshFileName;
-    meshFileName =
-        meshFileName.substr(meshFileName.find_last_of(pathSeparator()) + 1);
-    meshName = meshFileName.substr(0, meshFileName.find_last_of('.'));
+    // returning from main destroys cin under the listener and crashes
+    std::thread(&stdin_listener).detach();
+
+    if (!meshFileName.empty()) {
+        const int code = unwrapMesh(meshFileName, ignoreUV);
+        releaseMesh();
+        std::cout.flush();
+        std::_Exit(code);
+    }
+
+    // the addon sends a path each time this process is idle
+    for (std::string path = nextMeshPath(); !path.empty();
+         path = nextMeshPath()) {
+        const std::string stem = meshStem(path);
+        std::cout << "start: " << stem << std::endl;
+        const int code = unwrapMesh(path, ignoreUV);
+        releaseMesh();
+        if (code == UVGAMI_RC_SUCCESS)
+            std::cout << "done: " << stem << std::endl;
+        else
+            std::cout << "failed: " << stem << " " << code << std::endl;
+    }
+    std::cout.flush();
+    std::_Exit(0);
+}
+
+static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
+    resetMeshState();
+    mainTimer.start();
+    const int folderCode = prepareOutputFolder(meshFilePath);
+    if (folderCode != 0)
+        return folderCode;
+    const std::filesystem::path inputFolderPath =
+        std::filesystem::path(meshFilePath).parent_path();
+    meshName = meshStem(meshFilePath);
     const std::string suffix =
         meshFilePath.substr(meshFilePath.find_last_of('.'));
     bool loadSucceed = false;
@@ -1351,7 +1491,7 @@ int main(int argc, char *argv[]) {
     //    V = squareMesh.V_rest;
     //    F = squareMesh.F;
 
-    hasUV = !ignoreUV && (UV.rows() != 0);
+    const bool hasUV = !ignoreUV && (UV.rows() != 0);
     if (!hasUV) {
         std::vector<bool> noComponentFlags;
         const int bowtieAmt =
@@ -2149,21 +2289,10 @@ int main(int argc, char *argv[]) {
         converge_preDrawFunc();
     }
 
-    std::thread t(&stdin_listener);
     while (true) {
         preDrawFunc();
         if (postDrawFunc())
             break;
     }
-    // cleanup
-    t.detach();
-    for (auto &eI : energyTerms)
-        delete eI;
-    delete optimizer;
-    delete triSoup[0];
-
-    // the detached listener is usually still inside std::cin >> line, and
-    // returning destroys the stream state under it, which crashes on exit
-    std::cout.flush();
-    std::_Exit(0);
+    return UVGAMI_RC_SUCCESS;
 }

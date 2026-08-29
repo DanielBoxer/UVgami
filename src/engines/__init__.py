@@ -105,6 +105,13 @@ class Engine:
         implemented when batches_queue can return True."""
         raise NotImplementedError
 
+    def build_shared_args(self, ctx, input_path, props):
+        """Return the argv of a process that takes input_path and later meshes
+        over stdin, one at a time, or None when input_path needs a process of
+        its own. Every non-None value in a session must be the same argv, the
+        processes are shared."""
+        return None
+
     def build_env(self, ctx):
         """Return the subprocess env, or None to inherit."""
 

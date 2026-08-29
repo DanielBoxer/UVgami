@@ -235,17 +235,30 @@ class OptcutsEngine(BinaryEngine):
         # a collapsed flatten goes bare too, the engine can fail re-cutting it
         return not uvs_collapsed(corner_uvs(obj.data))
 
-    def build_args(self, ctx, input_path, props):
-        u = PRIORITY_VALUES[props.priority]
+    def _loose_bound_pinned(self, input_path, props):
+        """A pinned repair under the loose bound is a no-op: the broken patch
+        already counts as feasible, so no cut gets added."""
         pinned = (input_path.parent / f"{input_path.stem}_fixed").is_file()
-        if pinned and props.priority == "FEWER_SEAMS":
-            # a pinned repair under the loose bound is a no-op: the broken
-            # patch already counts as feasible, so no cut gets added
-            u = PRIORITY_VALUES["BALANCED"]
-        s = {5: "200", 4: "150", 3: "100", 2: "50", 1: "25"}.get(props.weight_value, "")
-        shared_args = f"-u {u} -s {s}"
+        return pinned and props.priority == "FEWER_SEAMS"
 
-        return [str(ctx), "-i", str(input_path)] + shared_args.split()
+    def _bound_and_weight_args(self, props, priority):
+        u = PRIORITY_VALUES[priority]
+        s = {5: "200", 4: "150", 3: "100", 2: "50", 1: "25"}.get(props.weight_value, "")
+        return f"-u {u} -s {s}".split()
+
+    def build_args(self, ctx, input_path, props):
+        priority = props.priority
+        if self._loose_bound_pinned(input_path, props):
+            priority = "BALANCED"
+        return [str(ctx), "-i", str(input_path)] + self._bound_and_weight_args(
+            props, priority
+        )
+
+    def build_shared_args(self, ctx, input_path, props):
+        # the bound is fixed per process
+        if self._loose_bound_pinned(input_path, props):
+            return None
+        return [str(ctx)] + self._bound_and_weight_args(props, props.priority)
 
     def describe_failure(self, code):
         return {
