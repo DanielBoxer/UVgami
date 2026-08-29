@@ -254,11 +254,12 @@ class OptcutsEngine(BinaryEngine):
             props, priority
         )
 
-    def build_shared_args(self, ctx, input_path, props):
+    def build_shared_args(self, ctx, input_path, props, threads):
         # the bound is fixed per process
         if self._loose_bound_pinned(input_path, props):
             return None
-        return [str(ctx)] + self._bound_and_weight_args(props, props.priority)
+        cap = ["-t", str(threads)] if threads else []
+        return [str(ctx)] + self._bound_and_weight_args(props, props.priority) + cap
 
     def describe_failure(self, code):
         return {

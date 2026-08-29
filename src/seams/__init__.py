@@ -17,6 +17,7 @@ from .cuts import (
 )
 from .islands import (
     crosses,
+    island_eulers,
     island_ruined,
     split_islands,
     split_moves,
@@ -107,6 +108,7 @@ __all__ = [
     "is_hard_surface",
     "island_groups",
     "island_layout",
+    "island_eulers",
     "island_ruined",
     "islands_overlap",
     "flatten_distortion",

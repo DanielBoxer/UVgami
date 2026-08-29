@@ -101,7 +101,7 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
     max_cores: bpy.props.IntProperty(
         name="",
         description="How many meshes to unwrap at the same time",
-        default=max(1, multiprocessing.cpu_count() // 2),
+        default=multiprocessing.cpu_count(),
         max=multiprocessing.cpu_count(),
         min=1,
     )

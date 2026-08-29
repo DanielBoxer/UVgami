@@ -9,7 +9,10 @@ longer than the atlas their own area needs."""
 
 import bisect
 import collections
+import itertools
 import math
+
+import numpy
 
 from .cuts import connect_loops, crease_relief, cut_path, edge_cost, path_cost
 from .mesh import (
@@ -133,6 +136,89 @@ def uv_topology(group, faces, edges, seams):
     return ec, list(loops.values())
 
 
+def _corner_classes(count, left, right):
+    """Each corner's lowest corner index reachable through the (left,
+    right) glue pairs."""
+    a = numpy.concatenate([left, right])
+    b = numpy.concatenate([right, left])
+    order = numpy.argsort(a, kind="stable")
+    a, b = a[order], b[order]
+    glued, first = numpy.unique(a, return_index=True)
+    # int64, the keys built from these overflow a windows int32
+    label = numpy.arange(count, dtype=numpy.int64)
+    while True:
+        lowest = numpy.minimum(label[glued], numpy.minimum.reduceat(label[b], first))
+        if numpy.array_equal(lowest, label[glued]):
+            return label
+        label[glued] = lowest
+        label = label[label]
+
+
+def island_eulers(groups, faces, seams):
+    """uv_topology's Euler characteristic for every island in one pass, on
+    a mesh whose faces are contiguous loop runs with no repeated vertex,
+    as every Blender mesh is."""
+    if not groups:
+        return []
+    lengths = numpy.fromiter((len(f) for f in faces), numpy.int64, len(faces))
+    count = int(lengths.sum())
+    if count == 0:
+        return [len(g) for g in groups]
+    starts = numpy.cumsum(lengths) - lengths
+    corner_vertex = numpy.fromiter(
+        itertools.chain.from_iterable(faces), numpy.int64, count
+    )
+    corner_face = numpy.repeat(numpy.arange(len(faces), dtype=numpy.int64), lengths)
+    next_corner = numpy.arange(1, count + 1, dtype=numpy.int64)
+    next_corner[starts + lengths - 1] = starts
+
+    vertex_count = int(corner_vertex.max()) + 1
+    other = corner_vertex[next_corner]
+    edge_key = numpy.minimum(corner_vertex, other) * vertex_count + numpy.maximum(
+        corner_vertex, other
+    )
+    order = numpy.argsort(edge_key, kind="stable")
+    _, first, counts = numpy.unique(
+        edge_key[order], return_index=True, return_counts=True
+    )
+    first = first[counts == 2]
+    a, b = order[first], order[first + 1]
+    seam_keys = numpy.fromiter(
+        (min(u, v) * vertex_count + max(u, v) for u, v in seams),
+        numpy.int64,
+        len(seams),
+    )
+    keep = (corner_face[a] != corner_face[b]) & ~numpy.isin(edge_key[a], seam_keys)
+    a, b = a[keep], b[keep]
+    same_start = corner_vertex[b] == corner_vertex[a]
+    b_at_start = numpy.where(same_start, b, next_corner[b])
+    b_at_end = numpy.where(same_start, next_corner[b], b)
+    label = _corner_classes(
+        count,
+        numpy.concatenate([a, next_corner[a]]),
+        numpy.concatenate([b_at_start, b_at_end]),
+    )
+
+    island_of_face = numpy.empty(len(faces), numpy.int64)
+    for island, group in enumerate(groups):
+        island_of_face[group] = island
+    # a class never crosses an island
+    island_of_corner = island_of_face[corner_face]
+    vertices = numpy.bincount(
+        island_of_corner[numpy.unique(label)], minlength=len(groups)
+    )
+    end_label = label[next_corner]
+    corner_edge = numpy.minimum(label, end_label) * count + numpy.maximum(
+        label, end_label
+    )
+    unique_edges = numpy.unique(corner_edge)
+    edges = numpy.bincount(
+        island_of_corner[unique_edges // count], minlength=len(groups)
+    )
+    faces_per = numpy.fromiter((len(g) for g in groups), numpy.int64, len(groups))
+    return (vertices - edges + faces_per).tolist()
+
+
 def crosses(a, b, c, d):
     """Mirror of the engine's Test2DSegmentSegment with eps 0, collinear
     branch included: collinear segments only count when their projections
@@ -158,12 +244,13 @@ def crosses(a, b, c, d):
     return True
 
 
-def island_ruined(group, faces, uvs, edges, seams, uv_areas=None):
+def island_ruined(group, faces, uvs, edges, seams, uv_areas=None, euler=None):
     """A flipped or collapsed face, a non-disk island, or two boundary
     segments crossing: what makes the engine throw the island's layout
     away and re-cut it. Crossings between two different islands do not
     happen out of blender's packer, only inside one island. uv_areas are
-    the per-face signed uv areas, when the caller has them.
+    the per-face signed uv areas and euler the island's characteristic
+    from island_eulers, when the caller has them.
     """
     if uv_areas is None:
         signed = [signed_area(uvs[f]) for f in group]
@@ -173,8 +260,9 @@ def island_ruined(group, faces, uvs, edges, seams, uv_areas=None):
     if total == 0 or any(s * total <= 0 for s in signed):
         return True
 
-    ec, _ = uv_topology(group, faces, edges, seams)
-    if ec != 1:
+    if euler is None:
+        euler, _ = uv_topology(group, faces, edges, seams)
+    if euler != 1:
         return True
 
     segs = []
@@ -745,10 +833,13 @@ def split_islands(
     return extra
 
 
-def split_moves(verts, faces, uvs, starts, ranges=None):
+def split_moves(
+    verts, faces, uvs, starts, ranges=None, edges=None, seams=None, groups=None
+):
     """New uvs that slice the long strips out of a preseeded engine output,
-    as (loop index, u, v) triples. Plain data in and out, no bpy, so a
-    caller can run it off the main thread.
+    as (loop index, u, v) triples, with the uv seams and islands the mesh
+    has once they are applied. Plain data in and out, no bpy, so a caller
+    can run it off the main thread.
 
     The engine leaves a developable strip whole because splitting it gains
     no distortion, so split_islands slices those (its cuts snap to creases).
@@ -763,14 +854,23 @@ def split_moves(verts, faces, uvs, starts, ranges=None):
     only shrinks a little towards its own centre, which is what parts them
     into islands and leaves a valid map behind for the pack to tighten. A
     flipped triangle the engine ships is left for Relax Island: re-unwraps
-    tried here made those islands worse, not better."""
-    edges = face_edges(faces)
-    seams = uv_seams(faces, uvs, edges)
+    tried here made those islands worse, not better. edges, seams and
+    groups are face_edges, uv_seams and island_groups of the input, for a
+    caller that has them."""
+    if edges is None:
+        edges = face_edges(faces)
+    if seams is None:
+        seams = uv_seams(faces, uvs, edges)
+    if groups is None:
+        groups = island_groups(faces, seams, edges)
     measures = face_measures(verts, faces, uvs)
     areas3d, uv_areas, _ = measures
-    groups = island_groups(faces, seams, edges)
+    eulers = island_eulers(groups, faces, seams)
+    all_groups = groups
     groups = [
-        g for g in groups if not island_ruined(g, faces, uvs, edges, seams, uv_areas)
+        g
+        for g, euler in zip(groups, eulers)
+        if not island_ruined(g, faces, uvs, edges, seams, uv_areas, euler)
     ]
     if ranges is None:
         scanned = groups
@@ -809,11 +909,13 @@ def split_moves(verts, faces, uvs, starts, ranges=None):
                 measures=measures,
             )
     if not extra:
-        return []
+        return [], seams, all_groups
     touched = {f for e in extra for f in edges[e]}
     target_faces = {f for g in scanned if touched & set(g) for f in g}
     moves = []
-    for piece in island_groups(faces, seams | extra, edges):
+    seams = seams | extra
+    pieces = island_groups(faces, seams, edges)
+    for piece in pieces:
         if piece[0] not in target_faces:
             continue
         points = [uv for f in piece for uv in uvs[f]]
@@ -828,4 +930,4 @@ def split_moves(verts, faces, uvs, starts, ranges=None):
                         cy + (v - cy) * SPLIT_GAP,
                     )
                 )
-    return moves
+    return moves, seams, pieces

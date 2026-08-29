@@ -1,5 +1,8 @@
+import collections
+
 import bmesh
 import bpy
+import numpy
 
 from ..engines import get_engine
 from ..hard_surface import apply_seams
@@ -230,23 +233,57 @@ def repair_flipped_island(obj, temp):
     obj.select_set(True)
 
 
-def finish_preseed(obj, ranges=None):
+MeshReads = collections.namedtuple("MeshReads", "coords faces edges uvs seams groups")
+
+
+def read_mesh(mesh):
+    """What the post passes read from a mesh, read once and handed along:
+    vertex positions, per-face vertices and rounded uvs, edge owners, uv
+    seams and uv islands."""
+    faces = face_vertices(mesh)
+    uvs = face_uvs(mesh)
+    edges = face_edges(faces)
+    seams = uv_seams(faces, uvs, edges)
+    groups = island_groups(faces, seams, edges)
+    return MeshReads(vertex_positions(mesh), faces, edges, uvs, seams, groups)
+
+
+def finish_preseed(obj, reads, ranges=None):
     """Slice the long strips out of a preseeded engine output. The scan itself
-    is documented on split_moves."""
+    is documented on split_moves. Returns the reads as they are after the
+    moves."""
     mesh = obj.data
-    moves = split_moves(
-        vertex_positions(mesh),
-        face_vertices(mesh),
-        face_uvs(mesh),
-        loop_starts(mesh).tolist(),
+    starts = loop_starts(mesh)
+    moves, seams, groups = split_moves(
+        reads.coords,
+        reads.faces,
+        reads.uvs,
+        starts.tolist(),
         ranges,
+        reads.edges,
+        reads.seams,
+        reads.groups,
     )
     if not moves:
-        return
+        return reads
     coords = loop_uvs(mesh)
     for loop_index, u, v in moves:
         coords[loop_index] = (u, v)
     set_loop_uvs(mesh, coords)
+
+    # blender stores uvs as float32
+    loops = numpy.fromiter((m[0] for m in moves), numpy.int64, len(moves))
+    stored = coords[loops].astype(numpy.float32).astype(numpy.float64).tolist()
+    face_of = numpy.searchsorted(starts, loops, "right") - 1
+    corners = (loops - starts[face_of]).tolist()
+    uvs = list(reads.uvs)
+    copied = set()
+    for fi, corner, (u, v) in zip(face_of.tolist(), corners, stored):
+        if fi not in copied:
+            uvs[fi] = list(uvs[fi])
+            copied.add(fi)
+        uvs[fi][corner] = (round(u, 6), round(v, 6))
+    return reads._replace(uvs=uvs, seams=seams, groups=groups)
 
 
 def _fan_triangle_has_area(coords, face, i):
@@ -261,7 +298,7 @@ def _fan_triangle_has_area(coords, face, i):
     return cx * cx + cy * cy + cz * cz > 0.0
 
 
-def rectify_islands(obj):
+def rectify_islands(obj, reads):
     """Straighten near-rectangular islands. A strip whose corners the
     boundary turning found gets every uv placed directly by its spine
     coordinates, no solve: blender's unwrap reinitializes from scratch, so
@@ -270,19 +307,12 @@ def rectify_islands(obj):
     conformal first because the minimum stretch needs a flip free start
     and the pinned rectangle rarely is one, then minimum stretch to
     polish. An island the solve collapsed, blew up, or left overlapping
-    goes back untouched."""
+    goes back untouched. reads is read_mesh of the object as it is now."""
     mesh = obj.data
-    if mesh.uv_layers.active is None:
-        return
-    faces = face_vertices(mesh)
-    uvs = face_uvs(mesh)
-    edges = face_edges(faces)
-    seams = uv_seams(faces, uvs, edges)
-    groups = island_groups(faces, seams, edges)
+    coords, faces, edges, uvs, seams, groups = reads
     plans = rectify_targets(uvs, groups)
     if not plans:
         return
-    coords = vertex_positions(mesh)
     before_distortion = [
         flatten_distortion(coords, faces, uvs, group) for group, _, _ in plans
     ]

@@ -1,4 +1,5 @@
 import functools
+import multiprocessing
 import time
 import traceback
 from collections import deque, namedtuple
@@ -30,6 +31,9 @@ from .utils.ui import popup, set_status, switch_shading, tag_redraw
 # how long a clean run's status bar message stays up
 STATUS_SECONDS = 5
 SETTLE_TICK_SECONDS = 0.05
+DISPATCH_SECONDS = 0.1
+# a finished piece waits for the tick
+QUEUED_DISPATCH_SECONDS = 0.02
 # the uv transfer's share of a piece's progress, held back from the start or
 # the bar drops when the engine hands over
 TRANSFER_PROGRESS_SHARE = 0.4
@@ -74,6 +78,7 @@ class UnwrapManager:
         # reused across meshes
         self._shared_processes = []
         self._pack_output_objects = []
+        self._pack_topology = {}
         self.input = {}
         self.engine = None
         # run context returned by engine.validate, opaque to the manager
@@ -117,6 +122,7 @@ class UnwrapManager:
         self.exit_viewer = False
         self.viewer_done = False
         self._pack_output_objects = []
+        self._pack_topology = {}
         self._drawn_panel_state = None
         self._panel_drawn_at = 0.0
 
@@ -172,12 +178,22 @@ class UnwrapManager:
             if unwrap.copy_of is not None:
                 continue
             self._queue.remove(unwrap)
-            shared_args = engine.build_shared_args(self.engine_ctx, unwrap.path, props)
+            shared_args = engine.build_shared_args(
+                self.engine_ctx, unwrap.path, props, self._shared_threads(unwrap, props)
+            )
             if shared_args is None:
                 unwrap.start_unwrap()
             else:
                 self._send_to_shared_process(unwrap, shared_args)
             self._running.append(unwrap)
+
+    def _shared_threads(self, unwrap, props):
+        """Threads per shared engine: the cores split between the slots once
+        a mesh has enough pieces to fill them, every core for a lone mesh."""
+        pieces = unwrap.join_job.expected if unwrap.join_job is not None else 1
+        if pieces < props.max_cores:
+            return 0
+        return max(1, multiprocessing.cpu_count() // props.max_cores)
 
     def _send_to_shared_process(self, unwrap, args):
         """Spawning costs 50ms inside Blender, so processes are reused."""
@@ -318,7 +334,7 @@ class UnwrapManager:
             handle_error(e, "MIDDLE")
             return None
 
-        return 0.1
+        return QUEUED_DISPATCH_SECONDS if self._queue else DISPATCH_SECONDS
 
     def run_until_settled(self, unwraps):
         while self.is_active and any(u.result is None for u in unwraps):
@@ -507,7 +523,7 @@ class UnwrapManager:
         pieces = unwrap.join_job.finished if unwrap.join_job is not None else [unwrap]
         if any(u.preseeded for u in pieces):
             # imported here: ops.island imports this module back
-            from .ops.island import finish_preseed, rectify_islands
+            from .ops.island import finish_preseed, read_mesh, rectify_islands
 
             ranges = None
             if len(pieces) > 1:
@@ -521,11 +537,13 @@ class UnwrapManager:
                     start = stop
                 if start != len(output.data.polygons):
                     ranges = None
+            reads = read_mesh(output.data)
             # rebuild sliced the strips already, mirrored, and a second
             # pass in uv space would land differently on each side
             if not half_rebuilt:
-                finish_preseed(output, ranges)
-            rectify_islands(output)
+                reads = finish_preseed(output, reads, ranges)
+            rectify_islands(output, reads)
+            self._pack_topology[output] = (reads.faces, reads.edges)
 
         # after rectify, whose per-island solves would drift a stack apart
         kept_whole = symmetrize_job is not None and symmetrize_job.kept_whole
@@ -784,10 +802,10 @@ class UnwrapManager:
             valid_objects = [o for o in self._pack_output_objects if check_exists(o)]
             if valid_objects:
                 if props.combine_uvs:
-                    pack_objects(valid_objects)
+                    pack_objects(valid_objects, self._pack_topology)
                 else:
                     for obj in valid_objects:
-                        pack_objects([obj])
+                        pack_objects([obj], self._pack_topology)
 
         counts = self._result_counts()
         self.finish()
@@ -902,6 +920,7 @@ class UnwrapManager:
         self._queue.clear()
         self._close_shared_processes()
         self._pack_output_objects.clear()
+        self._pack_topology.clear()
         self.input.clear()
 
         # count first, the error path reaches here before start() set props

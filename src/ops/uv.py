@@ -14,20 +14,24 @@ from ..utils.mesh import (
 )
 
 
-def island_stacks(obj):
+def island_stacks(obj, faces=None, edges=None):
     """The object's stacked duplicate islands. Read in bulk, which comes
     back empty for an object in edit mode, so it runs before the session.
     Returns per stack the kept island's anchor and reference loops with
     their uvs, which recover the transform the pack applied, and the
-    duplicate faces to move along."""
+    duplicate faces to move along. faces and edges are face_vertices and
+    face_edges of the mesh, for a caller that has them."""
     mesh = obj.data
     if mesh.uv_layers.active is None:
         return []
-    faces = face_vertices(mesh)
+    if faces is None:
+        faces = face_vertices(mesh)
+    if edges is None:
+        edges = face_edges(faces)
     uvs = corner_uvs(mesh)
 
     stacks = []
-    groups = uv_island_groups(faces, uvs, face_edges(faces))
+    groups = uv_island_groups(faces, uvs, edges)
     for kept, duplicates in find_stacks(groups, uvs):
         anchor_loop = (kept[0], 0)
         anchor = complex(*uvs[kept[0]][0])
@@ -105,9 +109,12 @@ def _restack(obj, stacks):
     bmesh.update_edit_mesh(obj.data)
 
 
-def pack_objects(objects):
-    """Pack these objects' uvs together in one edit session."""
-    edit_restore(objects, pack, {obj: island_stacks(obj) for obj in objects})
+def pack_objects(objects, topology=None):
+    """Pack these objects' uvs together in one edit session. topology maps
+    an object to its (faces, edges) for a caller that read them already."""
+    topology = topology or {}
+    stacks_of = {obj: island_stacks(obj, *topology.get(obj, ())) for obj in objects}
+    edit_restore(objects, pack, stacks_of)
 
 
 def pack(stacks_of):

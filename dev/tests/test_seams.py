@@ -33,6 +33,7 @@ from seams import (  # noqa: E402
     flatten_distortion,
     flatten_teeth,
     is_hard_surface,
+    island_eulers,
     island_groups,
     island_layout,
     island_ruined,
@@ -56,6 +57,7 @@ from seams import (  # noqa: E402
     uv_area_fit,
     uv_fit,
     uv_island_groups,
+    uv_seams,
     uv_topology,
     uvs_collapsed,
     vertex_components,
@@ -932,7 +934,8 @@ def test_split_moves_part_the_sliced_strips():
     edges = face_edges(faces)
     assert len(uv_island_groups(faces, uvs, edges)) == 1
 
-    moves = split_moves(verts, faces, uvs, starts)
+    result = split_moves(verts, faces, uvs, starts)
+    moves, seams, pieces = result
     assert moves
     face_of = {}
     for face_index, start in enumerate(starts):
@@ -942,10 +945,33 @@ def test_split_moves_part_the_sliced_strips():
     for loop_index, u, v in moves:
         face_index, corner = face_of[loop_index]
         moved[face_index][corner] = (u, v)
-    assert len(uv_island_groups(faces, moved, edges)) == 4
+    after = uv_island_groups(faces, moved, edges)
+    assert len(after) == 4
+    assert seams == uv_seams(faces, moved, edges)
+    assert sorted(pieces) == sorted(after)
 
     # one range covering everything scans exactly like the whole-mesh path
-    assert split_moves(verts, faces, uvs, starts, [(0, len(faces))]) == moves
+    assert split_moves(verts, faces, uvs, starts, [(0, len(faces))]) == result
+
+
+def test_island_eulers_match_uv_topology():
+    verts, faces, uvs = strip_island(6)
+    fold_face(uvs, 2)
+    annulus_verts, annulus_faces, annulus_uvs = annulus_island()
+    offset = len(verts)
+    faces = faces + [[v + offset for v in face] for face in annulus_faces]
+    uvs = uvs + annulus_uvs
+    edges = face_edges(faces)
+    seams = {pair(4, 5)}
+    groups = island_groups(faces, seams, edges)
+    assert len(groups) == 3
+    expected = [uv_topology(group, faces, edges, seams)[0] for group in groups]
+    assert island_eulers(groups, faces, seams) == expected
+    assert sorted(expected) == [0, 1, 1]
+
+    # enough corners that a corner pair key passes int32
+    verts, faces, uvs = strip_island(15000)
+    assert island_eulers([list(range(len(faces)))], faces, set()) == [1]
 
 
 def test_folded_compact_island_is_halved():
