@@ -28,24 +28,25 @@ from .sweeps import split_sweeps, sweep_rims
 WholeMesh = collections.namedtuple("WholeMesh", "min_width model_area face_ids")
 
 
-def rim_cuts(verts, faces, rims, forced=None, whole=None):
+def rim_cuts(verts, faces, rims, forced=None, whole=None, built=None):
     """The forced edges with the sweep rims added, and the wall faces."""
     if not rims:
         return forced, None
     model_area, face_ids = (None, None) if whole is None else whole[1:]
-    rim_edges, walls = sweep_rims(verts, faces, model_area, face_ids)
+    rim_edges, walls = sweep_rims(verts, faces, model_area, face_ids, built)
     if rim_edges:
         return rim_edges | (forced or set()), walls
     return forced, walls
 
 
-def low_partition(verts, faces, forced=None, walls=None):
+def low_partition(verts, faces, forced=None, walls=None, built=None):
     """The over-segmented partition every pass starts from, with the
     per-face normals, areas and edge map it was built on. walls are faces
     sweep_rims verified as one swept wall: they partition as one region
     however sharply the coarse wall turns, so an annulus never depends on
-    the merges rebuilding it from columns."""
-    weighted, areas, edges = build(verts, faces)
+    the merges rebuilding it from columns. built is build(verts, faces)
+    when the caller has it."""
+    weighted, areas, edges = built or build(verts, faces)
     smooth = None
     if walls:
         smooth = {
@@ -61,8 +62,11 @@ def whole_mesh_inputs(verts, faces, rims=True, forced=None):
     """The two numbers the passes read off the whole mesh, the auto width
     and the model area. Given to a run over one loose part, it gets the
     seams the whole run would."""
-    cut_from_start, walls = rim_cuts(verts, faces, rims, forced)
-    weighted, areas, edges, root = low_partition(verts, faces, cut_from_start, walls)
+    built = build(verts, faces)
+    cut_from_start, walls = rim_cuts(verts, faces, rims, forced, built=built)
+    weighted, areas, edges, root = low_partition(
+        verts, faces, cut_from_start, walls, built
+    )
     min_width = detect_width(verts, faces, areas, edges, root, diagonal(verts))
     return min_width, sum(areas)
 
@@ -77,6 +81,7 @@ def feature_labels(
     walls=None,
     cancelled=None,
     whole=None,
+    built=None,
 ):
     """Region labels from the merge passes: partition at auto width, the three
     merges, sweep rims. What survives is the feature structure the seams will
@@ -87,8 +92,9 @@ def feature_labels(
 
     Also returns the absorb width and the deliberate boundary pairs, region
     pairs a forced edge or the sweep split separates, so a later width pass
-    can absorb leftovers without dissolving structure."""
-    weighted, areas, edges, root = low_partition(verts, faces, forced, walls)
+    can absorb leftovers without dissolving structure. built is
+    build(verts, faces) when the caller has it."""
+    weighted, areas, edges, root = low_partition(verts, faces, forced, walls, built)
     if whole is None:
         if scale is None:
             scale = diagonal(verts)
@@ -161,9 +167,16 @@ def is_hard_surface(verts, faces):
     # must read the part's own size or nearby geometry changes the label
     used = {v for face in faces for v in face}
     part_scale = diagonal([verts[v] for v in used])
-    rims, walls = sweep_rims(verts, faces)
+    built = build(verts, faces)
+    rims, walls = sweep_rims(verts, faces, built=built)
     weighted, areas, edges, presweep, _, _ = feature_labels(
-        verts, faces, rims=False, forced=rims or None, scale=part_scale, walls=walls
+        verts,
+        faces,
+        rims=False,
+        forced=rims or None,
+        scale=part_scale,
+        walls=walls,
+        built=built,
     )
     label = split_sweeps(verts, faces, weighted, areas, edges, presweep)
     total = sum(areas)
@@ -254,20 +267,26 @@ def seam_edges(
     runs the parts that way), None on a whole mesh. A closed mesh with every feature under the angle
     cannot flatten, so it reruns at the CREASE_ANGLE floor.
     """
+    built = build(verts, faces)
     seams, closed = seams_at_angle(
-        verts, faces, angle, rims, weights, forced, cancelled, whole
+        verts, faces, angle, rims, weights, forced, cancelled, whole, built
     )
     if not seams and angle > CREASE_ANGLE and closed:
         seams, _ = seams_at_angle(
-            verts, faces, CREASE_ANGLE, rims, weights, forced, cancelled, whole
+            verts, faces, CREASE_ANGLE, rims, weights, forced, cancelled, whole, built
         )
     return seams
 
 
-def seams_at_angle(verts, faces, angle, rims, weights, forced, cancelled, whole):
+def seams_at_angle(
+    verts, faces, angle, rims, weights, forced, cancelled, whole, built=None
+):
     """seam_edges at one angle with no rerun, plus whether the mesh is
-    closed, so a caller joining parts decides the rerun for all of them."""
-    cut_from_start, walls = rim_cuts(verts, faces, rims, forced, whole)
+    closed, so a caller joining parts decides the rerun for all of them.
+    built is build(verts, faces) when the caller has it."""
+    if built is None:
+        built = build(verts, faces)
+    cut_from_start, walls = rim_cuts(verts, faces, rims, forced, whole, built)
     check_cancelled(cancelled)
     weighted, areas, edges, label, min_width, locked = feature_labels(
         verts,
@@ -278,6 +297,7 @@ def seams_at_angle(verts, faces, angle, rims, weights, forced, cancelled, whole)
         walls=walls,
         cancelled=cancelled,
         whole=whole,
+        built=built,
     )
     label = flatten_teeth(weighted, faces, edges, label, angle, forced)
     relief = crease_relief(verts, faces, weighted, edges)

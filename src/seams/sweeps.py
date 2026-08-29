@@ -816,7 +816,7 @@ def ids_of(faces, face_ids):
     return faces if face_ids is None else [face_ids[i] for i in faces]
 
 
-def sweep_rims(verts, faces, model_area=None, face_ids=None):
+def sweep_rims(verts, faces, model_area=None, face_ids=None, built=None):
     """Rim seams for swept shapes, read before any merge pass.
 
     absorb never checks how far a boundary turns, so a coarse cylinder's
@@ -830,8 +830,8 @@ def sweep_rims(verts, faces, model_area=None, face_ids=None):
     Returns the rim edges as vertex pairs, to be forced so no merge
     crosses them, plus the wall faces themselves. model_area and face_ids
     are the whole mesh's when faces is one loose part of it, see
-    straight_runs."""
-    weighted, areas, edges = build(verts, faces)
+    straight_runs. built is build(verts, faces) when the caller has it."""
+    weighted, areas, edges = built or build(verts, faces)
     root = partition(faces, weighted, edges, CREASE_ANGLE)
     groups = collections.defaultdict(list)
     for i in range(len(faces)):
