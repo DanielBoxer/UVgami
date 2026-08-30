@@ -763,7 +763,9 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 logger.discard_info()
                 return {"CANCELLED"}
             info.engine = self.engine.describe()
-            info.settings = describe_settings(unwrap_settings(context.scene.uvgami))
+            info.settings = describe_settings(
+                context.scene.uvgami, unwrap_settings(context.scene.uvgami)
+            )
 
             # a mesh added to a running session would take the first one's
             # engine and settings
@@ -877,6 +879,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
         objects = []
         names = {}
         input_for = {}
+        input_sizes = []
         skipped = set()
         applied_modifiers = False
         proxied_objects = set()
@@ -898,10 +901,9 @@ class UVGAMI_OT_start(bpy.types.Operator):
             obj.users_collection[0].objects.link(copy_object)
 
             # the count is the modifier bake, what a plain run would unwrap
-            proxied = (
-                self.engine.uses_proxy(props)
-                and triangle_count(obj.evaluated_get(depsgraph)) > props.proxy_faces
-            )
+            triangles = triangle_count(obj.evaluated_get(depsgraph))
+            input_sizes.append((obj.name, triangles))
+            proxied = self.engine.uses_proxy(props) and triangles > props.proxy_faces
             # the result comes from the input mesh itself, so the engine has to
             # see that mesh and not a modifier bake of it
             if input_job(props, proxied) is not None:
@@ -917,6 +919,8 @@ class UVGAMI_OT_start(bpy.types.Operator):
             names[copy_object.name] = [obj.name, obj.name]
             input_for[copy_object] = obj
             objects.append(copy_object)
+
+        logger.get_latest().objects = input_sizes
 
         reports = []
         if skipped:

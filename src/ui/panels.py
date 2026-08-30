@@ -82,9 +82,20 @@ def unwrap_settings(props):
     )
 
 
-def describe_settings(settings):
+# the number behind a setting the icon strip can only show as on or off
+SETTING_VALUES = {
+    "unwrap_timeout": lambda props: f"{props.unwrap_timeout} min",
+    "use_proxy": lambda props: f"{props.proxy_faces} tris",
+}
+
+
+def describe_settings(props, settings):
     """The active settings as one string for the log."""
-    return ", ".join(label for _, label, _ in settings)
+    parts = []
+    for _, label, path in settings:
+        value = SETTING_VALUES.get(path)
+        parts.append(f"{label} {value(props)}" if value else label)
+    return ", ".join(parts)
 
 
 def fix_settings(props):

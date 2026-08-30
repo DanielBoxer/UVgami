@@ -561,8 +561,6 @@ class UnwrapManager:
         if not half_rebuilt:
             self._restore_vertex_groups(unwrap, output)
 
-        logger.add_data("objects", unwrap.input_name)
-
         if unwrap.transfer_uvs_job is not None:
             job = unwrap.transfer_uvs_job
             # locate output in the pack list before the transfer deletes output
@@ -723,6 +721,8 @@ class UnwrapManager:
             ret_code -= 2**32
 
         move_to_invalid = False
+        # None when the message already says what the code means
+        engine_code = None
         # manager-synthetic codes for timeout, force kill and missing output
         if ret_code == -2:
             elapsed = (time.monotonic() - unwrap.started_at) / 60
@@ -738,6 +738,7 @@ class UnwrapManager:
             described = self.engine.describe_failure(ret_code)
             if described is not None:
                 msg, move_to_invalid = described
+                engine_code = ret_code
                 if not move_to_invalid:
                     # one code can cover several causes, stderr says which
                     last = last_meaningful_line(unwrap.get_stderr_tail())
@@ -758,7 +759,10 @@ class UnwrapManager:
 
         if move_to_invalid:
             self.moved_to_invalid = True
-            logger.add_data("errors", mark_not_unwrapped(import_obj(unwrap.path), msg))
+            logged = mark_not_unwrapped(import_obj(unwrap.path), msg)
+            if engine_code is not None:
+                logged += f" (exit {engine_code})"
+            logger.add_data("errors", logged)
 
         self.record_result(unwrap, Result.INVALID)
 
@@ -890,6 +894,8 @@ class UnwrapManager:
         counts = self._result_counts()
         cancelled = counts[Result.CANCELLED] == len(self.results)
         logger.change_status("Cancelled" if cancelled else "Complete")
+        logger.get_latest().piece_counts = counts
+        logger.write_latest()
 
     def clear_summary(self):
         """Drop the banner and the status bar message."""
@@ -965,8 +971,7 @@ class UnwrapManager:
         timer that would have cleaned them up."""
         self.stop_all()
         self.clear_summary()
-        # a log carried into the next file would list runs on the old one
-        logger.unwrap_info.clear()
+        logger.reset()
 
 
 manager = UnwrapManager()

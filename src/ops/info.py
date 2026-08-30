@@ -1,10 +1,7 @@
-import platform
-
 import bpy
 
-from ..logger import logger
+from ..logger import HEADER_PREFIX, logger
 from ..manager import manager
-from ..utils.paths import get_addon_version
 
 
 class UVGAMI_OT_clear_summary(bpy.types.Operator):
@@ -20,14 +17,6 @@ class UVGAMI_OT_clear_summary(bpy.types.Operator):
 LOG_TEXT_NAME = "UVgami Log"
 
 
-def _session_header():
-    """What a pasted log needs to say what produced it."""
-    return (
-        f"UVgami {get_addon_version()} | Blender {bpy.app.version_string}"
-        f" | {platform.system()}"
-    )
-
-
 def _text_editor_area():
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
@@ -36,18 +25,28 @@ def _text_editor_area():
     return None
 
 
+def _last_block_line(lines):
+    """Where the newest block starts, so the log opens on the run being
+    reported rather than the top of the history."""
+    return max(
+        (i for i, line in enumerate(lines) if line.startswith(HEADER_PREFIX)),
+        default=0,
+    )
+
+
 class UVGAMI_OT_open_logs(bpy.types.Operator):
     bl_idname = "uvgami.open_logs"
     bl_label = "Log"
     bl_description = "Show the info in a text editor, where it can be selected"
 
     def execute(self, context):
+        body = logger.read_log() or "No previous unwraps"
         text = bpy.data.texts.get(LOG_TEXT_NAME) or bpy.data.texts.new(LOG_TEXT_NAME)
         text.clear()
-        entries = logger.get_all() or ["No previous unwraps"]
-        text.write("\n".join([_session_header(), ""] + entries) + "\n")
+        text.write(body + "\n")
+        start = _last_block_line(body.splitlines())
         # the view follows the cursor, which write leaves on the last line
-        text.cursor_set(0)
+        text.cursor_set(start)
 
         area = _text_editor_area()
         if area is None:
@@ -61,5 +60,5 @@ class UVGAMI_OT_open_logs(bpy.types.Operator):
             area.type = "TEXT_EDITOR"
         space = area.spaces.active
         space.text = text
-        space.top = 0
+        space.top = start
         return {"FINISHED"}

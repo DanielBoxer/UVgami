@@ -9,7 +9,7 @@ from ..hard_surface import apply_seams
 from ..job import AreaUVs, IslandUVs, ProxyIslandUVs
 from ..logger import logger
 from ..manager import manager
-from ..proxy import make_proxy
+from ..proxy import make_proxy, triangle_count
 from ..seams import (
     FLIP_NOISE,
     face_edges,
@@ -827,7 +827,7 @@ def validate_engine(op):
     return engine, engine_ctx
 
 
-def queue_targets(engine, engine_ctx, count, queue_one):
+def queue_targets(engine, engine_ctx, obj, count, queue_one):
     input_path, output_path = get_io_dir_paths()
     if not manager.is_active:
         clear_io_dir(input_path)
@@ -844,9 +844,11 @@ def queue_targets(engine, engine_ctx, count, queue_one):
         raise
 
     if not manager.is_active:
+        props = bpy.context.scene.uvgami
         info = logger.new_info()
         info.engine = engine.describe()
-        info.settings = describe_settings(fix_settings(bpy.context.scene.uvgami))
+        info.objects = [(obj.name, triangle_count(obj))]
+        info.settings = describe_settings(props, fix_settings(props))
         manager.engine = engine
         manager.engine_ctx = engine_ctx
         # these operators are run from the uv editor, so the bar belongs there
@@ -892,7 +894,7 @@ class IslandOperator(FixOperator):
             group, bbox, area = targets[k]
             self.queue_target(obj, group, bbox, area, k + 1, input_path, props)
 
-        queue_targets(engine, engine_ctx, len(targets), queue_one)
+        queue_targets(engine, engine_ctx, obj, len(targets), queue_one)
         self.report({"INFO"}, f"{self.verb} {len(targets)} island(s)")
         return {"FINISHED"}
 
@@ -978,7 +980,7 @@ class UVGAMI_OT_combine_islands(FixOperator, bpy.types.Operator):
             message = f"Combining {len(targets)} islands"
             level = "INFO"
 
-        queue_targets(engine, engine_ctx, 1, queue_one)
+        queue_targets(engine, engine_ctx, obj, 1, queue_one)
         self.report({level}, message)
         return {"FINISHED"}
 
@@ -1013,7 +1015,7 @@ class AreaOperator(FixOperator):
             patch, border = targets[k]
             queue_area(obj, patch, border, k + 1, input_path, props, self.nocut)
 
-        queue_targets(engine, engine_ctx, len(targets), queue_one)
+        queue_targets(engine, engine_ctx, obj, len(targets), queue_one)
 
         notes = []
         if whole:

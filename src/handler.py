@@ -20,7 +20,9 @@ def handle_error(error, location, **kwargs):
     for line in error_list:
         logger.add_data("errors", line)
         print(line)
+    logger.update_time()
     logger.change_status("Error")
+    logger.write_latest()
 
     popup(error_list, msg + str(error), "ERROR")
 
