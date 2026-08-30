@@ -1663,117 +1663,117 @@ void TriMesh::farthestPointCut(int p_vI) {
         initSeams = cohE;
 }
 
-void TriMesh::geomImgCut(TriMesh &data_findExtrema) {
-    // compute UV map for find extremal point (interior)
-    data_findExtrema = *this;
-    const int mapType = 1; // 0: SD, 1: harmonic (uniform), 2: harmonic
-                           // (cotangent), 3: harmonic (MVC)
-    if (mapType) {
-        Eigen::VectorXi bnd;
-        igl::boundary_loop(this->F, bnd); // Find the open boundary
-        assert(bnd.size());
-        // TODO: ensure it doesn't have multiple boundaries? or
-        // multi-components?
-
-        // Map the boundary to a circle, preserving edge proportions
-        Eigen::MatrixXd bnd_uv;
-        uvgami::IglUtils::map_vertices_to_circle(this->V_rest, bnd, bnd_uv);
-
-        Eigen::MatrixXd UV_Tutte;
-
-        switch (mapType) {
-        case 1: {
-            // Harmonic map with uniform weights
-            Eigen::SparseMatrix<double> A, M;
-            uvgami::IglUtils::computeUniformLaplacian(this->F, A);
-            igl::harmonic(A, M, bnd, bnd_uv, 1, UV_Tutte);
-            break;
-        }
-
-        case 2: {
-            // Harmonic parametrization
-            igl::harmonic(V, F, bnd, bnd_uv, 1, UV_Tutte);
-            break;
-        }
-
-        case 3: {
-            // Shape Preserving Mesh Parameterization
-            // (Harmonic map with MVC weights)
-            Eigen::SparseMatrix<double> A;
-            uvgami::IglUtils::computeMVCMtr(this->V_rest, this->F, A);
-            uvgami::IglUtils::fixedBoundaryParam_MVC(A, bnd, bnd_uv, UV_Tutte);
-            break;
-        }
-
-        default:
-            assert(0 &&
-                   "Unknown map specified for finding Geometry Image cuts");
-            break;
-        }
-
-        data_findExtrema.V = UV_Tutte;
-    }
-
-    // pick the vertex with largest L2 stretch
-    int vI_extremal = -1;
-    Eigen::VectorXd L2stretchPerElem, vertScores;
-    data_findExtrema.computeL2StretchPerElem(L2stretchPerElem);
-    vertScores.resize(V_rest.rows());
-    vertScores.setZero();
-    for (int triI = 0; triI < F.rows(); triI++) {
-        for (int i = 0; i < 3; i++) {
-            if (vertScores[F(triI, i)] < L2stretchPerElem[triI])
-                vertScores[F(triI, i)] = L2stretchPerElem[triI];
-        }
-    }
-    double extremal = 0.0;
-    for (int vI = 0; vI < vertScores.size(); vI++) {
-        if (!isBoundaryVert(vI)) {
-            if (extremal < vertScores[vI]) {
-                extremal = vertScores[vI];
-                vI_extremal = vI;
-            }
-        }
-    }
-    assert(vI_extremal >= 0);
-
-    // construct mesh graph
-    assert(vNeighbor.size() == V_rest.rows());
-    std::vector<std::map<int, double>> graph(vNeighbor.size());
-    for (int vI = 0; vI < vNeighbor.size(); vI++) {
-        for (const auto nbI : vNeighbor[vI]) {
-            if (nbI > vI)
-                graph[nbI][vI] = graph[vI][nbI] =
-                    (V_rest.row(vI) - V_rest.row(nbI)).norm();
-        }
-    }
-
-    // find closest point on boundary
-    int nV = static_cast<int>(graph.size());
-    std::vector<double> dist;
-    std::vector<int> parent;
-    dijkstra(graph, vI_extremal, dist, parent);
-    double minDistToBound = DBL_MAX;
-    int vI_minDistToBound = -1;
-    for (int vI = 0; vI < nV; vI++) {
-        if (isBoundaryVert(vI)) {
-            if (dist[vI] < minDistToBound) {
-                minDistToBound = dist[vI];
-                vI_minDistToBound = vI;
-            }
-        }
-    }
-    assert((vI_minDistToBound >= 0) && "No boundary on the mesh!");
-
-    // find shortest path to closest point on boundary
-    std::vector<int> path;
-    while (vI_minDistToBound >= 0) {
-        path.emplace_back(vI_minDistToBound);
-        vI_minDistToBound = parent[vI_minDistToBound];
-    }
-    std::reverse(path.begin(), path.end());
-    cutPath(path, true);
-}
+// void TriMesh::geomImgCut(TriMesh &data_findExtrema) {
+//     // compute UV map for find extremal point (interior)
+//     data_findExtrema = *this;
+//     const int mapType = 1; // 0: SD, 1: harmonic (uniform), 2: harmonic
+//                            // (cotangent), 3: harmonic (MVC)
+//     if (mapType) {
+//         Eigen::VectorXi bnd;
+//         igl::boundary_loop(this->F, bnd); // Find the open boundary
+//         assert(bnd.size());
+//         // TODO: ensure it doesn't have multiple boundaries? or
+//         // multi-components?
+//
+//         // Map the boundary to a circle, preserving edge proportions
+//         Eigen::MatrixXd bnd_uv;
+//         uvgami::IglUtils::map_vertices_to_circle(this->V_rest, bnd, bnd_uv);
+//
+//         Eigen::MatrixXd UV_Tutte;
+//
+//         switch (mapType) {
+//         case 1: {
+//             // Harmonic map with uniform weights
+//             Eigen::SparseMatrix<double> A, M;
+//             uvgami::IglUtils::computeUniformLaplacian(this->F, A);
+//             igl::harmonic(A, M, bnd, bnd_uv, 1, UV_Tutte);
+//             break;
+//         }
+//
+//         case 2: {
+//             // Harmonic parametrization
+//             igl::harmonic(V, F, bnd, bnd_uv, 1, UV_Tutte);
+//             break;
+//         }
+//
+//         case 3: {
+//             // Shape Preserving Mesh Parameterization
+//             // (Harmonic map with MVC weights)
+//             Eigen::SparseMatrix<double> A;
+//             uvgami::IglUtils::computeMVCMtr(this->V_rest, this->F, A);
+//             uvgami::IglUtils::fixedBoundaryParam_MVC(A, bnd, bnd_uv, UV_Tutte);
+//             break;
+//         }
+//
+//         default:
+//             assert(0 &&
+//                    "Unknown map specified for finding Geometry Image cuts");
+//             break;
+//         }
+//
+//         data_findExtrema.V = UV_Tutte;
+//     }
+//
+//     // pick the vertex with largest L2 stretch
+//     int vI_extremal = -1;
+//     Eigen::VectorXd L2stretchPerElem, vertScores;
+//     data_findExtrema.computeL2StretchPerElem(L2stretchPerElem);
+//     vertScores.resize(V_rest.rows());
+//     vertScores.setZero();
+//     for (int triI = 0; triI < F.rows(); triI++) {
+//         for (int i = 0; i < 3; i++) {
+//             if (vertScores[F(triI, i)] < L2stretchPerElem[triI])
+//                 vertScores[F(triI, i)] = L2stretchPerElem[triI];
+//         }
+//     }
+//     double extremal = 0.0;
+//     for (int vI = 0; vI < vertScores.size(); vI++) {
+//         if (!isBoundaryVert(vI)) {
+//             if (extremal < vertScores[vI]) {
+//                 extremal = vertScores[vI];
+//                 vI_extremal = vI;
+//             }
+//         }
+//     }
+//     assert(vI_extremal >= 0);
+//
+//     // construct mesh graph
+//     assert(vNeighbor.size() == V_rest.rows());
+//     std::vector<std::map<int, double>> graph(vNeighbor.size());
+//     for (int vI = 0; vI < vNeighbor.size(); vI++) {
+//         for (const auto nbI : vNeighbor[vI]) {
+//             if (nbI > vI)
+//                 graph[nbI][vI] = graph[vI][nbI] =
+//                     (V_rest.row(vI) - V_rest.row(nbI)).norm();
+//         }
+//     }
+//
+//     // find closest point on boundary
+//     int nV = static_cast<int>(graph.size());
+//     std::vector<double> dist;
+//     std::vector<int> parent;
+//     dijkstra(graph, vI_extremal, dist, parent);
+//     double minDistToBound = DBL_MAX;
+//     int vI_minDistToBound = -1;
+//     for (int vI = 0; vI < nV; vI++) {
+//         if (isBoundaryVert(vI)) {
+//             if (dist[vI] < minDistToBound) {
+//                 minDistToBound = dist[vI];
+//                 vI_minDistToBound = vI;
+//             }
+//         }
+//     }
+//     assert((vI_minDistToBound >= 0) && "No boundary on the mesh!");
+//
+//     // find shortest path to closest point on boundary
+//     std::vector<int> path;
+//     while (vI_minDistToBound >= 0) {
+//         path.emplace_back(vI_minDistToBound);
+//         vI_minDistToBound = parent[vI_minDistToBound];
+//     }
+//     std::reverse(path.begin(), path.end());
+//     cutPath(path, true);
+// }
 
 int TriMesh::cutPath(std::vector<int> path, bool makeCoh, int changePos,
                      const Eigen::MatrixXd &newVertPos, bool allowCutThrough) {
@@ -1901,29 +1901,29 @@ int TriMesh::cutPath(std::vector<int> path, bool makeCoh, int changePos,
     return cuts_made;
 }
 
-void TriMesh::computeSeamScore(Eigen::VectorXd &seamScore) const {
-    seamScore.resize(cohE.rows());
-    for (int cohI = 0; cohI < cohE.rows(); cohI++) {
-        if (boundaryEdge[cohI]) {
-            seamScore[cohI] = -1.0;
-        } else {
-            seamScore[cohI] =
-                (std::max)((V.row(cohE(cohI, 0)) - V.row(cohE(cohI, 2))).norm(),
-                           (V.row(cohE(cohI, 1)) - V.row(cohE(cohI, 3)))
-                               .norm()) /
-                avgEdgeLen;
-        }
-    }
-}
-void TriMesh::computeBoundaryLen(double &boundaryLen) const {
-    boundaryLen = 0.0;
-    for (const auto &e : edge2Tri) {
-        if (edge2Tri.find(std::pair<int, int>(e.first.second, e.first.first)) ==
-            edge2Tri.end())
-            boundaryLen +=
-                (V_rest.row(e.first.second) - V_rest.row(e.first.first)).norm();
-    }
-}
+// void TriMesh::computeSeamScore(Eigen::VectorXd &seamScore) const {
+//     seamScore.resize(cohE.rows());
+//     for (int cohI = 0; cohI < cohE.rows(); cohI++) {
+//         if (boundaryEdge[cohI]) {
+//             seamScore[cohI] = -1.0;
+//         } else {
+//             seamScore[cohI] =
+//                 (std::max)((V.row(cohE(cohI, 0)) - V.row(cohE(cohI, 2))).norm(),
+//                            (V.row(cohE(cohI, 1)) - V.row(cohE(cohI, 3)))
+//                                .norm()) /
+//                 avgEdgeLen;
+//         }
+//     }
+// }
+// void TriMesh::computeBoundaryLen(double &boundaryLen) const {
+//     boundaryLen = 0.0;
+//     for (const auto &e : edge2Tri) {
+//         if (edge2Tri.find(std::pair<int, int>(e.first.second, e.first.first)) ==
+//             edge2Tri.end())
+//             boundaryLen +=
+//                 (V_rest.row(e.first.second) - V_rest.row(e.first.first)).norm();
+//     }
+// }
 void TriMesh::computeSeamSparsity(double &sparsity, bool triSoup) const {
     const double thres = 1.0e-2;
     sparsity = 0.0;
@@ -1942,118 +1942,118 @@ void TriMesh::computeSeamSparsity(double &sparsity, bool triSoup) const {
     }
     sparsity += initSeamLen;
 }
-void TriMesh::computeL2StretchPerElem(Eigen::VectorXd &L2StretchPerElem) const {
-    L2StretchPerElem.resize(F.rows());
-    for (int triI = 0; triI < F.rows(); triI++) {
-        const Eigen::Vector3i &triVInd = F.row(triI);
-        const Eigen::Vector3d x_3D[3] = {V_rest.row(triVInd[0]),
-                                         V_rest.row(triVInd[1]),
-                                         V_rest.row(triVInd[2])};
-        const Eigen::Vector2d uv[3] = {V.row(triVInd[0]), V.row(triVInd[1]),
-                                       V.row(triVInd[2])};
-        Eigen::Matrix2d dg;
-        IglUtils::computeDeformationGradient(x_3D, uv, dg);
-
-        const double a = Eigen::Vector2d(dg.block(0, 0, 2, 1)).squaredNorm();
-        const double c = Eigen::Vector2d(dg.block(0, 1, 2, 1)).squaredNorm();
-        const double t0 = a + c;
-
-        L2StretchPerElem[triI] = std::sqrt(t0 / 2.0);
-    }
-}
-void TriMesh::computeStandardStretch(double &stretch_l2, double &stretch_inf,
-                                     double &stretch_shear,
-                                     double &compress_inf) const {
-    stretch_l2 = 0.0;
-    stretch_inf = -DBL_MAX;
-    stretch_shear = 0.0;
-    compress_inf = DBL_MAX;
-    for (int triI = 0; triI < F.rows(); triI++) {
-        const Eigen::Vector3i &triVInd = F.row(triI);
-        const Eigen::Vector3d x_3D[3] = {V_rest.row(triVInd[0]),
-                                         V_rest.row(triVInd[1]),
-                                         V_rest.row(triVInd[2])};
-        const Eigen::Vector2d uv[3] = {V.row(triVInd[0]), V.row(triVInd[1]),
-                                       V.row(triVInd[2])};
-        Eigen::Matrix2d dg;
-        IglUtils::computeDeformationGradient(x_3D, uv, dg);
-
-        const double a = Eigen::Vector2d(dg.block(0, 0, 2, 1)).squaredNorm();
-        const double b = Eigen::Vector2d(dg.block(0, 0, 2, 1))
-                             .dot(Eigen::Vector2d(dg.block(0, 1, 2, 1)));
-        const double c = Eigen::Vector2d(dg.block(0, 1, 2, 1)).squaredNorm();
-        const double t0 = a + c;
-        const double t1 = std::sqrt((a - c) * (a - c) + 4. * b * b);
-        const double tau = std::sqrt((t0 + t1) / 2.);
-        const double gamma = std::sqrt((t0 - t1) / 2.);
-
-        stretch_l2 += t0 / 2.0 * triArea[triI];
-        if (tau > stretch_inf)
-            stretch_inf = tau;
-        stretch_shear += b * b / a / c * triArea[triI];
-        if (gamma < compress_inf)
-            compress_inf = gamma;
-    }
-    stretch_l2 /= surfaceArea;
-    stretch_l2 = std::sqrt(stretch_l2);
-    stretch_shear /= surfaceArea;
-    stretch_shear = std::sqrt(stretch_shear);
-
-    double surfaceArea_UV = 0.0;
-    for (int triI = 0; triI < F.rows(); triI++) {
-        const Eigen::Vector3i &triVInd = F.row(triI);
-
-        const Eigen::Vector2d &U1 = V.row(triVInd[0]);
-        const Eigen::Vector2d &U2 = V.row(triVInd[1]);
-        const Eigen::Vector2d &U3 = V.row(triVInd[2]);
-
-        const Eigen::Vector2d U2m1 = U2 - U1;
-        const Eigen::Vector2d U3m1 = U3 - U1;
-
-        surfaceArea_UV += 0.5 * (U2m1[0] * U3m1[1] - U2m1[1] * U3m1[0]);
-    }
-
-    // area scaling:
-    const double scaleFactor = std::sqrt(surfaceArea_UV / surfaceArea);
-    stretch_l2 *= scaleFactor;
-    stretch_inf *= scaleFactor;
-    compress_inf *= scaleFactor; // not meaningful now...
-    // stretch_shear won't be affected by area scaling
-}
-void TriMesh::outputStandardStretch(std::ofstream &file) const {
-    double stretch_l2, stretch_inf, stretch_shear, compress_inf;
-    computeStandardStretch(stretch_l2, stretch_inf, stretch_shear,
-                           compress_inf);
-    file << stretch_l2 << " " << stretch_inf << " " << stretch_shear << " "
-         << compress_inf << std::endl;
-}
-void TriMesh::computeAbsGaussianCurv(double &absGaussianCurv) const {
-    std::vector<double> weights(V.rows(), 0.0);
-    std::vector<double> gaussianCurv(V.rows(), 2.0 * M_PI);
-    for (int triI = 0; triI < F.rows(); triI++) {
-        const Eigen::RowVector3i &triVInd = F.row(triI);
-        const Eigen::RowVector3d v[3] = {V_rest.row(triVInd[0]),
-                                         V_rest.row(triVInd[1]),
-                                         V_rest.row(triVInd[2])};
-        for (int vI = 0; vI < 3; vI++) {
-            int vI_post = (vI + 1) % 3;
-            int vI_pre = (vI + 2) % 3;
-            const Eigen::RowVector3d e0 = v[vI_pre] - v[vI];
-            const Eigen::RowVector3d e1 = v[vI_post] - v[vI];
-            gaussianCurv[triVInd[vI]] -= std::acos((
-                std::max)(-1.0,
-                          (std::min)(1.0, e0.dot(e1) / e0.norm() / e1.norm())));
-            weights[triVInd[vI]] += triArea[triI];
-        }
-    }
-
-    absGaussianCurv = 0.0;
-    for (int vI = 0; vI < V.rows(); vI++) {
-        if (!isBoundaryVert(vI))
-            absGaussianCurv += std::abs(gaussianCurv[vI]) * weights[vI];
-    }
-    absGaussianCurv /= surfaceArea * 3.0;
-}
+// void TriMesh::computeL2StretchPerElem(Eigen::VectorXd &L2StretchPerElem) const {
+//     L2StretchPerElem.resize(F.rows());
+//     for (int triI = 0; triI < F.rows(); triI++) {
+//         const Eigen::Vector3i &triVInd = F.row(triI);
+//         const Eigen::Vector3d x_3D[3] = {V_rest.row(triVInd[0]),
+//                                          V_rest.row(triVInd[1]),
+//                                          V_rest.row(triVInd[2])};
+//         const Eigen::Vector2d uv[3] = {V.row(triVInd[0]), V.row(triVInd[1]),
+//                                        V.row(triVInd[2])};
+//         Eigen::Matrix2d dg;
+//         IglUtils::computeDeformationGradient(x_3D, uv, dg);
+//
+//         const double a = Eigen::Vector2d(dg.block(0, 0, 2, 1)).squaredNorm();
+//         const double c = Eigen::Vector2d(dg.block(0, 1, 2, 1)).squaredNorm();
+//         const double t0 = a + c;
+//
+//         L2StretchPerElem[triI] = std::sqrt(t0 / 2.0);
+//     }
+// }
+// void TriMesh::computeStandardStretch(double &stretch_l2, double &stretch_inf,
+//                                      double &stretch_shear,
+//                                      double &compress_inf) const {
+//     stretch_l2 = 0.0;
+//     stretch_inf = -DBL_MAX;
+//     stretch_shear = 0.0;
+//     compress_inf = DBL_MAX;
+//     for (int triI = 0; triI < F.rows(); triI++) {
+//         const Eigen::Vector3i &triVInd = F.row(triI);
+//         const Eigen::Vector3d x_3D[3] = {V_rest.row(triVInd[0]),
+//                                          V_rest.row(triVInd[1]),
+//                                          V_rest.row(triVInd[2])};
+//         const Eigen::Vector2d uv[3] = {V.row(triVInd[0]), V.row(triVInd[1]),
+//                                        V.row(triVInd[2])};
+//         Eigen::Matrix2d dg;
+//         IglUtils::computeDeformationGradient(x_3D, uv, dg);
+//
+//         const double a = Eigen::Vector2d(dg.block(0, 0, 2, 1)).squaredNorm();
+//         const double b = Eigen::Vector2d(dg.block(0, 0, 2, 1))
+//                              .dot(Eigen::Vector2d(dg.block(0, 1, 2, 1)));
+//         const double c = Eigen::Vector2d(dg.block(0, 1, 2, 1)).squaredNorm();
+//         const double t0 = a + c;
+//         const double t1 = std::sqrt((a - c) * (a - c) + 4. * b * b);
+//         const double tau = std::sqrt((t0 + t1) / 2.);
+//         const double gamma = std::sqrt((t0 - t1) / 2.);
+//
+//         stretch_l2 += t0 / 2.0 * triArea[triI];
+//         if (tau > stretch_inf)
+//             stretch_inf = tau;
+//         stretch_shear += b * b / a / c * triArea[triI];
+//         if (gamma < compress_inf)
+//             compress_inf = gamma;
+//     }
+//     stretch_l2 /= surfaceArea;
+//     stretch_l2 = std::sqrt(stretch_l2);
+//     stretch_shear /= surfaceArea;
+//     stretch_shear = std::sqrt(stretch_shear);
+//
+//     double surfaceArea_UV = 0.0;
+//     for (int triI = 0; triI < F.rows(); triI++) {
+//         const Eigen::Vector3i &triVInd = F.row(triI);
+//
+//         const Eigen::Vector2d &U1 = V.row(triVInd[0]);
+//         const Eigen::Vector2d &U2 = V.row(triVInd[1]);
+//         const Eigen::Vector2d &U3 = V.row(triVInd[2]);
+//
+//         const Eigen::Vector2d U2m1 = U2 - U1;
+//         const Eigen::Vector2d U3m1 = U3 - U1;
+//
+//         surfaceArea_UV += 0.5 * (U2m1[0] * U3m1[1] - U2m1[1] * U3m1[0]);
+//     }
+//
+//     // area scaling:
+//     const double scaleFactor = std::sqrt(surfaceArea_UV / surfaceArea);
+//     stretch_l2 *= scaleFactor;
+//     stretch_inf *= scaleFactor;
+//     compress_inf *= scaleFactor; // not meaningful now...
+//     // stretch_shear won't be affected by area scaling
+// }
+// void TriMesh::outputStandardStretch(std::ofstream &file) const {
+//     double stretch_l2, stretch_inf, stretch_shear, compress_inf;
+//     computeStandardStretch(stretch_l2, stretch_inf, stretch_shear,
+//                            compress_inf);
+//     file << stretch_l2 << " " << stretch_inf << " " << stretch_shear << " "
+//          << compress_inf << std::endl;
+// }
+// void TriMesh::computeAbsGaussianCurv(double &absGaussianCurv) const {
+//     std::vector<double> weights(V.rows(), 0.0);
+//     std::vector<double> gaussianCurv(V.rows(), 2.0 * M_PI);
+//     for (int triI = 0; triI < F.rows(); triI++) {
+//         const Eigen::RowVector3i &triVInd = F.row(triI);
+//         const Eigen::RowVector3d v[3] = {V_rest.row(triVInd[0]),
+//                                          V_rest.row(triVInd[1]),
+//                                          V_rest.row(triVInd[2])};
+//         for (int vI = 0; vI < 3; vI++) {
+//             int vI_post = (vI + 1) % 3;
+//             int vI_pre = (vI + 2) % 3;
+//             const Eigen::RowVector3d e0 = v[vI_pre] - v[vI];
+//             const Eigen::RowVector3d e1 = v[vI_post] - v[vI];
+//             gaussianCurv[triVInd[vI]] -= std::acos((
+//                 std::max)(-1.0,
+//                           (std::min)(1.0, e0.dot(e1) / e0.norm() / e1.norm())));
+//             weights[triVInd[vI]] += triArea[triI];
+//         }
+//     }
+//
+//     absGaussianCurv = 0.0;
+//     for (int vI = 0; vI < V.rows(); vI++) {
+//         if (!isBoundaryVert(vI))
+//             absGaussianCurv += std::abs(gaussianCurv[vI]) * weights[vI];
+//     }
+//     absGaussianCurv /= surfaceArea * 3.0;
+// }
 
 void TriMesh::initRigidUV(void) {
     V.resize(V_rest.rows(), 2);

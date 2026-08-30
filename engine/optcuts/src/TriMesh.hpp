@@ -106,20 +106,20 @@ class TriMesh {
     void onePointCut(int vI = 0);
     void highCurvOnePointCut(void);
     void farthestPointCut(int vI = 0);
-    void geomImgCut(TriMesh &data_findExtrema);
+    // void geomImgCut(TriMesh &data_findExtrema);
     int cutPath(std::vector<int> path, bool makeCoh = false, int changePos = 0,
                 const Eigen::MatrixXd &newVertPos = Eigen::MatrixXd(),
                 bool allowCutThrough = true);
 
-    void computeSeamScore(Eigen::VectorXd &seamScore) const;
-    void computeBoundaryLen(double &boundaryLen) const;
+    // void computeSeamScore(Eigen::VectorXd &seamScore) const;
+    // void computeBoundaryLen(double &boundaryLen) const;
     void computeSeamSparsity(double &sparsity, bool triSoup = false) const;
-    void computeStandardStretch(double &stretch_l2, double &stretch_inf,
-                                double &stretch_shear,
-                                double &compress_inf) const;
-    void computeL2StretchPerElem(Eigen::VectorXd &L2StretchPerElem) const;
-    void outputStandardStretch(std::ofstream &file) const;
-    void computeAbsGaussianCurv(double &absGaussianCurv) const;
+    // void computeStandardStretch(double &stretch_l2, double &stretch_inf,
+    //                             double &stretch_shear,
+    //                             double &compress_inf) const;
+    // void computeL2StretchPerElem(Eigen::VectorXd &L2StretchPerElem) const;
+    // void outputStandardStretch(std::ofstream &file) const;
+    // void computeAbsGaussianCurv(double &absGaussianCurv) const;
 
     void initRigidUV(void);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdio>
 #include <string>
 
 namespace uvgami {
@@ -12,7 +13,7 @@ class ChronoTimer {
     void start(void) { startTime = std::chrono::high_resolution_clock::now(); }
     void finish(void) {
         finishTime = std::chrono::high_resolution_clock::now();
-        printf("%s : %f ms\n", message.c_str(), duration());
+        fprintf(stderr, "%s : %f ms\n", message.c_str(), duration());
     }
 
     float duration(void) {
