@@ -4,7 +4,7 @@ from ..job import Result
 from ..manager import manager
 from ..objfile import merge_obj_files
 from ..utils.io import import_obj
-from ..utils.mesh import check_collection, move_to_collection
+from ..utils.mesh import mark_not_unwrapped
 from ..utils.ui import tag_redraw
 
 
@@ -28,11 +28,7 @@ def piece_target(stem):
 def drop_unwrap(context, unwrap, invalid_label, result):
     if invalid_label is not None and unwrap.path.is_file():
         # the import must happen before record_result, which deletes the input file
-        invalid_obj = import_obj(unwrap.path)
-        collection = check_collection("UVgami Not Unwrapped", context.scene.collection)
-        move_to_collection(invalid_obj, collection)
-        invalid_obj.name = f"{invalid_obj.name}: {invalid_label}"
-        invalid_obj.hide_set(True)
+        mark_not_unwrapped(import_obj(unwrap.path), invalid_label)
         manager.moved_to_invalid = True
     manager.record_result(unwrap, result)
 
@@ -112,10 +108,7 @@ class UVGAMI_OT_stop(bpy.types.Operator):
         if not paths:
             return
         merged_obj = import_obj(merge_obj_files(paths))
-        collection = check_collection("UVgami Not Unwrapped", context.scene.collection)
-        move_to_collection(merged_obj, collection)
-        merged_obj.name = f"{group[0].input_name}: Stopped"
-        merged_obj.hide_set(True)
+        mark_not_unwrapped(merged_obj, "Stopped", group[0].input_name)
         manager.moved_to_invalid = True
 
 

@@ -91,7 +91,7 @@ def test_refused_mesh_fails_next_to_a_good_cube(
     assert list(outputs()) == ["cube_unwrapped"]
     (invalid,) = invalid_objects().values()
     assert invalid.hide_get()
-    assert invalid.name.endswith(": Invalid Coordinates")
+    assert invalid.name.startswith("Invalid Coordinates: ")
 
 
 def test_cancel_all_kills_the_engine_and_keeps_the_inputs(unwrap, outputs):
@@ -141,5 +141,5 @@ def test_stop_one_queued_piece_moves_it_to_not_unwrapped(
     assert manager.summary[0] == "1 of 2 parts stopped"
     assert len(outputs()) == 1
     (stopped,) = invalid_objects().values()
-    assert stopped.name.endswith(": Stopped")
+    assert stopped.name.startswith("Stopped: ")
     assert stopped.hide_get()

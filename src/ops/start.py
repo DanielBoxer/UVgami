@@ -37,12 +37,11 @@ from ..unwrap import Unwrap
 # from ..utils.geometry import apply_transforms, calc_center
 from ..utils.io import export_obj
 from ..utils.mesh import (
-    check_collection,
     check_exists,
     deselect_all,
     get_shading_modifiers,
     is_shading_modifier,
-    move_to_collection,
+    mark_not_unwrapped,
     new_bmesh,
     set_bmesh,
     triangulate,
@@ -653,11 +652,8 @@ class SessionBuilder:
             valid = []
             for o in s:
                 if len(o.data.polygons) == 0:
-                    collection = check_collection(
-                        "UVgami Not Unwrapped", bpy.context.scene.collection
-                    )
-                    move_to_collection(o, collection)
-                    o.name = f"{unwrap_name}: No Polygons"
+                    mark_not_unwrapped(o, "No Polygons", unwrap_name)
+                    manager.moved_to_invalid = True
                 else:
                     valid.append(o)
 

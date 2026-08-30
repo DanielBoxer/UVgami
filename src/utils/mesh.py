@@ -138,6 +138,21 @@ def check_collection(name, parent):
     return collection
 
 
+NOT_UNWRAPPED_COLLECTION = "UVgami Not Unwrapped"
+
+
+def mark_not_unwrapped(obj, reason, name=None):
+    """Hide obj in the Not Unwrapped collection named reason first, the
+    outliner cuts long names short."""
+    collection = check_collection(
+        NOT_UNWRAPPED_COLLECTION, bpy.context.scene.collection
+    )
+    move_to_collection(obj, collection)
+    obj.name = f"{reason}: {name or obj.name}"
+    obj.hide_set(True)
+    return obj.name
+
+
 def check_exists(reference):
     try:
         reference.name

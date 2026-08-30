@@ -23,6 +23,7 @@ from .utils.mesh import (
     check_collection,
     check_exists,
     edit_restore,
+    mark_not_unwrapped,
     move_to_collection,
 )
 from .utils.paths import clear_io_dir, get_io_dir_paths, get_preferences
@@ -756,16 +757,8 @@ class UnwrapManager:
                         print(line)
 
         if move_to_invalid:
-            invalid_obj = import_obj(unwrap.path)
-            collection = check_collection(
-                "UVgami Not Unwrapped", bpy.context.scene.collection
-            )
             self.moved_to_invalid = True
-            move_to_collection(invalid_obj, collection)
-            label = f"{invalid_obj.name}: {msg}"
-            invalid_obj.name = label
-            invalid_obj.hide_set(True)
-            logger.add_data("errors", label)
+            logger.add_data("errors", mark_not_unwrapped(import_obj(unwrap.path), msg))
 
         self.record_result(unwrap, Result.INVALID)
 
