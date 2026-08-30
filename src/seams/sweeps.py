@@ -16,7 +16,6 @@ from .islands import SPLIT_ASPECT
 from .mesh import build, cross, face_keys, find, norm
 from .regions import CREASE_ANGLE, partition
 
-
 # a region splits at its rims when the 30-60 degree middle band holds under
 # BAND of its area and caps hold at least CAP_MIN: a bent tube fills the
 # band, a swept one does not (a measured elbow reads 0.31, a screwdriver

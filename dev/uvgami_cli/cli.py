@@ -2,9 +2,9 @@ import argparse
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from .common import (
     EXIT_INVALID_INPUT,

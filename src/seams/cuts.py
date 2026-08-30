@@ -13,7 +13,6 @@ import math
 
 from .mesh import LOW_ANGLE, find, norm, pair, turn_angle
 
-
 # what a fully painted vertex multiplies an edge's length by. bounded on
 # purpose: an infinite cost would drop a cut instead of moving it, so a path
 # that must cross paint crosses at its narrowest

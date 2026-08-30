@@ -8,16 +8,16 @@ from dataclasses import dataclass
 
 import bpy
 
-from .. import Engine
 from ...utils.paths import get_dir_path, get_extension_dir_path
 from ...utils.ui import only_active
+from .. import Engine
 from ..install_task import (
     NOT_DOWNLOADED_ERROR,
+    UPDATE_ICON,
     draw_error,
     draw_online_access,
     draw_progress,
     draw_update_row,
-    UPDATE_ICON,
     task_state,
 )
 from .install import (
@@ -33,7 +33,6 @@ from .paths import (
     get_partuv_venv_path,
     get_partuv_venv_python,
 )
-
 
 GEOMETRIC_SEGMENTATION = 0
 AI_SEGMENTATION = 1

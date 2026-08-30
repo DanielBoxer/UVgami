@@ -4,7 +4,6 @@ angles, island grouping, and uv fitting. No seam logic."""
 import collections
 import math
 
-
 # the package's base angle in degrees: edges turning less than this read as
 # flat. it is the partition angle, low on purpose, over-segmenting is what
 # makes region width meaningful, and the merges reassemble the pieces

@@ -1,5 +1,5 @@
-import json
 import functools
+import json
 import pathlib
 import platform
 import shutil
@@ -21,13 +21,13 @@ from ..install_task import (
     report_progress,
     task_state,
 )
-from .venv_commands import VENV_PYTHON, build_install_commands
 from .paths import (
     get_partuv_checkpoint_path,
     get_partuv_venv_path,
     get_partuv_venv_python,
     get_uv_path,
 )
+from .venv_commands import VENV_PYTHON, build_install_commands
 
 # must match engine/partuv/pyproject.toml
 PARTUV_VERSION = "0.1.4"

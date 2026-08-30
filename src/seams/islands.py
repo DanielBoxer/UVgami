@@ -26,7 +26,6 @@ from .mesh import (
 )
 from .rectify import flatten_distortion
 
-
 # strip test: length squared over uv area, about length/width
 # close_rings reuses it: a closed ring past it unrolls into a strip
 SPLIT_ASPECT = 6.0

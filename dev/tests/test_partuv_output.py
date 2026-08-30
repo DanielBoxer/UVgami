@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-
 from partuv import output
 from partuv.common import UnwrapError
 

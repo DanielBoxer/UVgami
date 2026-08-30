@@ -10,7 +10,6 @@ from ..engines.install_task import (
 from ..job import Result
 from ..logger import logger
 from ..manager import manager
-from .props import PRIORITY_LABELS
 from ..utils.ui import (
     draw_active,
     header_icon_limit,
@@ -18,6 +17,7 @@ from ..utils.ui import (
     only_active,
     toggle,
 )
+from .props import PRIORITY_LABELS
 
 
 def unwrap_settings(props):

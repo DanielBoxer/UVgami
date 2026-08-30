@@ -2,7 +2,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from uvgami_cli import xatlas
 from uvgami_cli.common import REPO_ROOT, UnwrapError, find_engine
 

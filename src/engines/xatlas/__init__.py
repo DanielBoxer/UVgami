@@ -2,7 +2,6 @@ from ...utils.paths import get_extension_dir_path
 from ..binary_engine import BinaryEngine
 from .install import XATLAS, UVGAMI_OT_install_xatlas
 
-
 # above 4.0 the output is identical
 PRIORITY_VALUES = {"LESS_STRETCH": "0.1", "BALANCED": "2.0", "FEWER_SEAMS": "4.0"}
 

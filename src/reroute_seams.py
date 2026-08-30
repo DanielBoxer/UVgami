@@ -1,5 +1,7 @@
 import math
+
 import numpy
+
 from .utils.pyqtree import Index
 
 

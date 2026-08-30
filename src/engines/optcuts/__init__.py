@@ -14,7 +14,6 @@ from ...utils.ui import is_non_default, only_active
 from ..binary_engine import BinaryEngine
 from .install import OPTCUTS, UVGAMI_OT_install_optcuts
 
-
 # what counts as a sharp feature
 HARD_SURFACE_ANGLE = 66
 

@@ -18,7 +18,6 @@ import math
 from .islands import SPLIT_ASPECT
 from .mesh import LOW_ANGLE, cross, find, norm, pair, turn_angle
 
-
 # auto width: at the low partition angle region widths are dominated by
 # narrow bands, real surfaces are the top few percent, and no clean gap
 # separates them, so take a high quantile with clearance on top. the cap, a

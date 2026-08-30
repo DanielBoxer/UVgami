@@ -11,7 +11,6 @@ from .cuts import CREASED_RELIEF, cut_path, path_cost
 from .mesh import face_keys, find, norm, pair, turn_angle
 from .regions import CREASE_ANGLE
 
-
 # a boundary may only move within this many face rings of where it is, so it
 # can snap to a crease beside it but never shortcut across a region
 REROUTE_RINGS = 2

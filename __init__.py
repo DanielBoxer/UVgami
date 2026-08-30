@@ -15,64 +15,64 @@
 # along with UVgami. If not, see <https://www.gnu.org/licenses/>.
 
 import bpy
+
+from .src.engines import ENGINES
+from .src.engines.binary_engine import UVGAMI_OT_delete_engine
 from .src.manager import manager
-from .src.ops.start import UVGAMI_OT_start
-from .src.ops.stop import (
-    UVGAMI_OT_stop,
-    UVGAMI_OT_cancel,
-    UVGAMI_OT_cancel_all,
-    UVGAMI_OT_cancel_background,
-)
-from .src.ops.guides import (
-    UVGAMI_OT_draw_guides,
-    UVGAMI_OT_seed_restrictions,
-    UVGAMI_OT_exit_draw,
-    UVGAMI_OT_clear_draw,
-)
-from .src.ops.proxy import UVGAMI_OT_preview_proxy
-from .src.ops.uv import UVGAMI_OT_pack
-from .src.ops.island import (
-    UVGAMI_OT_unwrap_area,
-    UVGAMI_OT_relax_area,
-    UVGAMI_OT_combine_islands,
-    UVGAMI_OT_unwrap_island,
-    UVGAMI_OT_relax_island,
-)
-from .src.ops.misc import (
-    UVGAMI_OT_expand,
-    UVGAMI_OT_reset_setting,
-    UVGAMI_OT_reset_settings,
-    UVGAMI_OT_open_preferences,
-    # start_symmetry_draw,
-    # stop_symmetry_draw,
-)
 from .src.ops.grid import (
     UVGAMI_OT_add_grid,
     UVGAMI_OT_remove_grid,
 )
-from .src.ops.viewer import UVGAMI_OT_view_unwrap
+from .src.ops.guides import (
+    UVGAMI_OT_clear_draw,
+    UVGAMI_OT_draw_guides,
+    UVGAMI_OT_exit_draw,
+    UVGAMI_OT_seed_restrictions,
+)
 from .src.ops.info import (
     UVGAMI_OT_clear_summary,
     UVGAMI_OT_open_logs,
 )
+from .src.ops.island import (
+    UVGAMI_OT_combine_islands,
+    UVGAMI_OT_relax_area,
+    UVGAMI_OT_relax_island,
+    UVGAMI_OT_unwrap_area,
+    UVGAMI_OT_unwrap_island,
+)
+from .src.ops.misc import (
+    UVGAMI_OT_expand,
+    UVGAMI_OT_open_preferences,
+    # start_symmetry_draw,
+    # stop_symmetry_draw,
+    UVGAMI_OT_reset_setting,
+    UVGAMI_OT_reset_settings,
+)
+from .src.ops.proxy import UVGAMI_OT_preview_proxy
+from .src.ops.start import UVGAMI_OT_start
+from .src.ops.stop import (
+    UVGAMI_OT_cancel,
+    UVGAMI_OT_cancel_all,
+    UVGAMI_OT_cancel_background,
+    UVGAMI_OT_stop,
+)
+from .src.ops.uv import UVGAMI_OT_pack
+from .src.ops.viewer import UVGAMI_OT_view_unwrap
 from .src.ui.panels import (
-    UVGAMI_PT_main,
-    UVGAMI_PT_speed,
-    UVGAMI_PT_weights,
+    UVGAMI_PT_grid,
+    UVGAMI_PT_island_settings,
     # UVGAMI_PT_symmetry,
     UVGAMI_PT_island_uv,
-    UVGAMI_PT_island_settings,
-    UVGAMI_PT_grid,
-    UVGAMI_PT_pack,
+    UVGAMI_PT_main,
     UVGAMI_PT_misc,
+    UVGAMI_PT_pack,
+    UVGAMI_PT_speed,
+    UVGAMI_PT_weights,
 )
 from .src.ui.props import (
-    UVGAMI_PG_properties,
     UVGAMI_AP_preferences,
+    UVGAMI_PG_properties,
 )
-from .src.engines import ENGINES
-from .src.engines.binary_engine import UVGAMI_OT_delete_engine
-
 
 # every bpy class each engine needs registered (property groups and operators)
 engine_classes = tuple(cls for engine in ENGINES.values() for cls in engine.classes)

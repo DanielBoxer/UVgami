@@ -6,8 +6,6 @@ import bpy
 import mathutils
 import numpy
 
-from .logger import logger
-from .objfile import merge_obj_files
 from .hard_surface import (
     apply_face_uvs,
     apply_interior_seams,
@@ -16,6 +14,8 @@ from .hard_surface import (
     flatten_engine,
     marked_seams,
 )
+from .logger import logger
+from .objfile import merge_obj_files
 from .proxy import face_locator, transfer_inputs
 from .seams import (
     FlattenError,
@@ -40,8 +40,8 @@ from .utils.mesh import (
     loop_totals,
     loop_uvs,
     new_bmesh,
-    set_loop_uvs,
     set_bmesh,
+    set_loop_uvs,
     split_per_face,
     triangulate,
     vertex_positions,

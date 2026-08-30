@@ -5,9 +5,9 @@ import numpy
 from gpu_extras.batch import batch_for_shader
 
 from ..manager import manager
-from .stop import group_targets, piece_target
 from ..utils.mesh import check_exists
 from ..utils.ui import tag_redraw
+from .stop import group_targets, piece_target
 
 VIEWER_WORKSPACE = "UVgami Viewer"
 

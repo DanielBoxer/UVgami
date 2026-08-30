@@ -424,7 +424,7 @@ def write_twin_output(source_path, target_path, matrix):
     for line in source_path.read_text().splitlines(keepends=True):
         if line.startswith("v "):
             position = rotation @ [float(x) for x in line.split()[1:4]] + translation
-            lines.append("v %.9f %.9f %.9f\n" % tuple(position))
+            lines.append("v {:.9f} {:.9f} {:.9f}\n".format(*position))
         elif mirrored and line.startswith("f "):
             tokens = line.split()
             lines.append(" ".join([tokens[0], *reversed(tokens[1:])]) + "\n")

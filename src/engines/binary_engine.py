@@ -13,17 +13,17 @@ from ..utils.paths import (
 from . import Engine
 from .install_task import (
     DELETE_DESCRIPTION,
-    NOT_DOWNLOADED_ERROR,
     DELETED_MESSAGE,
     DOWNLOADED_MESSAGE,
+    NOT_DOWNLOADED_ERROR,
+    UPDATE_ICON,
     InstallTask,
     draw_error,
     draw_online_access,
     draw_progress,
     draw_update_row,
-    parse_version,
-    UPDATE_ICON,
     offline_error,
+    parse_version,
     report_progress,
     task_state,
 )

@@ -4,9 +4,8 @@ compiled core and an NVIDIA GPU, so CI without a GPU passes."""
 from pathlib import Path
 
 import numpy as np
-import pytest
-
 import partuv
+import pytest
 from partuv.cli import DEFAULT_CONFIG, _cuda_available
 
 FIXTURES = Path(__file__).parent / "fixtures"

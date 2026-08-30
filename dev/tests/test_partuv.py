@@ -3,7 +3,6 @@ import types
 from pathlib import Path
 
 import pytest
-
 from partuv import cli
 from partuv.common import UnwrapError
 

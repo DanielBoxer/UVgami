@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from uvgami_cli import cli, optcuts
 from uvgami_cli.common import UnwrapError
 

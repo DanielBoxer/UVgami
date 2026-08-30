@@ -6,7 +6,6 @@ from .logger import logger
 from .manager import manager
 from .utils.ui import popup
 
-
 MESSAGES = {
     "START": "Error starting unwrap: ",
     "MIDDLE": "Error during unwrap: ",
