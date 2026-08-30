@@ -45,7 +45,7 @@ class UVGAMI_OT_open_logs(bpy.types.Operator):
         text = bpy.data.texts.get(LOG_TEXT_NAME) or bpy.data.texts.new(LOG_TEXT_NAME)
         text.clear()
         entries = logger.get_all() or ["No previous unwraps"]
-        text.write("\n".join([_session_header(), ""] + entries))
+        text.write("\n".join([_session_header(), ""] + entries) + "\n")
         # the view follows the cursor, which write leaves on the last line
         text.cursor_set(0)
 

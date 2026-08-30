@@ -99,6 +99,9 @@ def _flip(edge):
         next(vert for vert in face.verts if vert not in edge.verts)
         for face in edge.link_faces
     ]
+    # a doubled triangle has one apex
+    if apexes[0] is apexes[1]:
+        return
     if any(other.other_vert(apexes[0]) is apexes[1] for other in apexes[0].link_edges):
         return
     quad = bmesh.utils.face_join(edge.link_faces)
