@@ -12,6 +12,9 @@
 #include <cfloat>
 
 namespace uvgami {
+// a sliver chart otherwise refines forever
+static const int AIR_MESH_MAX_STEINER = 10000;
+
 static double doubleArea(const Eigen::MatrixXd &V, const Eigen::RowVector3i &tri) {
     const Eigen::RowVector2d &a = V.row(tri[0]);
     const Eigen::RowVector2d &b = V.row(tri[1]);
@@ -150,10 +153,13 @@ Scaffold::Scaffold(const TriMesh &mesh, Eigen::MatrixXd UV_bnds,
         // so no processing for H
     }
 
-    igl::triangle::triangulate(UV_bnds, E, H, "qYQ", airMesh.V, airMesh.F);
+    igl::triangle::triangulate(
+        UV_bnds, E, H, "qYQS" + std::to_string(AIR_MESH_MAX_STEINER),
+        airMesh.V, airMesh.F);
     // "Y" for no Steiner points on mesh boundary
     // "q" for high quality mesh generation
     // "Q" for quiet mode (no output)
+    // "S" caps the Steiner points quality refinement may add
 
     // degenerate boundaries can leave no triangles, crashing computeFeatures
     if (airMesh.F.rows() == 0)
