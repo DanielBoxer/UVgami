@@ -3121,8 +3121,9 @@ double TriMesh::computeLocalEdDec_bSplit(const std::vector<int> &triangles,
             Eigen::MatrixXd UV_temp;
             Eigen::VectorXi bnd_temp;
             std::set<int> loop_AMVI;
-            scaffold->get1RingAirLoop(splitPath[0], UV_temp, E, bnd_temp,
-                                      loop_AMVI);
+            if (!scaffold->get1RingAirLoop(splitPath[0], UV_temp, E,
+                                           bnd_temp, loop_AMVI))
+                return -DBL_MAX;
             int loopVAmt_beforeSplit = E.rows();
             if (!cutThrough) {
                 E.bottomRows(1) << loopVAmt_beforeSplit - 1,
@@ -3154,8 +3155,9 @@ double TriMesh::computeLocalEdDec_bSplit(const std::vector<int> &triangles,
                 Eigen::VectorXi bnd_temp1;
                 Eigen::MatrixXi E1;
                 std::set<int> loop1_AMVI;
-                scaffold->get1RingAirLoop(splitPath[1], UV_temp1, E1, bnd_temp1,
-                                          loop1_AMVI);
+                if (!scaffold->get1RingAirLoop(splitPath[1], UV_temp1, E1,
+                                               bnd_temp1, loop1_AMVI))
+                    return -DBL_MAX;
                 // avoid generating air mesh with duplicated vertices
                 // NOTE: this also avoid forming tiny charts
                 for (const auto &i : loop1_AMVI) {

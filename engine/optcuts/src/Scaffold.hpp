@@ -63,7 +63,7 @@ class Scaffold {
     void augmentFColorwithAirMesh(Eigen::MatrixXd &FColor) const;
 
     // get 1-ring airmesh loop for scaffolding optimization on local stencils
-    void get1RingAirLoop(int vI, Eigen::MatrixXd &UV, Eigen::MatrixXi &E,
+    bool get1RingAirLoop(int vI, Eigen::MatrixXd &UV, Eigen::MatrixXi &E,
                          Eigen::VectorXi &bnd, std::set<int> &loop_AMVI) const;
 
     bool getCornerAirLoop(const std::vector<int> &corner_mesh,

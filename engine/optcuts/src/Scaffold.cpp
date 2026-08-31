@@ -328,11 +328,13 @@ void Scaffold::augmentFColorwithAirMesh(Eigen::MatrixXd &FColor) const {
         Eigen::MatrixXd::Ones(airMesh.F.rows(), 3);
 }
 
-void Scaffold::get1RingAirLoop(int vI, Eigen::MatrixXd &UV, Eigen::MatrixXi &E,
+bool Scaffold::get1RingAirLoop(int vI, Eigen::MatrixXd &UV, Eigen::MatrixXi &E,
                                Eigen::VectorXi &bnd,
                                std::set<int> &loop_AMVI) const {
     const auto finder = meshVI2AirMesh.find(vI);
-    assert(finder != meshVI2AirMesh.end());
+    // a stale cohesive edge can name an interior vertex
+    if (finder == meshVI2AirMesh.end())
+        return false;
     assert(airMesh.isBoundaryVert(finder->second));
 
     std::vector<int> umbrella0, umbrella;
@@ -375,6 +377,7 @@ void Scaffold::get1RingAirLoop(int vI, Eigen::MatrixXd &UV, Eigen::MatrixXi &E,
             }
         }
     }
+    return true;
 }
 
 bool Scaffold::getCornerAirLoop(const std::vector<int> &corner_mesh,
@@ -387,7 +390,9 @@ bool Scaffold::getCornerAirLoop(const std::vector<int> &corner_mesh,
     std::vector<int> corner(3);
     for (int i = 0; i < 3; i++) {
         const auto finder = meshVI2AirMesh.find(corner_mesh[i]);
-        assert(finder != meshVI2AirMesh.end());
+        // a stale cohesive edge can name an interior vertex
+        if (finder == meshVI2AirMesh.end())
+            return false;
         corner[i] = finder->second;
     }
 
