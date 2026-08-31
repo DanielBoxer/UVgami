@@ -3146,7 +3146,9 @@ double TriMesh::computeLocalEdDec_bSplit(const std::vector<int> &triangles,
                 for (int bndI = 0; bndI < bnd.size(); bndI++) {
                     if (bndI != 1) {
                         const auto finder = globalVI2local.find(bnd[bndI]);
-                        assert(finder != globalVI2local.end());
+                        // the air loop can name a vertex outside the stencil
+                        if (finder == globalVI2local.end())
+                            return -DBL_MAX;
                         bnd[bndI] = finder->second;
                     }
                 }
@@ -3187,7 +3189,9 @@ double TriMesh::computeLocalEdDec_bSplit(const std::vector<int> &triangles,
                 for (int bndI = 0; bndI < bnd.size(); bndI++) {
                     if ((bndI != 1) && (bndI != 5)) {
                         const auto finder = globalVI2local.find(bnd[bndI]);
-                        assert(finder != globalVI2local.end());
+                        // the air loop can name a vertex outside the stencil
+                        if (finder == globalVI2local.end())
+                            return -DBL_MAX;
                         bnd[bndI] = finder->second;
                     }
                 }

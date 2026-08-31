@@ -352,7 +352,7 @@ bool Scaffold::get1RingAirLoop(int vI, Eigen::MatrixXd &UV, Eigen::MatrixXi &E,
     loop_AMVI.clear();
     UV.resize(umbrella.size() + 2, 2);
     E.resize(umbrella.size() + 2, 2);
-    bnd.resize(3);
+    bnd.setConstant(3, -1);
     for (int tI = 0; tI < umbrella.size(); tI++) {
         int triI = umbrella[tI];
         for (int vI = 0; vI < 3; vI++) {
@@ -377,7 +377,8 @@ bool Scaffold::get1RingAirLoop(int vI, Eigen::MatrixXd &UV, Eigen::MatrixXi &E,
             }
         }
     }
-    return true;
+    // an empty or broken umbrella leaves slots unwritten
+    return (bnd.array() >= 0).all();
 }
 
 bool Scaffold::getCornerAirLoop(const std::vector<int> &corner_mesh,
