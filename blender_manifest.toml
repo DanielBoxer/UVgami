@@ -1,7 +1,7 @@
 # https://developer.blender.org/docs/features/extensions/schema/1.0.0/
 schema_version = "1.0.0"
 
-maintainer = "Daniel Boxer <daniel@danielboxer.dev>"
+maintainer = "Daniel Boxer <uvgami@danielboxer.dev>"
 type = "add-on"
 license = ["SPDX:GPL-3.0-or-later"]
 copyright = ["2022-2026 Daniel Boxer"]
