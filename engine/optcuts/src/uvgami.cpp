@@ -72,6 +72,8 @@ int initCutOption = 0;
 // one cut per inverted piece per round about halves its depth, so a handful
 // of rounds covers any tube
 const int MAX_DEEPEN_ROUNDS = 6;
+// below this 1 / area^2 exceeds the other energy terms' precision
+const double NEAR_ZERO_INIT_RATIO = 1e-16;
 bool outerLoopFinished = false;
 double upperBound = 4.1;
 const double convTol_upperBound = 1.0e-3;
@@ -2172,7 +2174,7 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
                     init.V.row(init.F(triI, 2)) - init.V.row(init.F(triI, 0));
                 const double dbArea = e1[0] * e2[1] - e1[1] * e2[0];
                 if (!init.checkInversion(triI, true) ||
-                    !std::isfinite(1.0 / (dbArea * dbArea)))
+                    dbArea < NEAR_ZERO_INIT_RATIO * 2.0 * init.triArea[triI])
                     inverted.insert(C[triI]);
             }
             if (inverted.empty())
