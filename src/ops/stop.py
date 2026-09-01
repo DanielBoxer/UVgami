@@ -207,14 +207,6 @@ class UVGAMI_OT_cancel_all(bpy.types.Operator):
         return self.execute(context)
 
     def execute(self, context):
-        # stop_all only clears the list, so the preseeds still solving have to
-        # be told to stop first
-        for entry in list(manager.preparing):
-            entry.cancel()
-        manager.stop_all()
-        manager.finish()
-        manager.log_final_status()
-        manager.clear_summary()
-        tag_redraw()
+        manager.cancel_session()
         self.report({"INFO"}, "UV unwrap cancelled")
         return {"FINISHED"}

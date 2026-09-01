@@ -101,7 +101,7 @@ class UnwrapManager:
 
     def _reset_session(self):
         """Per-run state. Called from __init__ too, so the error path can reach
-        finish() before a session ever starts."""
+        end_session() before a session ever starts."""
         # frozen scene.uvgami, set in start()
         self.props = None
         self.moved_to_invalid = False
@@ -326,7 +326,7 @@ class UnwrapManager:
                 and self.pieces_still_arriving == 0
                 and not self.pending_transfers
             ):
-                self._finish_batch()
+                self.finish_session()
                 return None
 
         except Exception as e:
@@ -792,8 +792,22 @@ class UnwrapManager:
         self.pending_transfers.remove(entry)
         self.cancelled_transfers.add(entry.job)
 
-    def _finish_batch(self):
-        """Called when all unwraps are done (completed, failed, or cancelled)."""
+    def cancel_session(self):
+        """Cancel everything still unsettled, then conclude the session."""
+        # a still pending transfer would otherwise count its piece as finished
+        for entry in list(self.pending_transfers):
+            self.cancel_transfer(entry)
+        for unwrap in list(self.active):
+            if unwrap.join_job is not None:
+                # finished pieces get discarded instead of joined
+                unwrap.join_job.discard = True
+            unwrap.stop_process()
+            self.record_result(unwrap, Result.CANCELLED)
+        self.finish_session()
+
+    def finish_session(self):
+        """Conclude the session once every piece has a result: teardown, then
+        the summary. The dispatch timer and cancel all both end here."""
         props = self.props
         if props.pack_after_unwrap and self._pack_output_objects:
             valid_objects = [o for o in self._pack_output_objects if check_exists(o)]
@@ -805,8 +819,13 @@ class UnwrapManager:
                         pack_objects([obj], self._pack_topology)
 
         counts = self._result_counts()
-        self.finish()
+        # one undo step for the whole session
+        bpy.ops.ed.undo_push(message="UVgami Unwrap")
+        self.end_session()
         self.log_final_status()
+
+        if counts[Result.FINISHED] > 0 and props.auto_grid:
+            switch_shading("MATERIAL")
 
         if counts[Result.CANCELLED] != len(self.results):
             msg = []
@@ -873,9 +892,6 @@ class UnwrapManager:
         else:
             self.clear_summary()
 
-        # the dispatch timer is gone, so repaint the queue ui and banner here
-        tag_redraw()
-
     def _show_status(self):
         """Put the summary in the status bar. A clean run clears itself, a run
         with problems stays until the next one so it can't be missed."""
@@ -909,40 +925,27 @@ class UnwrapManager:
                 bpy.app.timers.unregister(self._dispatch_handle)
             self._dispatch_handle = None
 
-    def finish(self):
-        # one undo step for the whole session, so a single ctrl z reverts it
-        bpy.ops.ed.undo_push(message="UVgami Unwrap")
-        self._unregister_dispatch()
-        progress_bar.remove()
-        self.is_active = False
-        self._running.clear()
-        self._queue.clear()
-        self._close_shared_processes()
-        self._pack_output_objects.clear()
-        self._pack_topology.clear()
-        self.input.clear()
-
-        # count first, the error path reaches here before start() set props
-        if self._result_counts()[Result.FINISHED] > 0 and self.props.auto_grid:
-            switch_shading("MATERIAL")
-
-        for path in get_io_dir_paths():
-            clear_io_dir(path)
-
     def drop_preparing(self, entry):
-        """Tolerant: stop_all clears the list before the builder gets here."""
+        """Tolerant: end_session clears the list before the builder gets here."""
         if entry in self.preparing:
             self.preparing.remove(entry)
 
     def finished_adding(self):
-        """Clamped: stop_all zeroes the count, so a timer that outlives it
+        """Clamped: end_session zeroes the count, so a timer that outlives it
         would otherwise go negative and the session could never finish."""
         self.pieces_still_arriving = max(0, self.pieces_still_arriving - 1)
 
-    def stop_all(self):
+    def end_session(self):
+        """The one teardown every ending goes through: a settled session, a
+        cancel, an error, a file load. Safe from any state and idempotent."""
         # late import: ops.viewer imports the manager
         from .ops.viewer import stop_viewer_draw
 
+        for entry in list(self.preparing):
+            entry.cancel()
+        # a file load kills the builder timers that would have cleared these
+        self.preparing.clear()
+        self.pieces_still_arriving = 0
         for unwrap in list(self._running):
             unwrap.stop_process()
             unwrap.cleanup()
@@ -954,22 +957,26 @@ class UnwrapManager:
         self._running.clear()
         self._queue.clear()
         self._close_shared_processes()
-        # a file load kills the builder timers that would have cleared these
-        self.preparing.clear()
-        self.pieces_still_arriving = 0
         self._unregister_dispatch()
         progress_bar.remove()
-        # the viewer modal dies with a file load, so remove its handler here
+        # the viewer modal dies with a file load
         stop_viewer_draw()
         self.exit_viewer = True
         self.is_viewer_active = False
         self.is_active = False
+        self._pack_output_objects.clear()
+        self._pack_topology.clear()
+        self.input.clear()
+        for path in get_io_dir_paths():
+            clear_io_dir(path)
+        # erasing the progress bar needs a repaint
+        tag_redraw()
 
     def shutdown(self):
         """Drop everything, for a file load or the addon unloading. The engine
         processes and the draw handlers survive both, and a file load kills the
         timer that would have cleaned them up."""
-        self.stop_all()
+        self.end_session()
         self.clear_summary()
         logger.reset()
 

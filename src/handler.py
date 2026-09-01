@@ -38,5 +38,4 @@ def cleanup(location, objects=frozenset()):
         for obj in set(bpy.data.objects).difference(objects):
             bpy.data.objects.remove(obj, do_unlink=True)
 
-    manager.stop_all()
-    manager.finish()
+    manager.end_session()
