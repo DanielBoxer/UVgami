@@ -665,7 +665,7 @@ class ProxyCopyUVs(ProxyUVs):
         target = input_mesh.copy()
         target.data = input_mesh.data.copy()
         bm = new_bmesh(target)
-        triangulate(bm)
+        triangulate(bm, target.data)
         set_bmesh(bm, target)
         return target
 

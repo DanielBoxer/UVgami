@@ -68,51 +68,101 @@ def face_uvs(mesh):
     return [[(round(u, 6), round(v, 6)) for u, v in face] for face in corner_uvs(mesh)]
 
 
-def triangulate(bm):
-    """Triangulate for engine input. BEAUTY alone can give two quads the same
-    diagonal (Suzanne's mouth fold), leaving an edge with 4 faces that the
-    engines reject as non-manifold, so split conflicting quads safely first."""
-    _split_conflicting_quads(bm)
+def triangulate(bm, mesh):
+    """Triangulate for engine input. bm has to be fresh from mesh, the quad
+    scan reads mesh and splits by face index. BEAUTY alone can give two quads
+    the same diagonal (Suzanne's mouth fold), leaving an edge with 4 faces that
+    the engines reject as non-manifold, so split conflicting quads safely
+    first."""
+    _split_conflicting_quads(bm, mesh)
     bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="BEAUTY")
 
 
-def _quad_diagonals(face):
-    verts = face.verts
-    return {
-        frozenset((verts[0].index, verts[2].index)): (verts[0], verts[2]),
-        frozenset((verts[1].index, verts[3].index)): (verts[1], verts[3]),
-    }
+def _edge_keys(tail, head, vertex_count):
+    """One integer per edge, the same for both directions."""
+    return numpy.minimum(tail, head) * vertex_count + numpy.maximum(tail, head)
 
 
-def _split_conflicting_quads(bm):
-    edges = {frozenset((e.verts[0].index, e.verts[1].index)) for e in bm.edges}
+def _conflicting_quads(mesh):
+    """(face index, diagonal keys, diagonal is a mesh edge) for each quad with
+    a diagonal that is an existing edge or another quad's diagonal. Every
+    other quad is safe for BEAUTY as is."""
+    totals = numpy.empty(len(mesh.polygons), dtype=numpy.int64)
+    mesh.polygons.foreach_get("loop_total", totals)
+    quads = numpy.flatnonzero(totals == 4)
+    if len(quads) == 0:
+        return []
+    corners = numpy.empty(len(mesh.loops), dtype=numpy.int64)
+    mesh.loops.foreach_get("vertex_index", corners)
+    edge_vertices = numpy.empty(len(mesh.edges) * 2, dtype=numpy.int64)
+    mesh.edges.foreach_get("vertices", edge_vertices)
+    edge_vertices = edge_vertices.reshape(-1, 2)
+
+    vertex_count = len(mesh.vertices)
+    quad_corners = corners[loop_starts(mesh)[quads][:, None] + numpy.arange(4)]
+    diagonals = numpy.stack(
+        [
+            _edge_keys(quad_corners[:, 0], quad_corners[:, 2], vertex_count),
+            _edge_keys(quad_corners[:, 1], quad_corners[:, 3], vertex_count),
+        ],
+        axis=1,
+    )
+    edge_keys = numpy.sort(
+        _edge_keys(edge_vertices[:, 0], edge_vertices[:, 1], vertex_count)
+    )
+    # searchsorted beats isin by 7x here
+    slots = numpy.searchsorted(edge_keys, diagonals).clip(max=len(edge_keys) - 1)
+    is_edge = edge_keys[slots] == diagonals
+    _, inverse, counts = numpy.unique(
+        diagonals.ravel(), return_inverse=True, return_counts=True
+    )
+    is_shared = counts[inverse].reshape(diagonals.shape) > 1
+    flagged = numpy.flatnonzero((is_edge | is_shared).any(axis=1))
+    return list(
+        zip(
+            quads[flagged].tolist(),
+            diagonals[flagged].tolist(),
+            is_edge[flagged].tolist(),
+        )
+    )
+
+
+def _split_conflicting_quads(bm, mesh):
+    conflicting = _conflicting_quads(mesh)
+    if not conflicting:
+        return
+    bm.faces.ensure_lookup_table()
+    conflicting = [(bm.faces[f], keys, flags) for f, keys, flags in conflicting]
+
     claims = {}
-    quads = [f for f in bm.faces if len(f.verts) == 4]
-    for face in quads:
-        for diagonal in _quad_diagonals(face):
-            claims.setdefault(diagonal, []).append(face)
+    for face, keys, _ in conflicting:
+        for key in keys:
+            claims.setdefault(key, []).append(face)
 
-    for face in quads:
-        diagonals = _quad_diagonals(face)
+    split_keys = set()
+    for face, keys, edge_flags in conflicting:
+        verts = face.verts
+        ends = {keys[0]: (verts[0], verts[2]), keys[1]: (verts[1], verts[3])}
+        edge_of = dict(zip(keys, edge_flags))
 
-        def conflicts(diagonal):
+        def conflicts(key):
             # a split face drops to 3 verts, so resolved partners don't count
-            return diagonal in edges or any(
-                other is not face and len(other.verts) == 4
-                for other in claims[diagonal]
+            return (
+                edge_of[key]
+                or key in split_keys
+                or any(
+                    other is not face and len(other.verts) == 4 for other in claims[key]
+                )
             )
 
-        if not any(conflicts(d) for d in diagonals):
+        if not any(conflicts(key) for key in keys):
             continue
         safest = min(
-            diagonals,
-            key=lambda d: (
-                conflicts(d),
-                (diagonals[d][0].co - diagonals[d][1].co).length,
-            ),
+            keys,
+            key=lambda k: (conflicts(k), (ends[k][0].co - ends[k][1].co).length),
         )
-        bmesh.utils.face_split(face, *diagonals[safest])
-        edges.add(safest)
+        bmesh.utils.face_split(face, *ends[safest])
+        split_keys.add(safest)
 
 
 def set_bmesh(bm, obj):

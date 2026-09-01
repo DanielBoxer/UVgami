@@ -340,7 +340,7 @@ class InputExporter:
                 unwrap.preserve_job = Preserve()
                 old_edges = set(bm.edges)
 
-            triangulate(bm)
+            triangulate(bm, obj.data)
 
             if untriangulate:
                 edge_path = path.parent / f"{path.stem}_edges"

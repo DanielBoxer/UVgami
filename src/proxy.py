@@ -36,11 +36,8 @@ def make_proxy(obj, target_faces):
     modifier = obj.modifiers.new("UVgami Proxy", "DECIMATE")
     modifier.ratio = target_faces / triangles
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    baked = bpy.data.meshes.new_from_object(
-        obj.evaluated_get(depsgraph),
-        preserve_all_data_layers=True,
-        depsgraph=depsgraph,
-    )
+    # preserve_all_data_layers would run the decimate a second time
+    baked = bpy.data.meshes.new_from_object(obj.evaluated_get(depsgraph))
 
     stale = obj.data
     obj.data = baked

@@ -148,7 +148,7 @@ def queue_island(obj, group, bbox, area, k, input_path, props):
 
     bm = new_bmesh(temp)
     if any(len(f.verts) > 3 for f in bm.faces):
-        triangulate(bm)
+        triangulate(bm, temp.data)
         set_bmesh(bm, temp)
     else:
         bm.free()
@@ -428,7 +428,7 @@ def queue_nocut(obj, temp, group, bbox, area, k, input_path, props):
 
     bm = new_bmesh(temp)
     if any(len(f.verts) > 3 for f in bm.faces):
-        triangulate(bm)
+        triangulate(bm, temp.data)
         set_bmesh(bm, temp)
     else:
         bm.free()
@@ -778,7 +778,7 @@ def queue_area(obj, patch, border, k, input_path, props, nocut):
     bm = bmesh.new()
     bm.from_mesh(area_mesh)
     if any(len(f.verts) > 3 for f in bm.faces):
-        triangulate(bm)
+        triangulate(bm, area_mesh)
         bm.to_mesh(area_mesh)
     bm.free()
 
