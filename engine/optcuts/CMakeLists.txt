@@ -11,7 +11,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # mimalloc's static override needs the whole tree on the static release crt.
 # cmp0091 must be new or wjakob/tbb (pre-3.15 min) ignores the runtime-library
 # setting and links /md, mixing crts and emitting lnk4098.
-if(MSVC)
+if(MSVC AND UVGAMI_USE_MIMALLOC)
   set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()

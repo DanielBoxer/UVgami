@@ -69,9 +69,8 @@ int converged = 0;
 double fracThres = 0.0;
 bool topoLineSearch = true;
 int initCutOption = 0;
-// one cut per inverted piece per round about halves its depth, so a handful
-// of rounds covers any tube
-const int MAX_DEEPEN_ROUNDS = 6;
+// one cut per inverted piece per round about halves its depth
+const int MAX_DEEPEN_ROUNDS = 30;
 // below this 1 / area^2 exceeds the other energy terms' precision
 const double NEAR_ZERO_INIT_RATIO = 1e-16;
 bool outerLoopFinished = false;
@@ -1546,6 +1545,29 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
         }
     }
 
+    // a repeated uv corner puts a diagonal entry in igl's adjacency
+    // matrix, and igl::edges then returns rows it never wrote
+    if (hasUV) {
+        int splitCorners = 0;
+        for (int triI = 0; triI < FUV.rows(); ++triI) {
+            for (int i = 0; i < 3; ++i) {
+                for (int j = i + 1; j < 3; ++j) {
+                    if (FUV(triI, i) == FUV(triI, j)) {
+                        const int nV = static_cast<int>(UV.rows());
+                        UV.conservativeResize(nV + 1, UV.cols());
+                        UV.row(nV) = UV.row(FUV(triI, j));
+                        FUV(triI, j) = nV;
+                        ++splitCorners;
+                    }
+                }
+            }
+        }
+        if (splitCorners)
+            std::cerr << "split " << splitCorners
+                      << " repeated uv corners into their own vertices"
+                      << std::endl;
+    }
+
     // with input UV the components are the UV charts, so the cutting below
     // works on either
     Eigen::VectorXi C;
@@ -2052,10 +2074,9 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
             std::vector<double> area3D(n_components, 0.0);
             for (int triI = 0; triI < temp.F.rows(); ++triI) {
                 const Eigen::RowVector3i &tri = temp.F.row(triI);
-                const Eigen::RowVector3d p0 = temp.V_rest.row(tri[0]);
-                const Eigen::RowVector3d p1 = temp.V_rest.row(tri[1]);
-                const Eigen::RowVector3d p2 = temp.V_rest.row(tri[2]);
-                double a3 = (p1 - p0).cross(p2 - p0).norm() / 2;
+                // triArea, not the raw cross product: a chart of only
+                // zero-area triangles gets radius 0
+                double a3 = temp.triArea[triI];
                 area3D[C[triI]] += a3;
                 if (keepChart[C[triI]]) {
                     const Eigen::RowVector2d e1 =
@@ -2158,10 +2179,8 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
         triSoup.emplace_back(
             new uvgami::TriMesh(V, F, solveTutte(), temp.F, false));
 
-        // temp's adjacency is stale by now, so the cut runs on a rebuild
-        // from its arrays
-        for (int round = 0; round < MAX_DEEPEN_ROUNDS; ++round) {
-            std::set<int> inverted;
+        const auto nearZeroInitCharts = [&]() {
+            std::set<int> flagged;
             const uvgami::TriMesh &init = *triSoup.back();
             for (int triI = 0; triI < init.F.rows(); ++triI) {
                 if (keepChart[C[triI]])
@@ -2175,8 +2194,15 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
                 const double dbArea = e1[0] * e2[1] - e1[1] * e2[0];
                 if (!init.checkInversion(triI, true) ||
                     dbArea < NEAR_ZERO_INIT_RATIO * 2.0 * init.triArea[triI])
-                    inverted.insert(C[triI]);
+                    flagged.insert(C[triI]);
             }
+            return flagged;
+        };
+
+        // temp's adjacency is stale by now, so the cut runs on a rebuild
+        // from its arrays
+        for (int round = 0; round < MAX_DEEPEN_ROUNDS; ++round) {
+            const std::set<int> inverted = nearZeroInitCharts();
             if (inverted.empty())
                 break;
             uvgami::TriMesh deeper(temp.V_rest, temp.F, temp.V, temp.F, false);
@@ -2185,6 +2211,11 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
                 const std::vector<int> path =
                     deepestPath(F_component[componentI]);
                 if (path.size() < 2)
+                    continue;
+                // glued charts leave a chart boundary mesh-interior,
+                // where cutPath throws mid-cut
+                if (!deeper.isBoundaryVert(path.front()) &&
+                    !deeper.isBoundaryVert(path.back()))
                     continue;
                 cuts += deeper.cutPath(path, true);
                 deeper.initSeams = deeper.cohE;
@@ -2208,6 +2239,13 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
             delete triSoup.back();
             triSoup.back() =
                 new uvgami::TriMesh(V, F, solveTutte(), temp.F, false);
+        }
+        // a near-zero area the rounds never cleared passes the strict
+        // inversion check below but inflates the scaffold without bound
+        if (!nearZeroInitCharts().empty()) {
+            std::cerr << "UV init stuck at near-zero area after deepening"
+                      << std::endl;
+            return UVGAMI_RC_ELEMENT_INVERSION;
         }
     }
     if (!fixedVerts.empty()) {
