@@ -49,26 +49,20 @@ class UVGAMI_OT_stop(bpy.types.Operator):
         # collect cancellations so group members can be merged into one import
         to_cancel = []
         for unwrap in unwraps:
-            if unwrap.batch_process is not None:
-                # pending batch members are cancelled by deleting their input
-                # so the cli skips them, in-flight ones finish normally
-                if unwrap.path.stem not in unwrap.batch_process.started:
-                    to_cancel.append(unwrap)
-            elif unwrap.process is not None:
-                if manager.engine.supports_early_stop:
-                    # the flag re-sends the request each tick and arms the
-                    # manager's STOP_SECONDS force kill
-                    unwrap.is_stopped = True
-                    delivered = manager.engine.request_early_stop(unwrap.process)
-                    # a process that exited since the last tick finishes on its own
-                    if not delivered and unwrap.process.poll() is None:
-                        self.report({"ERROR"}, "Could not stop unwrap")
-                # a running solo mesh on an engine without early stop just
-                # finishes normally, like an in-flight batch member
-            else:
-                # queued: starting a mesh just to stop it gives a map with no
-                # work in it, so drop it and let it show as not unwrapped
+            if unwrap.is_solving and manager.engine.supports_early_stop:
+                # the flag re-sends the request each tick and arms the
+                # manager's STOP_SECONDS force kill
+                unwrap.is_stopped = True
+                delivered = manager.engine.request_early_stop(unwrap.process)
+                # a process that exited since the last tick finishes on its own
+                if not delivered and unwrap.process.poll() is None:
+                    self.report({"ERROR"}, "Could not stop unwrap")
+            elif not unwrap.is_running:
+                # queued or never reached by its process: stopping would give
+                # a map with no work in it, so drop it as not unwrapped
                 to_cancel.append(unwrap)
+            # a solving mesh on an engine without early stop, and one already
+            # finishing, both settle on their own
 
         self._cancel_collected(context, to_cancel)
         if to_cancel:

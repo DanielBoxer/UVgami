@@ -181,16 +181,10 @@ class Unwrap:
             manager.engine.stop(self.process, manager.engine_ctx)
 
     def cancel_solve(self):
-        """Ask a batch process to abandon this mesh when it is the one being
-        unwrapped, so teardown doesn't wait out a cancelled solve. The process
-        stays alive for the rest of the queue."""
-        if self.batch_process is None:
-            return
-        stem = self.path.stem
-        if (
-            stem in self.batch_process.started
-            and self.batch_process.poll_result(stem) is None
-        ):
+        """Ask a batch process to abandon this mesh, so teardown doesn't wait
+        out a cancelled solve. The process stays alive for the rest of the
+        queue."""
+        if self.batch_process is not None and self.is_solving:
             manager.engine.request_cancel(self.process)
 
     def release_engine(self):
@@ -251,6 +245,16 @@ class Unwrap:
         if self.batch_process is None:
             return self.is_active
         return self.is_active and self.path.stem in self.batch_process.started
+
+    @property
+    def is_solving(self):
+        """The engine is on this mesh with no result out yet, so a stdin stop
+        or cancel reaches this mesh and not a process's next one."""
+        if not self.is_running:
+            return False
+        if self.batch_process is None:
+            return self.process.poll() is None
+        return self.batch_process.poll_result(self.path.stem) is None
 
     @property
     def is_stalled(self):
