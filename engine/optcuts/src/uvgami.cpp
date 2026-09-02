@@ -1330,7 +1330,17 @@ static int prepareOutputFolder(const std::string &meshFilePath) {
     return 0;
 }
 
-static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV);
+static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV);
+
+// a piece degenerate enough that a rest mesh collapses to a point throws
+// from TriMesh construction, possibly mid-solve on a local query mesh
+static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
+    try {
+        return unwrapMeshOrThrow(meshFilePath, ignoreUV);
+    } catch (UvgamiElementInversionException &) {
+        return UVGAMI_RC_ELEMENT_INVERSION;
+    }
+}
 
 int main(int argc, char *argv[]) {
     std::set_terminate(reportTerminate);
@@ -1454,7 +1464,7 @@ int main(int argc, char *argv[]) {
     std::_Exit(0);
 }
 
-static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
+static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
     resetMeshState();
     mainTimer.start();
     const int folderCode = prepareOutputFolder(meshFilePath);
@@ -2292,15 +2302,10 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
     energyParams.emplace_back(1.0 - lambda_init);
     energyTerms.emplace_back(new uvgami::SymDirichletEnergy());
 
-    try {
-        // for random one point initial cut, don't need air meshes in the
-        // beginning since it's impossible for a quad to intersect itself
-        optimizer = new uvgami::Optimizer(
-            *triSoup[0], energyTerms, energyParams, 0, true, !rand1PInitCut);
-    } catch (UvgamiElementInversionException &eie) {
-        (void)eie;
-        return UVGAMI_RC_ELEMENT_INVERSION;
-    }
+    // for random one point initial cut, don't need air meshes in the
+    // beginning since it's impossible for a quad to intersect itself
+    optimizer = new uvgami::Optimizer(
+        *triSoup[0], energyTerms, energyParams, 0, true, !rand1PInitCut);
     optimizer->precompute();
     triSoup.emplace_back(&optimizer->getResult());
     triSoup_backup = optimizer->getResult();

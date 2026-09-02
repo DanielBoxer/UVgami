@@ -17,10 +17,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <iostream>
 #include <map>
 #include <set>
 #include <stdexcept>
 #include <streambuf>
+
+#include "uvgami_exceptions.h"
 
 extern std::vector<std::pair<double, double>> energyChanges_bSplit,
     energyChanges_iSplit, energyChanges_merge;
@@ -322,8 +325,10 @@ void TriMesh::computeTriangleFeatures(void) {
     const double meanArea = zeroAreaAmt < F.rows()
                                 ? triArea.sum() / (F.rows() - zeroAreaAmt)
                                 : longestSq.mean();
-    if (zeroAreaAmt && meanArea == 0.0)
-        throw std::runtime_error("every rest triangle is a point");
+    if (zeroAreaAmt && meanArea == 0.0) {
+        std::cerr << "every rest triangle is a point" << std::endl;
+        throw UvgamiElementInversionException();
+    }
     for (int triI = 0; triI < F.rows(); triI++) {
         const Eigen::Vector3i &triVInd = F.row(triI);
 
