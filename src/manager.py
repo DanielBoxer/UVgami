@@ -343,43 +343,39 @@ class UnwrapManager:
                 return
             time.sleep(SETTLE_TICK_SECONDS)
 
-    def _piece_progress(self, unwrap, engine_progress, transfer_progress):
-        """One piece's (done, running, remaining). A piece with a uv transfer
-        splits its bar between the engine and the transfer."""
-        job = unwrap.transfer_uvs_job
-        if job is None or job.settled:
-            return numpy.array(engine_progress)
-        share = TRANSFER_PROGRESS_SHARE
-        # a job waiting on the rest of its group has not started reporting
-        transferred = transfer_progress.get(job, 0.0)
-        engine = numpy.array(engine_progress) * (1 - share)
-        return engine + (share * transferred, 0, share * (1 - transferred))
-
     def _update_progress_bar(self):
-        transfer_progress = {
-            entry.job: entry.job.progress for entry in self.pending_transfers
-        }
-        # unexported pieces sit at (0, 0, 1) until they start reporting
-        progress = [
-            self._piece_progress(unwrap, unwrap.progress, transfer_progress)
-            for unwrap in self.active
-        ]
-        progress += [
-            self._piece_progress(unwrap, (1, 0, 0), transfer_progress)
-            for unwrap, _ in self.results
-        ]
-        if not progress:
+        """Session progress as the mean of every piece's (done, running,
+        remaining). A finished piece is all done, an unexported one sits at
+        (0, 0, 1), and a piece with a uv transfer splits its bar between the
+        engine and the transfer."""
+        active = self.active
+        pieces = active + [unwrap for unwrap, _ in self.results]
+        if not pieces:
             return
-        self.progress = sum(progress) / len(progress)
+        engine = numpy.array(
+            [unwrap.progress for unwrap in active]
+            + [(1.0, 0.0, 0.0)] * len(self.results)
+        )
+        jobs = [unwrap.transfer_uvs_job for unwrap in pieces]
+        has_transfer = numpy.array(
+            [job is not None and not job.settled for job in jobs]
+        )
+        # a job waiting on the rest of its group has not started reporting
+        reported = {entry.job: entry.job.progress for entry in self.pending_transfers}
+        transferred = numpy.array([reported.get(job, 0.0) for job in jobs])
+        share = TRANSFER_PROGRESS_SHARE * has_transfer
+        progress = engine * (1 - share)[:, None]
+        progress[:, 0] += share * transferred
+        progress[:, 2] += share * (1 - transferred)
+        self.progress = progress.mean(axis=0)
         if get_preferences().show_progress_bar:
             progress_bar.update(self.progress)
             tag_redraw(("WINDOW",))
-        state = self._panel_state()
         now = time.monotonic()
-        if (
-            state != self._drawn_panel_state
-            and now - self._panel_drawn_at >= PANEL_REDRAW_SECONDS
-        ):
+        if now - self._panel_drawn_at < PANEL_REDRAW_SECONDS:
+            return
+        state = self._panel_state()
+        if state != self._drawn_panel_state:
             self._drawn_panel_state = state
             self._panel_drawn_at = now
             tag_redraw(("UI",))
