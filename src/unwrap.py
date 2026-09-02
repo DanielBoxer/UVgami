@@ -180,6 +180,19 @@ class Unwrap:
         if self.process is not None and self.process.poll() is None:
             manager.engine.stop(self.process, manager.engine_ctx)
 
+    def cancel_solve(self):
+        """Ask a batch process to abandon this mesh when it is the one being
+        unwrapped, so teardown doesn't wait out a cancelled solve. The process
+        stays alive for the rest of the queue."""
+        if self.batch_process is None:
+            return
+        stem = self.path.stem
+        if (
+            stem in self.batch_process.started
+            and self.batch_process.poll_result(stem) is None
+        ):
+            manager.engine.request_cancel(self.process)
+
     def release_engine(self):
         """This unwrap no longer needs the engine. A batch process is left
         running for the other meshes, and deleting the input file in cleanup()

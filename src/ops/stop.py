@@ -26,6 +26,7 @@ def piece_target(stem):
 
 
 def drop_unwrap(context, unwrap, invalid_label, result):
+    unwrap.cancel_solve()
     if invalid_label is not None and unwrap.path.is_file():
         # the import must happen before record_result, which deletes the input file
         mark_not_unwrapped(import_obj(unwrap.path), invalid_label)

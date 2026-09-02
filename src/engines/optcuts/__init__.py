@@ -282,6 +282,9 @@ class OptcutsEngine(BinaryEngine):
     def request_early_stop(self, process):
         return print_stdin(process, "stop")
 
+    def request_cancel(self, process):
+        return print_stdin(process, "cancel")
+
     def request_snapshot(self, process):
         print_stdin(process, "snapshot")
 

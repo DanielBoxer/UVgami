@@ -134,6 +134,11 @@ class Engine:
         called when supports_viewer is set."""
         raise NotImplementedError
 
+    def request_cancel(self, process):
+        """Ask a running process to abandon the mesh it is unwrapping, with no
+        result saved. Engines without the command let the solve finish."""
+        return False
+
     def stop(self, process, ctx):
         """Stop a running unwrap process."""
         process.kill()
