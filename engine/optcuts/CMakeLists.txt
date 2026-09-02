@@ -27,6 +27,8 @@ endif()
 
 # read version from VERSION file
 if(NOT DEFINED UVGAMI_VERSION_MAJOR)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" _version_raw)
   string(STRIP "${_version_raw}" _version_stripped)
   string(REPLACE "." ";" _version_list "${_version_stripped}")
