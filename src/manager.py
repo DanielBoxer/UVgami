@@ -645,8 +645,7 @@ class UnwrapManager:
                 and time.monotonic() - entry.started_at > timeout_minutes * 60
             ):
                 # cancel deletes the two objects the settle path works on
-                job.cancel()
-                self.pending_transfers.remove(entry)
+                self.cancel_transfer(entry)
                 self.transfer_uv_failed = True
                 self.transfer_uv_reason_known = True
                 self.transfer_uv_fail_detail = f"{entry.name} timed out"

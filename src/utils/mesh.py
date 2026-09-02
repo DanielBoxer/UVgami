@@ -316,6 +316,22 @@ def edit_restore(input, func, *args, **kwargs):
         bpy.ops.object.mode_set(mode=old_mode)
 
 
+def in_object_mode(target, func, *args):
+    """Run func with target in object mode, which mesh reads and writes
+    need."""
+    if target.mode == "OBJECT":
+        return func(*args)
+    old_active = bpy.context.view_layer.objects.active
+    old_mode = target.mode
+    bpy.ops.object.mode_set(mode="OBJECT")
+    try:
+        return func(*args)
+    finally:
+        if check_exists(old_active):
+            bpy.context.view_layer.objects.active = old_active
+            bpy.ops.object.mode_set(mode=old_mode)
+
+
 AUTO_SMOOTH_MODIFIER_NAME = "Smooth by Angle"
 WEIGHTED_NORMAL_PROPERTIES = (
     "weight",

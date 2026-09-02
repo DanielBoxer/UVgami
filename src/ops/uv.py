@@ -9,6 +9,7 @@ from ..utils.mesh import (
     corner_uvs,
     edit_restore,
     face_vertices,
+    in_object_mode,
     select_uvs,
     validate_obj,
 )
@@ -112,9 +113,15 @@ def _restack(obj, stacks):
 def pack_objects(objects, topology=None):
     """Pack these objects' uvs together in one edit session. topology maps
     an object to its (faces, edges) for a caller that read them already."""
+    if not objects:
+        return
     topology = topology or {}
-    stacks_of = {obj: island_stacks(obj, *topology.get(obj, ())) for obj in objects}
-    edit_restore(objects, pack, stacks_of)
+
+    def read_and_pack():
+        stacks_of = {obj: island_stacks(obj, *topology.get(obj, ())) for obj in objects}
+        edit_restore(objects, pack, stacks_of)
+
+    in_object_mode(objects[0], read_and_pack)
 
 
 def pack(stacks_of):
