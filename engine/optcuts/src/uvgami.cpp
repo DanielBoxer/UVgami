@@ -1602,6 +1602,12 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
               : uvgami::TriMesh(V, F, Eigen::MatrixXd(), Eigen::MatrixXi(),
                                 false);
 
+    // the initial cut below seeds from these weights
+    std::string weightsFileName = std::string(inputFolderPath.u8string()) +
+                                  pathSeparator() + meshName + "_weights";
+    Eigen::VectorXd seamAvoidance = Eigen::VectorXd::Zero(temp.V.rows());
+    loadWeightSidecar(weightsFileName, seamAvoidance);
+
     // stitch mode: a <mesh>_stitch sidecar asks for greedy island merging on
     // the kept map, a redone layout has no island placement worth stitching.
     // detected before the keep decision because stitch runs relax the disk
@@ -1946,10 +1952,17 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
                             return UVGAMI_RC_CUT_FAILED;
                         }
                     } else {
-                        // cut the topological sphere into a topological disk;
-                        // seed at the component's smallest vertex index so a
-                        // single-component mesh cuts at vertex 0
+                        // cut the topological sphere into a topological
+                        // disk; the seed cut never merges away
+                        auto avoidance = [&](int vI) {
+                            return vI < seamAvoidance.size() ? seamAvoidance[vI]
+                                                             : 0.0;
+                        };
                         int seedVI = *V_ind_component[componentI].begin();
+                        for (int vI : V_ind_component[componentI]) {
+                            if (avoidance(vI) < avoidance(seedVI))
+                                seedVI = vI;
+                        }
                         switch (initCutOption) {
                         case 0:
                             temp.onePointCut(seedVI);
@@ -2316,9 +2329,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
     // regional seam placement
     uvgami::TriMesh &result = optimizer->getResult();
     Eigen::VectorXd sW = Eigen::VectorXd::Zero(result.vertWeight.size());
-    if (loadWeightSidecar(std::string(inputFolderPath.u8string()) +
-                              pathSeparator() + meshName + "_weights",
-                          sW)) {
+    if (loadWeightSidecar(weightsFileName, sW)) {
         result.vertWeight =
             (1.0 + sW.array() * (maxSeamWeight - 1)).matrix();
         uvgami::IglUtils::smoothVertField(result, result.vertWeight);
