@@ -312,3 +312,49 @@ def test_transfer_projected_stops_on_cancel():
             dense_arrays(verts, faces), proxy, counting, cancelled=lambda: True
         )
     assert calls == []
+
+
+# the face folded over the panel, z = 0.5 - x / 16
+def folded_proxy():
+    verts = [
+        (0.0, 0.0, 0.0),
+        (8.0, 0.0, 0.0),
+        (0.0, 8.0, 0.0),
+        (0.0, -0.5, 0.5),
+        (0.0, 6.0, 0.5),
+    ]
+    faces = [[0, 1, 2], [1, 0, 3], [1, 3, 4]]
+    uvs = grid_uvs(verts, faces)
+    uvs[0] = [(u + SHIFT, v) for u, v in uvs[0]]
+    return proxy_arrays(verts, faces, uvs)
+
+
+def test_transfer_projected_tears_between_faces_split_at_a_shared_vertex():
+    proxy = folded_proxy()
+    columns, rows = 6, [0.3, 0.5, 0.7, 0.9, 1.1, 1.3]
+    verts = [(1.0 + x, y, 0.25) for y in rows for x in range(columns)]
+    faces = [
+        [
+            r * columns + x,
+            r * columns + x + 1,
+            (r + 1) * columns + x + 1,
+            (r + 1) * columns + x,
+        ]
+        for r in range(len(rows) - 1)
+        for x in range(columns - 1)
+    ]
+    dense = dense_arrays(verts, faces)
+
+    # the bottom two vertex rows read the panel, the rest the folded face
+    def nearest_faces(points, normals):
+        points = numpy.asarray(points, dtype=numpy.float64)
+        on_top = points[:, 1] > 0.6
+        surface = points.copy()
+        surface[:, 2] = numpy.where(on_top, 0.5 - points[:, 0] / 16, 0.0)
+        return numpy.where(on_top, 2, 0), surface
+
+    seams, uvs = transfer_projected(dense, proxy, nearest_faces)
+
+    face_u = uvs[:, 0].reshape(len(faces), 4)
+    assert numpy.all(face_u.max(axis=1) - face_u.min(axis=1) < 2.0)
+    assert seams == {(2 * columns + x, 2 * columns + x + 1) for x in range(columns - 1)}

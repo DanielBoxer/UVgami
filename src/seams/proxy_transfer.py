@@ -94,6 +94,21 @@ def proxy_links(faces, corner_uvs):
     return numpy.array(sorted(pairs), dtype=numpy.int64)
 
 
+# two faces around one vertex give it different uvs
+def proxy_splits(faces, corner_uvs):
+    at_vertex = collections.defaultdict(list)
+    for f, (face, uvs) in enumerate(zip(faces, corner_uvs)):
+        for v, uv in zip(face, uvs):
+            at_vertex[v].append((f, tuple(uv)))
+    pairs = set()
+    for group in at_vertex.values():
+        for f, uv_f in group:
+            for g, uv_g in group:
+                if uv_f != uv_g:
+                    pairs.add((f << 32) | g)
+    return numpy.array(sorted(pairs), dtype=numpy.int64)
+
+
 # their maps agree all along that edge, so the difference is a crack, not a cut
 def proxy_edge_links(faces, corner_uvs):
     pairs = set()
@@ -129,9 +144,11 @@ ON_LINE = 1e-6
 
 # judged in the first point's proxy face plane, against the cuts at its vertices
 class CutCrossings:
-    def __init__(self, positions, faces, cuts):
+    def __init__(self, positions, faces, corner_uvs):
         positions = numpy.asarray(positions, dtype=numpy.float64).reshape(-1, 3)
-        cuts = numpy.array(sorted(cuts), dtype=numpy.int64).reshape(-1, 2)
+        cuts = numpy.array(
+            sorted(uv_tears(faces, corner_uvs)), dtype=numpy.int64
+        ).reshape(-1, 2)
         at_vertex = collections.defaultdict(list)
         for i, (a, b) in enumerate(cuts.tolist()):
             at_vertex[a].append(i)
@@ -146,9 +163,8 @@ class CutCrossings:
         self.owners = numpy.array(
             [edges[(a, b)][:2] for a, b in cuts.tolist()], dtype=numpy.int64
         ).reshape(-1, 2)
-        # faces either side of one cut, packed like proxy_links
-        either_side = numpy.concatenate([self.owners, self.owners[:, ::-1]])
-        self.pairs = numpy.unique((either_side[:, 0] << 32) | either_side[:, 1])
+        # the crossing test misses a fold that puts two uv sides in one plane
+        self.pairs = proxy_splits(faces, corner_uvs)
         first = numpy.array([face[:3] for face in faces], dtype=numpy.int64)
         corners = positions[first]
         self.origin = corners[:, 0]
@@ -236,9 +252,7 @@ class ProxyMap:
         self.maps = AffineMaps(proxy["positions"], faces, corner_uvs)
         self.links = proxy_links(faces, corner_uvs)
         self.edge_links = proxy_edge_links(faces, corner_uvs)
-        self.crossings = CutCrossings(
-            proxy["positions"], faces, uv_tears(faces, corner_uvs)
-        )
+        self.crossings = CutCrossings(proxy["positions"], faces, corner_uvs)
 
 
 # faces are laid out one after another
