@@ -315,12 +315,6 @@ def test_input_deleted_mid_batch_is_skipped(triangle, cube, tmp_path, capsys):
     ]
 
 
-def test_default_engine_is_optcuts(triangle, fake_optcuts, capsys):
-    assert cli.main(["unwrap", str(triangle), "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["engine"] == "optcuts"
-    assert fake_optcuts  # optcuts.run was called
-
-
 def test_partuv_dispatch(triangle, tmp_path, fake_partuv):
     out = tmp_path / "out.obj"
     code = cli.main(
@@ -410,40 +404,20 @@ def test_xatlas_max_cost_must_be_positive(triangle, fake_xatlas, capsys):
     assert "--max-cost" in capsys.readouterr().err
 
 
-def test_max_cost_rejected_for_optcuts(triangle, capsys):
-    code = cli.main(["unwrap", str(triangle), "--max-cost", "0.8"])
+@pytest.mark.parametrize(
+    "engine, flag, value",
+    [
+        ("optcuts", "--max-cost", "0.8"),
+        ("optcuts", "--xatlas-path", "xatlas.exe"),
+        ("optcuts", "--threshold", "1.5"),
+        ("xatlas", "--quality", "less-stretch"),
+        ("partuv", "--quality", "less-stretch"),
+    ],
+)
+def test_another_engines_flag_is_rejected(triangle, capsys, engine, flag, value):
+    code = cli.main(["unwrap", str(triangle), "--engine", engine, flag, value])
     assert code == 2
-    assert "--max-cost" in capsys.readouterr().err
-
-
-def test_optcuts_flag_rejected_for_xatlas(triangle, capsys):
-    code = cli.main(
-        ["unwrap", str(triangle), "--engine", "xatlas", "--quality", "less-stretch"]
-    )
-    assert code == 2
-    assert "--quality" in capsys.readouterr().err
-
-
-def test_xatlas_flag_rejected_for_optcuts(triangle, tmp_path, capsys):
-    engine = tmp_path / "xatlas.exe"
-    engine.write_text("fake")
-    code = cli.main(["unwrap", str(triangle), "--xatlas-path", str(engine)])
-    assert code == 2
-    assert "--xatlas-path" in capsys.readouterr().err
-
-
-def test_partuv_flag_rejected_for_optcuts(triangle, capsys):
-    code = cli.main(["unwrap", str(triangle), "--threshold", "1.5"])
-    assert code == 2
-    assert "--threshold" in capsys.readouterr().err
-
-
-def test_optcuts_flag_rejected_for_partuv(triangle, capsys):
-    code = cli.main(
-        ["unwrap", str(triangle), "--engine", "partuv", "--quality", "less-stretch"]
-    )
-    assert code == 2
-    assert "--quality" in capsys.readouterr().err
+    assert flag in capsys.readouterr().err
 
 
 def test_checkpoint_rejected_for_geometric(triangle, tmp_path, capsys):

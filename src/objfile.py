@@ -1,6 +1,5 @@
 def _count_elements(path):
-    # obj files from blender's exporters list v/vt/vn before the first f line,
-    # so stopping at the first f gives the full counts
+    # blender's exporters list every v/vt/vn before the first f line
     v = vt = vn = 0
     with path.open() as f:
         for line in f:
@@ -29,14 +28,11 @@ def _offset_face(line, off_v, off_vt, off_vn):
     return "f " + " ".join(new_tokens) + "\n"
 
 
+# an obj may have v only, v/vt, or v/vt/vn
 def merge_obj_files(paths):
-    """Append paths[1:] into paths[0], offsetting face indices by the running
-    v/vt/vn counts of the earlier files, and return paths[0]. Face tokens are
-    handled generically: an obj may have v only, v/vt, or v/vt/vn."""
     off_v, off_vt, off_vn = _count_elements(paths[0])
     total_v, total_vt, total_vn = off_v, off_vt, off_vn
     with paths[0].open("a") as out:
-        # the sizes of the previous files are added to the next file's indices
         for obj_path in paths[1:]:
             with obj_path.open() as f:
                 for line in f:

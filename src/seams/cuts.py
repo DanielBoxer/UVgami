@@ -1,46 +1,24 @@
-"""Where a seam path goes once one is needed.
-
-Costs first: crease relief makes sharp edges cheaper, concave more
-than convex, painted restrictions make edges longer, and turning
-between dull edges costs extra, so a cut across featureless area
-comes out a line, the way an artist cuts. cut_path is the search over
-those costs, and disk_cuts uses it to open every multi-loop region
-into a disk."""
-
 import collections
 import heapq
 import math
 
 from .mesh import LOW_ANGLE, find, norm, pair, turn_angle
 
-# what a fully painted vertex multiplies an edge's length by. bounded on
-# purpose: an infinite cost would drop a cut instead of moving it, so a path
-# that must cross paint crosses at its narrowest
+# bounded on purpose, an infinite cost would drop a cut instead of moving it
 RESTRICT_COST = 9.0
-# free cuts prefer sharp edges: a crease edge counts shorter, sliding from
-# full length at LOW_ANGLE to a floor at RELIEF_FULL_ANGLE. concave gets the
-# deeper discount, a groove hides a seam best, and the floors are mild so
-# only a short detour to reach a crease is worth its cost
+# a crease edge counts shorter, concave gets the deeper discount
 CONCAVE_RELIEF = 0.5
 CONVEX_RELIEF = 0.3
+# relief slides from full length at LOW_ANGLE to its floor here
 RELIEF_FULL_ANGLE = 45
 # relief below this counts an edge as creased
 CREASED_RELIEF = 0.9
-# each step turning between two dull edges costs up to this fraction of its
-# length extra, so among near-equal paths the straight one wins. a turn with
-# both edges creased is exempt, since a seam follows a crease around any
-# corner. one creased edge is not enough, bevel rows read as creases and a
-# path would zigzag between parallel rows for free
+# a step turning between two dull edges costs this fraction of its length extra
 TURN_COST = 1.0
 
 
+# two loops meeting at a vertex count as one component, the cut would be a point
 def boundary_components(edges, label, forced=None):
-    """Per-region boundary vertices, grouped into connected components.
-
-    Two loops meeting at a vertex count as one component: the cut between them
-    would be a point, not a path, and the region is already joined there.
-    forced edges are seams already, so inside a region they count as boundary:
-    a marked slit joining two rims means the region is open there."""
     parent = {}
 
     for (v0, v1), owners in edges.items():
@@ -62,11 +40,8 @@ def boundary_components(edges, label, forced=None):
     return {r: list(comps.values()) for r, comps in grouped.items()}
 
 
+# the sign comes from the neighbour's centroid against the face plane
 def crease_relief(verts, faces, weighted, edges):
-    """Per edge, a length factor under 1 where the surface creases, so free
-    cuts prefer sharp edges over wandering across flat triangles. The sign
-    is read off the neighbour's centroid against the face plane: risen means
-    concave, a groove that hides a seam. Flat edges are left out."""
     centroids = []
     for face in faces:
         x = y = z = 0.0
@@ -91,9 +66,8 @@ def crease_relief(verts, faces, weighted, edges):
     return relief
 
 
+# longer where a painted restriction repels cuts, shorter along a crease
 def edge_cost(verts, weights, a, b, relief=None):
-    """An edge's length, longer where a painted restriction repels cuts and
-    shorter along a crease, so cuts land on clean lines."""
     length = norm([verts[a][i] - verts[b][i] for i in range(3)])
     if relief:
         length *= relief.get(pair(a, b), 1.0)
@@ -103,10 +77,8 @@ def edge_cost(verts, weights, a, b, relief=None):
     return length * (1 + RESTRICT_COST * paint)
 
 
+# zero along a crease or a straight continuation, up to TURN_COST on a reversal
 def turn_cost(verts, u, v, w, relief):
-    """Extra cost fraction for the step v->w after arriving from u: zero along
-    a crease or a straight continuation, up to TURN_COST on a reversal.
-    """
     if (
         relief.get(pair(u, v), 1.0) < CREASED_RELIEF
         and relief.get(pair(v, w), 1.0) < CREASED_RELIEF
@@ -121,9 +93,8 @@ def turn_cost(verts, u, v, w, relief):
     return TURN_COST * (1.0 - cos) / 2.0
 
 
+# turn penalties included, so a comparison matches what cut_path searches for
 def path_cost(verts, seq, weights=None, relief=None):
-    """Cost of an ordered vertex path, turn penalties included, so a
-    comparison values straightness the same way cut_path searches for it."""
     total = 0.0
     for i in range(1, len(seq)):
         step = edge_cost(verts, weights, seq[i - 1], seq[i], relief)
@@ -133,17 +104,10 @@ def path_cost(verts, seq, weights=None, relief=None):
     return total
 
 
+# with relief the state carries the incoming direction
 def cut_path(verts, adjacent, sources, targets, weights=None, relief=None):
-    """Cheapest path from any source vertex to any target, over adjacent.
-
-    Painted restrictions count as extra length. With relief the state
-    carries the incoming direction and turning between dull edges costs
-    extra, so a cut across featureless area comes out a line instead of the
-    staircase that happens to be shortest.
-    """
     if relief is None:
-        # without relief an edge costs at least its length, so with one target
-        # the straight line distance left never overestimates
+        # without relief an edge costs at least its length
         goal = verts[next(iter(targets))] if len(targets) == 1 else None
 
         def remaining(v):
@@ -201,7 +165,6 @@ def cut_path(verts, adjacent, sources, targets, weights=None, relief=None):
 
 
 def part_labels(adjacent):
-    """A loose part id per vertex of the graph."""
     label = {}
     for start in adjacent:
         if start in label:
@@ -217,15 +180,8 @@ def part_labels(adjacent):
     return label
 
 
+# every vertex maps to one vertex here, so segments that met still meet
 def snap_paths(verts, adjacent, mapped, cuts):
-    """Redraw another mesh's cut network on this one, edge by edge.
-
-    Each cut edge becomes the shortest path between the vertices its ends
-    map to, and since every vertex maps to one vertex here, segments that
-    met still meet and loops stay closed. A segment collapsing to a point
-    or with no path is dropped, leaving the rest intact. Ends on two loose
-    parts are dropped before searching, a failed search walks the whole part.
-    """
     part = part_labels(adjacent)
     paths = set()
     for a, b in cuts:
@@ -238,9 +194,8 @@ def snap_paths(verts, adjacent, mapped, cuts):
     return paths
 
 
+# one path per extra loop, each the shortest available at the time
 def connect_loops(verts, adjacent, comps, weights=None, relief=None):
-    """Cut paths joining every boundary component to the first, one path per
-    extra loop, each the shortest available at the time."""
     cuts = set()
     sources = set(comps[0])
     targets = {v: i for i, comp in enumerate(comps[1:], 1) for v in comp}
@@ -258,15 +213,8 @@ def connect_loops(verts, adjacent, comps, weights=None, relief=None):
     return cuts
 
 
+# a path joining two boundary loops opens the region without splitting it
 def disk_cuts(verts, edges, label, weights=None, relief=None, forced=None):
-    """Seam paths that open every multi-loop region into a disk.
-
-    A tube wall is an annulus straight out of the partition and no merge
-    can fix that, so cut it: a path joining two boundary loops opens the
-    region without splitting it, one cut per extra loop. Genus is left to
-    the engine, a handle needs a loop cut. forced edges already cut, so a
-    wall a marked seam opens needs no second slit.
-    """
     needs = {
         r: c for r, c in boundary_components(edges, label, forced).items() if len(c) > 1
     }

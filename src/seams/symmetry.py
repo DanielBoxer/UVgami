@@ -1,7 +1,3 @@
-"""Symmetric output without bisecting the mesh: close the preseed's seam set
-under the mesh's own mirror maps, then stack the mirrored uv islands after
-the unwrap."""
-
 import collections
 import math
 
@@ -10,15 +6,8 @@ from .islands import uv_topology
 from .mesh import face_edges, find, island_groups, pair, uv_island_groups
 
 
+# a dropped face with no route to a kept one could never mirror its seams back
 def half_faces(verts, faces, axes, mirrors):
-    """Face indices to delete so each mirrored face pair keeps one side.
-
-    axes are the axis indices the maps in mirrors reflect across. Per map,
-    a face whose image is another face drops when its center sits below
-    the image's on that axis, so exactly one of the pair stays.
-    A face with no whole image keeps both sides, so an asymmetric region
-    stays intact. A dropped face that cannot reach a kept face through the
-    maps is put back: its seams could never come back mirrored."""
     by_verts = {tuple(sorted(face)): fi for fi, face in enumerate(faces)}
 
     def image(face, m):
@@ -49,9 +38,8 @@ def half_faces(verts, faces, axes, mirrors):
     return dropped & reached
 
 
+# where the halves glue back together on the whole mesh
 def interface_edges(faces, dropped, edges):
-    """Edges between a kept face and a dropped one: where the halves glue
-    back together on the whole mesh."""
     return {
         key
         for key, owners in edges.items()
@@ -60,7 +48,6 @@ def interface_edges(faces, dropped, edges):
 
 
 def _interface_arcs(group, faces, edges, seams, interface):
-    """Connected runs of unseamed interface edges inside this island."""
     inside = set(group)
     keys = []
     for key, owners in edges.items():
@@ -86,15 +73,8 @@ def _arc_length(verts, arc):
     return total
 
 
+# glued along more than one interface arc the merge is a ring, not a disk
 def open_merged(verts, faces, edges, seams, interface):
-    """Seam set with every non-disk island opened into a disk.
-
-    A half chart glued to its mirror along one interface arc merges into a
-    disk and needs nothing. Glued along more, the merge is a ring, so its
-    arcs are cut back shortest first until the island is a disk, keeping
-    the longest glued. An interface arc is its own mirror image, so the
-    opening cut is symmetric. connect_loops is the fallback when no arc is
-    left, and an island neither can open ships as it is."""
     result = set(seams)
     queue = collections.deque(island_groups(faces, result, edges))
     while queue:
@@ -145,11 +125,8 @@ def open_merged(verts, faces, edges, seams, interface):
     return result
 
 
+# the maps may be partial, a seam outside their coverage stays as it is
 def mirror_seams(seams, mirrors, edges):
-    """Close seams under these vertex mirror maps, so every seam's mirror
-    image is a seam too. The maps may be partial, a seam outside their
-    coverage stays as it is. Only pairs present in edges are added, which
-    keeps a subset detection from marking edges outside its own faces."""
     result = set(seams)
     queue = list(result)
     while queue:
@@ -164,14 +141,8 @@ def mirror_seams(seams, mirrors, edges):
     return result
 
 
+# an island a map sends onto itself straddles the plane and stays put
 def stack_mirrored(faces, uvs, mirrors):
-    """Corner assignments that stack each set of mirrored islands: every
-    island in a mirror-connected group takes the uvs of the group's first
-    island, corner for corner through the composed mirror map, so the copies
-    overlap exactly and the pack keeps them together. An island a map sends
-    onto itself straddles the plane and stays put. Returns (target face,
-    target corner, source face, source corner) tuples: the caller copies raw
-    uv values so the stack survives 9-decimal matching."""
     groups = uv_island_groups(faces, uvs, face_edges(faces))
     group_of = {}
     for gi, group in enumerate(groups):
@@ -181,8 +152,8 @@ def stack_mirrored(faces, uvs, mirrors):
     for fi, face in enumerate(faces):
         by_verts[tuple(sorted(face))].append(fi)
 
+    # the one island m sends this island onto whole, or None
     def image(gi, m):
-        """The one island m sends this island onto whole, or None."""
         targets = set()
         for fi in groups[gi]:
             candidates = by_verts.get(tuple(sorted(m.get(v, -1) for v in faces[fi])))

@@ -1,9 +1,3 @@
-"""Feature seams by strip merging, the hard surface Seams mode.
-
-Modules in pipeline order: mesh, regions, sweeps, cuts, boundaries,
-islands, pipeline. uv_transfer and proxy_transfer read an unwrapped copy's
-uv map back onto a mesh."""
-
 from .boundaries import boundary_edges, flatten_teeth, reroute_boundaries
 from .cancel import Cancelled, check_cancelled
 from .cuts import (

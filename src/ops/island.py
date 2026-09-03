@@ -43,23 +43,17 @@ from ..utils.paths import (
     get_preferences,
 )
 
-# iterations for the pinned minimum stretch repairs. blender's default is 10,
-# 50 flattens the stubborn folds
+# blender's default is 10, 50 flattens the stubborn folds
 REPAIR_ITERATIONS = 50
 
-# a rectified island reverts when its solved area fell under this fraction of
-# the original, which is how a refused solve comes back
+# a rectified island reverts when its solved area fell under this fraction
 RECTIFY_COLLAPSE = 0.5
-# or when its scale-free Dirichlet rose more than this over the engine's map:
-# straightening costs a little stretch, a pinned solve that collapsed the
-# interior costs orders of magnitude more while keeping area and few flips
+# or when its scale-free Dirichlet rose more than this over the engine's map
 RECTIFY_DISTORTION = 1.0
 
 
+# bpy.ops pins uvs, which the engine's flatten mode has no channel for
 def unwrap(obj, only, iterations, method="MINIMUM_STRETCH"):
-    """Blender's pinned unwrap over just these faces. The area fixes stay on
-    bpy.ops because they pin uvs, which the engine's flatten mode has no
-    channel for."""
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
@@ -73,12 +67,8 @@ def unwrap(obj, only, iterations, method="MINIMUM_STRETCH"):
     bpy.ops.object.mode_set(mode="OBJECT")
 
 
+# with uv sync off the editor leaves stale uv flags on faces it isn't drawing
 def selected_faces(mesh):
-    """The faces picked in the uv editor.
-
-    With uv sync off the editor only draws faces that are selected in the 3d
-    view, and it leaves stale uv flags on the ones it isn't drawing, so a face
-    counts only when the mesh and the uv selection agree."""
     selected = {p.index for p in mesh.polygons if p.select}
     if bpy.context.scene.tool_settings.use_uv_select_sync:
         return selected
@@ -88,10 +78,8 @@ def selected_faces(mesh):
     return {fi for fi in selected if uv_select.data[fi].value}
 
 
+# a fix carries none of the material or vertex group state a full unwrap does
 def queue_fix(obj, job, name, path, vertex_count, props):
-    """Queue an exported patch on the manager with the job that puts the
-    engine's result back into obj. A fix carries none of the material or
-    vertex group state a full unwrap does, the input mesh keeps its own."""
     manager.input[job] = obj
     unwrap = Unwrap(
         name=name,
@@ -107,8 +95,6 @@ def queue_fix(obj, job, name, path, vertex_count, props):
 
 
 def target_islands(obj):
-    """Uv islands under the selected faces, each with its uv bounds and the uv
-    area it covers."""
     mesh = obj.data
     if not mesh.uv_layers.active:
         return None, "Mesh has no uv map"
@@ -131,8 +117,6 @@ def target_islands(obj):
 
 
 def queue_island(obj, group, bbox, area, k, input_path, props):
-    """Export one island as its own mesh and queue it on the manager with a
-    IslandUVs job that will put the result back in place."""
     mesh = obj.data
     used = sorted({v for fi in group for v in mesh.polygons[fi].vertices})
     local = {v: i for i, v in enumerate(used)}
@@ -175,7 +159,6 @@ def queue_island(obj, group, bbox, area, k, input_path, props):
 
 
 def edge_splits_uv(edge, uvl):
-    """True when the faces on this edge don't share its uvs."""
     uv_of = {}
     for loop in edge.link_loops:
         for corner in (loop, loop.link_loop_next):
@@ -186,7 +169,6 @@ def edge_splits_uv(edge, uvl):
 
 
 def folded_faces(bm, uvl):
-    """Faces with a uv triangle wound against the rest of the map."""
     total = 0.0
     fans = []
     for face in bm.faces:
@@ -200,13 +182,8 @@ def folded_faces(bm, uvl):
     return [face for face, areas in fans if any(a * orientation < 0 for a in areas)]
 
 
+# the uv discontinuities are marked as seams so the island's own cuts survive
 def repair_flipped_island(obj, temp):
-    """Clear flipped uv triangles from the exported island copy so the engine
-    keeps the map: pin everything but the flipped faces and two rings around
-    them, mark the uv discontinuities as seams so the island's own cuts
-    survive the unwrap, and run a pinned minimum stretch over the copy. Best
-    effort, a map still flipped after it fails at the engine with its own
-    error."""
     bm = new_bmesh(temp)
     uvl = bm.loops.layers.uv.active
 
@@ -237,9 +214,6 @@ MeshReads = collections.namedtuple("MeshReads", "coords faces edges uvs seams gr
 
 
 def read_mesh(mesh):
-    """What the post passes read from a mesh, read once and handed along:
-    vertex positions, per-face vertices and rounded uvs, edge owners, uv
-    seams and uv islands."""
     faces = face_vertices(mesh)
     uvs = face_uvs(mesh)
     edges = face_edges(faces)
@@ -248,10 +222,8 @@ def read_mesh(mesh):
     return MeshReads(vertex_positions(mesh), faces, edges, uvs, seams, groups)
 
 
+# returns the reads as they are after the moves
 def finish_preseed(obj, reads, ranges=None):
-    """Slice the long strips out of a preseeded engine output. The scan itself
-    is documented on split_moves. Returns the reads as they are after the
-    moves."""
     mesh = obj.data
     starts = loop_starts(mesh)
     moves, seams, groups = split_moves(
@@ -298,16 +270,8 @@ def _fan_triangle_has_area(coords, face, i):
     return cx * cx + cy * cy + cz * cz > 0.0
 
 
+# blender's unwrap reinitializes from scratch, a pinned solve can't unbend a curl
 def rectify_islands(obj, reads):
-    """Straighten near-rectangular islands. A strip whose corners the
-    boundary turning found gets every uv placed directly by its spine
-    coordinates, no solve: blender's unwrap reinitializes from scratch, so
-    a pinned solve cannot unbend a deep curl without folding. The rest pin
-    their boundary onto the fitted rectangle and re-solve the interior,
-    conformal first because the minimum stretch needs a flip free start
-    and the pinned rectangle rarely is one, then minimum stretch to
-    polish. An island the solve collapsed, blew up, or left overlapping
-    goes back untouched. reads is read_mesh of the object as it is now."""
     mesh = obj.data
     coords, faces, edges, uvs, seams, groups = reads
     plans = rectify_targets(uvs, groups)
@@ -317,9 +281,7 @@ def rectify_islands(obj, reads):
         flatten_distortion(coords, faces, uvs, group) for group, _, _ in plans
     ]
 
-    # the unwrap splits charts by seam marks, not by the uv map, so without
-    # this neighboring islands weld at their shared edges and pull against
-    # the pins
+    # the unwrap splits charts by seam marks, not by the uv map
     apply_seams(mesh, seams)
     bm = new_bmesh(obj)
     uvl = bm.loops.layers.uv.active
@@ -347,8 +309,7 @@ def rectify_islands(obj, reads):
         total = sum(signed_area(uvs[fi]) for fi in group)
         orientation = 1 if total >= 0 else -1
         area_before = abs(total)
-        # the distortion measure skips faces at or under this floor, so a
-        # crushed sliver passes every other gate
+        # the distortion measure skips faces at or under this floor
         floor = FLIP_NOISE * area_before
         area_after = 0.0
         crushed = False
@@ -408,11 +369,8 @@ def remove_temp(temp):
     bpy.data.meshes.remove(mesh)
 
 
+# the engine keeps the map, only the stretch moves
 def queue_nocut(obj, temp, group, bbox, area, k, input_path, props):
-    """Export the island copy with its uv map and queue a nocut run: the
-    engine keeps the map, so the seams come back unchanged and only the
-    stretch moves. A mirrored island reads as inverted to the engine, so it
-    exports with u negated and the job mirrors the result back."""
     layer = temp.data.uv_layers.active
     total = 0.0
     for poly in temp.data.polygons:
@@ -460,9 +418,8 @@ def queue_relax(obj, group, bbox, area, k, input_path, props):
     queue_nocut(obj, island_copy(obj, group), group, bbox, area, k, input_path, props)
 
 
+# 1 for a disk, one less per extra hole or handle
 def euler_characteristic(temp, cut_edges):
-    """Of the island copy cut open along these edge indices: 1 for a disk,
-    one less per extra hole or handle."""
     bm = new_bmesh(temp)
     bm.edges.ensure_lookup_table()
     bmesh.ops.split_edges(bm, edges=[bm.edges[i] for i in cut_edges])
@@ -471,10 +428,8 @@ def euler_characteristic(temp, cut_edges):
     return chi
 
 
+# the runs between two of the islands stay unmarked, which is what the unwrap welds
 def weld_shared_seams(temp, island_of, island_count):
-    """Mark every uv discontinuity in the union copy as a seam except the
-    runs between two of the islands, which the unwrap then welds. Returns an
-    error when welding adds a hole."""
     bm = new_bmesh(temp)
     uvl = bm.loops.layers.uv.active
     splits = []
@@ -499,9 +454,8 @@ def weld_shared_seams(temp, island_of, island_count):
     return None
 
 
+# shared mesh edges are the only places the engine can weld
 def islands_connected(mesh, targets):
-    """True when the islands form one connected set through shared mesh edges,
-    the only places the engine can weld."""
     parent = list(range(len(targets)))
 
     def find(i):
@@ -519,10 +473,8 @@ def islands_connected(mesh, targets):
     return len({find(i) for i in range(len(targets))}) == 1
 
 
+# a disconnected selection gives one area per connected piece
 def target_areas(obj, rings):
-    """Selected areas per island, grown by face rings inside the island, each
-    with the border verts that must stay pinned. A disconnected selection
-    gives one area per connected piece."""
     mesh = obj.data
     if not mesh.uv_layers.active:
         return None, 0, 0, "Mesh has no uv map"
@@ -596,11 +548,8 @@ def target_areas(obj, rings):
     return targets, whole, ring_skipped, None
 
 
+# pieces are joined by edges whose corner uvs agree on both faces
 def face_components(faces, uvs, edges, patch):
-    """The patch split into uv-connected pieces: joined by edges whose corner
-    uvs agree on both faces, so a piece never crosses a seam and a two-sided
-    selection becomes one area per side."""
-
     def corner_uv(f, v):
         return uvs[f][faces[f].index(v)]
 
@@ -628,9 +577,8 @@ def face_components(faces, uvs, edges, patch):
     return components
 
 
+# a ring selection strands these, and the engine can only keep a disk
 def enclosed_faces(faces, edges, group_set, patch):
-    """Island faces the patch encircles. A ring selection strands them, and
-    the engine can only keep a disk, so they must join the patch."""
     boundary = {
         e
         for e, owners in edges.items()
@@ -658,8 +606,7 @@ def enclosed_faces(faces, edges, group_set, patch):
         if not touches_boundary:
             stranded.append(component)
     if not boundary and stranded:
-        # a closed island has no boundary edges, so nothing can touch one:
-        # the largest piece is the outside, not a pocket
+        # a closed island has no boundary edges, the largest piece is the outside
         stranded.remove(max(stranded, key=len))
     enclosed = set()
     for component in stranded:
@@ -667,11 +614,8 @@ def enclosed_faces(faces, edges, group_set, patch):
     return enclosed
 
 
+# a twisted quad hides a flipped triangle behind a positive polygon area
 def has_flipped(mesh, patch, uv_of):
-    """Any patch face with a backwards or degenerate uv corner. Checked per
-    fan triangle: a twisted quad hides a flipped triangle behind a positive
-    polygon area. Nonconvex faces can read as flipped, which only costs an
-    unneeded repair pass."""
     for fi in patch:
         pts = [uv_of[v] for v in mesh.polygons[fi].vertices]
         for i in range(1, len(pts) - 1):
@@ -680,12 +624,8 @@ def has_flipped(mesh, patch, uv_of):
     return False
 
 
+# queue_area's export gives one uv per vert, so such a patch would weld the seam
 def spans_own_seam(mesh, patch):
-    """A patch vert carrying two different uvs: the island wraps around and
-    borders its own cut edge here. queue_area's export mirrors vt indices to
-    v indices, one uv per vert, so such a patch can't be represented and
-    would weld the seam's two sides. Rounded like face_uvs so float noise
-    doesn't count as a seam."""
     layer = mesh.uv_layers.active
     uv_of = {}
     for fi in patch:
@@ -698,11 +638,8 @@ def spans_own_seam(mesh, patch):
     return False
 
 
+# runs on the exported copy, so the visible map moves once
 def repair_flipped(obj, area_mesh, used, uv_of, border):
-    """Blender's minimum stretch unwrap over the exported copy of the patch
-    with the border pinned, turning a flipped area into a valid map the
-    engine can keep. The input mesh never changes, so the visible map moves
-    once, when the result lands. Updates uv_of in place."""
     temp = bpy.data.objects.new("uvgami_area", area_mesh)
     bpy.context.scene.collection.objects.link(temp)
 
@@ -717,8 +654,7 @@ def repair_flipped(obj, area_mesh, used, uv_of, border):
     bm.to_mesh(area_mesh)
     bm.free()
 
-    # keep the input mesh out of the edit session: multi-object edit would
-    # pull it in and the unwrap helper's deselect would clear its faces
+    # multi-object edit would pull the input mesh in and clear its faces
     obj.select_set(False)
     unwrap(temp, range(len(area_mesh.polygons)), REPAIR_ITERATIONS)
     obj.select_set(True)
@@ -730,13 +666,8 @@ def repair_flipped(obj, area_mesh, used, uv_of, border):
     bpy.data.objects.remove(temp, do_unlink=True)
 
 
+# inside one island every vert has one uv, so vt indices mirror v indices
 def queue_area(obj, patch, border, k, input_path, props, nocut):
-    """Export one patch with its uvs and pinned border and queue it on the
-    manager with an AreaUVs job that will put the result back in place.
-
-    The obj is written by hand: inside one island every vert has one uv, so
-    vt indices can mirror v indices exactly, which is what makes the pinned
-    indices in the _fixed sidecar and the engine's vertex indices line up."""
     mesh = obj.data
     layer = mesh.uv_layers.active
     used = sorted({v for fi in patch for v in mesh.polygons[fi].vertices})
@@ -752,9 +683,7 @@ def queue_area(obj, patch, border, k, input_path, props, nocut):
             if v in border:
                 pins.append((fi, c, uv))
 
-    # the patch's signed area is its border loop's winding, and a pinned
-    # solve can only fill the border's own orientation. a mirrored island
-    # winds backwards, so export it unmirrored and mirror the result back
+    # a pinned solve can only fill the border's own orientation
     total = 0.0
     for fi in patch:
         pts = [uv_of[v] for v in mesh.polygons[fi].vertices]
@@ -809,10 +738,8 @@ def queue_area(obj, patch, border, k, input_path, props, nocut):
     queue_fix(obj, AreaUVs(patch, pins, mirrored), name, path, vertex_count, props)
 
 
+# optcuts is the only engine that can pin a border or stitch islands
 def validate_engine(op):
-    """The engine for a fix run, or None with the error already reported.
-    Optcuts is the only engine that can pin a border or stitch islands, so
-    these operators ignore the engine chosen in the 3d panel."""
     engine = get_engine("OPTCUTS")
     if manager.is_active and manager.engine is not engine:
         op.report(
@@ -855,10 +782,8 @@ def queue_targets(engine, engine_ctx, obj, count, queue_one):
         manager.start(uv_editor=True)
 
 
+# registering a subclass of a registered operator unregisters the parent
 class FixOperator:
-    """Shared frame of the uv editor operators. A plain mixin: registering a
-    subclass of a registered operator unregisters the parent."""
-
     bl_options = {"UNDO"}
 
     @classmethod
@@ -947,8 +872,7 @@ class UVGAMI_OT_combine_islands(FixOperator, bpy.types.Operator):
         )
         area = sum(a for _, _, a in targets)
 
-        # blender unwraps the union with only the shared runs welded, so
-        # every other seam stays where it was
+        # blender unwraps the union with only the shared runs welded
         island_of = {fi: i for i, (g, _, _) in enumerate(targets) for fi in g}
         temp = island_copy(obj, group)
         error = weld_shared_seams(temp, [island_of[fi] for fi in group], len(targets))

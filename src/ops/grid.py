@@ -54,8 +54,7 @@ def add_grid(obj, grid_mat):
     if any(slot.material is grid_mat for slot in obj.material_slots):
         return
 
-    # appending and pointing every face at the new slot leaves the existing
-    # slots alone, where rebuilding them drops each one's object level material
+    # rebuilding the slots would drop each slot's object level material
     mesh = obj.data
     indices = [0] * len(mesh.polygons)
     mesh.polygons.foreach_get("material_index", indices)

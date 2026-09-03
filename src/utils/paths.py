@@ -34,9 +34,8 @@ def get_extension_dir_path():
     return pathlib.Path(bpy.utils.extension_path_user(get_root_package(), create=True))
 
 
+# engine binaries read argv in the ansi codepage
 def engine_file_stem(name):
-    """The engine binaries read argv in the ansi codepage, so a non-ascii
-    path arrives as question marks and never opens."""
     return "".join(c if c.isascii() else "_" for c in bpy.path.clean_name(name))
 
 
@@ -51,7 +50,6 @@ ENGINE_FILE_SUFFIXES = (
 
 
 def get_io_dir_paths():
-    """The engine input and output folders, created if missing."""
     input_path = get_extension_dir_path() / "input"
     output_path = get_extension_dir_path() / "output"
     input_path.mkdir(exist_ok=True)
@@ -60,8 +58,6 @@ def get_io_dir_paths():
 
 
 def clear_io_dir(path):
-    """Delete the engine files in path, leaving anything else alone. Never
-    recurses, and refuses a path outside the extension dir."""
     root = get_extension_dir_path()
     if not path.is_relative_to(root):
         raise ValueError(f"refusing to clear {path}, outside {root}")
@@ -70,9 +66,8 @@ def clear_io_dir(path):
             file.unlink()
 
 
+# the same tag names the engine-builds folder and the release asset
 def get_platform_tag():
-    """Platform name used for both the local engine folders and the engine
-    release asset names, or None on an unsupported platform."""
     system = platform.system()
     if system == "Windows":
         return "windows"
@@ -101,10 +96,8 @@ def _local_engine_dirs():
         yield get_dir_path() / "engine-builds" / tag
 
 
+# no engines ship with the addon, this only finds a dev build
 def get_local_engine_path(name):
-    """Path to an engine binary in UVGAMI_ENGINE_DIR or engine-builds/<platform>/, or
-    None. No engines ship with the addon, so this only finds a build made in a dev
-    checkout."""
     binary_name = get_engine_binary_name(name)
     for directory in _local_engine_dirs():
         engine_path = directory / binary_name

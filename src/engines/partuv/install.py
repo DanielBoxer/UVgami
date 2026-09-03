@@ -31,7 +31,6 @@ from .venv_commands import VENV_PYTHON, build_install_commands
 
 # must match engine/partuv/pyproject.toml
 PARTUV_VERSION = "0.1.4"
-# see OPTCUTS_MINIMUM_VERSION for when this has to go up
 PARTUV_MINIMUM_VERSION = "0.1.0"
 PARTUV_RELEASE_API = f"https://api.github.com/repos/DanielBoxer/UVgami/releases/tags/partuv-v{PARTUV_VERSION}"
 # the hugging face original moves with its main branch
@@ -51,7 +50,6 @@ UV_ARCHIVES = {
 # the panel calls this every redraw, cleared by invalidate_engine_caches
 @functools.cache
 def get_installed_partuv_version():
-    """Version of the wheel in the venv, read from its dist-info, or None."""
     venv = get_partuv_venv_path()
     if platform.system() == "Windows":
         site = venv / "Lib" / "site-packages"
@@ -69,7 +67,6 @@ def partuv_update_pending():
 
 
 def partuv_too_old():
-    """Whether the installed wheel is older than the addon can call."""
     version = parse_version(get_installed_partuv_version() or "")
     return version is not None and version < parse_version(PARTUV_MINIMUM_VERSION)
 
@@ -107,7 +104,6 @@ def _run(args):
 
 
 def ensure_uv():
-    """Download the standalone uv binary if it isn't already present."""
     uv = get_uv_path()
     if uv.is_file():
         return uv

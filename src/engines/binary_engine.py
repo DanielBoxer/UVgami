@@ -34,14 +34,10 @@ DOWNLOAD_PHASE = "Downloading engine"
 
 
 def engine_install_root(name):
-    """Where every downloaded version of one engine lives."""
     return get_extension_dir_path() / name
 
 
 class EngineRelease:
-    """An engine binary published as a <name>-v<version> GitHub release. The
-    addon ships no binaries, so this download is how the engine arrives."""
-
     def __init__(self, name, label, version, minimum_version, download_size):
         self.name = name
         self.label = label
@@ -51,19 +47,16 @@ class EngineRelease:
         self.install_op = f"uvgami.install_{name}"
 
     def install_dir(self):
-        # named by version, which is how installed_version reads it back
+        # named by version, installed_version reads it back
         return engine_install_root(self.name) / self.version
 
+    # a local build can be what actually runs while a download still sits there
     def is_downloaded(self):
-        """Whether any version of this engine was downloaded, which is what the
-        delete button clears. A local build or the engine path can be what
-        actually runs while a download still sits there."""
         root = engine_install_root(self.name)
         return root.is_dir() and any(d.is_dir() for d in root.iterdir())
 
+    # a dead download leaves the version folder without a binary
     def installed_version(self):
-        """The newest version whose binary is there, or None. A dead download
-        leaves the folder without one."""
         root = engine_install_root(self.name)
         if not root.is_dir():
             return None
@@ -88,11 +81,9 @@ class EngineRelease:
         return version is not None and parse_version(version) < parse_version(bound)
 
     def install_too_old(self):
-        """Whether the download is older than the addon can run."""
         return self.installed_below(self.minimum_version)
 
     def update_available(self):
-        """Whether the download still runs but a newer engine is pinned."""
         return self.installed_below(self.version)
 
     def install(self):
@@ -137,8 +128,6 @@ class EngineRelease:
 
 
 class UVGAMI_OT_delete_engine(InstallTask, bpy.types.Operator):
-    """Shared by every downloaded engine, so it takes the engine name."""
-
     bl_idname = "uvgami.delete_engine"
     bl_label = "Delete Engine"
     done_message = DELETED_MESSAGE
@@ -164,8 +153,6 @@ class UVGAMI_OT_delete_engine(InstallTask, bpy.types.Operator):
 
 
 class InstallEngineTask(InstallTask):
-    """Operator body for downloading one engine binary."""
-
     done_message = DOWNLOADED_MESSAGE
     release = None
 
@@ -194,12 +181,10 @@ class InstallEngineTask(InstallTask):
 
 
 class BinaryEngine(Engine):
-    """Engine that runs a binary downloaded from its own GitHub release."""
-
     release = None
 
     def validate(self, prefs):
-        # a local build wins over the download, for dev checkouts
+        # a local build wins over the download
         path = get_local_engine_path(self.release.name) or self.release.installed_path()
         if path is not None:
             return path, None

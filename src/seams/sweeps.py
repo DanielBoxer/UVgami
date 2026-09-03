@@ -1,13 +1,3 @@
-"""Rim cuts for swept shapes.
-
-On a smooth model a filleted rim reads smooth, so a cylinder wall
-merges over its end caps and the unwrap flattens the region as a
-polar map: near isometric, but the texture direction winds around the
-cap instead of following the axis. No distortion measure catches
-that, so the structure is read off the normals: against the right
-axis a swept region's faces are either wall or cap with little in
-between, while a bent tube fills the middle band."""
-
 import bisect
 import collections
 import math
@@ -16,62 +6,42 @@ from .islands import SPLIT_ASPECT
 from .mesh import build, cross, face_keys, find, norm
 from .regions import CREASE_ANGLE, partition
 
-# a region splits at its rims when the 30-60 degree middle band holds under
-# BAND of its area and caps hold at least CAP_MIN: a bent tube fills the
-# band, a swept one does not (a measured elbow reads 0.31, a screwdriver
-# handle 0.07)
+# a measured elbow fills 0.31 of the middle band, a screwdriver handle 0.07
 SWEEP_BAND = 0.1
 SWEEP_CAP_MIN = 0.02
-# only regions holding this share of the model get rim cuts: cutting every
-# screw and pin explodes the chart count
+# cutting every screw and pin explodes the chart count
 SWEEP_MIN_SHARE = 0.01
-# and enough faces that the normal fit means something
+# an axis fit over fewer faces than this is noise
 SWEEP_MIN_FACES = 8
-# the wall must actually turn around the axis: its normals' resultant length
-# over its mass, 1 on a plate, 0 on a full wall, 0.7 asks for a half turn
+# the normals' resultant over the mass, 1 on a plate, 0.7 asks for a half turn
 WALL_ROUND = 0.7
-# two touching walls sweeping the same axis need no rim between them: a
-# grooved ring's bands unroll together
+# two walls sweeping the same axis need no rim, a grooved ring unrolls together
 SHARED_AXIS_COS = 0.95
-# profile ridge cuts: a wall's cross-section reads as a mass histogram of
-# normal direction around the axis, where a flat side spikes and a round or
-# evenly faceted profile stays near uniform (wrench handle peaks 7.6x,
-# screwdriver grip 2.2x)
+# a flat side spikes the normal-direction histogram, a round profile stays flat
 PROFILE_BINS = 60
 PROFILE_PEAK = 3.0
 PROFILE_FLAT = 2.0
-# a corner arc must hold real surface to take a cut: a coarse round tube
-# also spikes, but the space between its facet spikes is empty, a rounded
-# ridge spreads mass across its arc
+# a coarse round tube spikes too, but between its facet spikes is empty
 PROFILE_CORNER = 0.02
-# and the flat sides it separates must face different ways: a multi-bump
-# shell whose flats sit a few degrees apart is one panel
+# the flat sides must face different ways, a multi-bump shell is one panel
 PROFILE_TURN = 45
 # how finely a wall with a handle through it is trimmed back along its axis
-# while searching for the cut that leaves a flattenable surface
 GENUS_TRIM_LEVELS = 24
 # wall/cap boundary and the band edges, as squared sines of the tilt
 CAP_SPLIT = 0.5  # 45 degrees
 BAND_LO = 0.25  # 30 degrees
 BAND_HI = 0.75  # 60 degrees
 SWEEP_FIT_ROUNDS = 10
-# faces a run seed probes before the patch around it is shed, since no part of
-# a trumpet flare fits a straight run. counted in faces, not growth rings,
-# because a spiral-strip triangulation grows one face a ring
+# in faces, not growth rings, a spiral-strip triangulation grows one face a ring
 RUN_SEED_FACES = 512
-# position-based straightness: the run's centroid variance off its main
-# direction over the variance along it. 0.2 admits a straight tube about
-# four diameters long, a sphere zone reads near 1 and can never pass
+# 0.2 admits a straight tube about four diameters long
 RUN_SLENDER = 0.2
-# growth rings behind a run cut searched for a concave boundary to snap
-# to: the groove between hose ribs, where an artist hides the cut
+# growth rings searched behind a run cut for a concave boundary to snap to
 VALLEY_SNAP_LAYERS = 6
 
 
+# the cross of the two most independent rows of the shifted matrix
 def min_eigenvector(xx, yy, zz, xy, xz, yz):
-    """Unit eigenvector for the smallest eigenvalue of a symmetric 3x3
-    matrix: trigonometric eigenvalue, then the cross of the two most
-    independent rows of the shifted matrix."""
     p1 = xy * xy + xz * xz + yz * yz
     if p1 == 0:
         lam = min(xx, yy, zz)
@@ -102,8 +72,8 @@ def min_eigenvector(xx, yy, zz, xy, xz, yz):
     return tuple(x / best_norm for x in best)
 
 
+# largest first
 def eigenvalues3(xx, yy, zz, xy, xz, yz):
-    """Eigenvalues of a symmetric 3x3 matrix, largest first."""
     p1 = xy * xy + xz * xz + yz * yz
     if p1 == 0:
         return tuple(sorted((xx, yy, zz), reverse=True))
@@ -124,13 +94,8 @@ def eigenvalues3(xx, yy, zz, xy, xz, yz):
     return high, 3 * q - high - low, low
 
 
+# refitting with cap normals repelled pulls the axis perpendicular to the walls
 def sweep_axis(normals):
-    """Axis against which the normals, a list of (area, unit normal), split
-    into wall and cap. Alternates: classify each normal against the axis,
-    then refit with cap normals repelled, pulling the axis toward
-    perpendicularity with the walls only.
-    """
-
     def fit(entries):
         m = [0.0] * 6
         for w, n in entries:
@@ -156,10 +121,8 @@ def sweep_axis(normals):
     return axis
 
 
+# membership is read with find
 def class_components(group, is_cap, edges, areas):
-    """Connected components of same-class faces over the group's edges.
-    Returns the parent map, the cross-class contact counts and per-component
-    areas, membership read with find."""
     in_group = set(group)
     parent = {i: i for i in group}
     contact = collections.Counter()
@@ -181,13 +144,8 @@ def class_components(group, is_cap, edges, areas):
     return parent, contact, comp_area
 
 
+# a sliver's two boundary seams run a single face apart with no crease
 def merge_slivers(wall, parent, contact, comp_area, edges):
-    """Merge every panel too narrow to hold an interior face into whichever
-    neighbour it touches most. Such a strip's two boundary seams run a single
-    face apart with no crease between them, a pair an artist never cuts: the
-    sloped wall of a shallow indent reads as its own panel this way. A face
-    on the mesh's own open border is not exposed, that border is no seam
-    this pass placed, so a one-face-tall open tube still panels."""
     in_wall = set(wall)
     while len(comp_area) > 1:
         exposed = set()
@@ -220,9 +178,8 @@ def merge_slivers(wall, parent, contact, comp_area, edges):
         comp_area[into] += comp_area.pop(sliver)
 
 
+# a rim seam is not worth a speck
 def merge_specks(parent, contact, comp_area, floor):
-    """Merge every component smaller than floor into whichever neighbour it
-    touches most: a rim seam is not worth a speck."""
     while True:
         speck = min(comp_area, key=comp_area.get)
         if comp_area[speck] >= floor or len(comp_area) < 2:
@@ -239,11 +196,8 @@ def merge_specks(parent, contact, comp_area, floor):
         comp_area[into] += comp_area.pop(speck)
 
 
+# entries is {face: (area, normal)}
 def normal_fit(entries):
-    """The normal-based run judge: a run passes the same wall test a whole
-    cluster takes, empty middle band and a wrapping wall, and gets the
-    fitted sweep axis. entries is {face: (area, unit normal)}."""
-
     def fit(run):
         picked = [entries[i] for i in run if i in entries]
         if len(picked) < SWEEP_MIN_FACES:
@@ -268,8 +222,7 @@ def normal_fit(entries):
                 wall_mass += w
                 for k in range(3):
                     wall_sum[k] += w * n[k]
-        # an end run carries the tube tip, so caps split out instead of
-        # counting against the band, but a run may not be mostly cap
+        # an end run carries the tube tip, but a run may not be mostly cap
         if band > SWEEP_BAND * total or total - wall_mass > total / 2:
             return None
         if not wall_mass or norm(wall_sum) / wall_mass > WALL_ROUND:
@@ -279,13 +232,8 @@ def normal_fit(entries):
     return fit
 
 
+# a corrugated hose reads straight where the normal test sees a bend at each rib
 def slender_fit(verts, faces, areas, entries):
-    """A run judge from face positions: a straight tube's centroids hug a
-    line whatever its profile, so a corrugated hose reads straight where
-    the normal test sees a bend at every rib. A run passes while its
-    centroid mass off the main direction stays under RUN_SLENDER of the
-    mass along it, and its normals must cancel out, or a thin crescent of
-    a sphere would read as a tube."""
     centers = {}
 
     def center(i):
@@ -334,12 +282,8 @@ def slender_fit(verts, faces, areas, entries):
     return fit
 
 
+# moves the cut to the deepest valley, the groove between ribs on a hose
 def valley_snap(verts, faces, edges, entries):
-    """A run-cut snapper: score the growth boundaries just behind the cut
-    by signed concave turn and move the cut to the deepest valley. On a
-    corrugated hose that is the groove between ribs, where an artist
-    hides the cut, instead of across a rib in the open."""
-
     def centroid(i):
         face = faces[i]
         return [sum(verts[v][k] for v in face) / len(face) for k in range(3)]
@@ -380,15 +324,8 @@ def valley_snap(verts, faces, edges, entries):
     return snap
 
 
+# the walk runs after absorb and nothing width-checks its leftovers
 def merge_shed(group, relabel, label, verts, faces, edges, areas, min_width):
-    """Fold narrow shed patches into whatever they touch most.
-
-    A piece the run walk probes and drops keeps the group's own label, so a
-    few dropped faces ship as a tiny island: the walk runs after absorb and
-    nothing width-checks its leftovers. A run beside the piece is preferred,
-    a neighbouring region takes it when no run touches it. A wide shed
-    piece, a trumpet flare say, really cannot flatten with any run and
-    stays engine territory."""
     if not min_width:
         return
     in_group = set(group)
@@ -421,6 +358,7 @@ def merge_shed(group, relabel, label, verts, faces, edges, areas, min_width):
             relabel[i] = into
 
 
+# end caps kept give a polar map no distortion measure catches
 def split_sweeps(
     verts,
     faces,
@@ -432,21 +370,6 @@ def split_sweeps(
     model_area=None,
     face_ids=None,
 ):
-    """Split swept regions into wall and cap parts, seaming their rims.
-
-    See SWEEP_BAND: this stops a cylinder-like region from keeping its end
-    caps and unwrapping as a polar map. A region whose normals sort cleanly
-    into wall and cap is relabeled by connected component of that split, a
-    component too small for a real cap merges back. A region with real
-    middle-band mass is a bent tube: it relabels into straight runs, one
-    region each, so a coiled cable unrolls as short straight strips instead
-    of one curled snake. Organic blobs pass neither test and are left
-    alone. This is where a coarse bent tube gets its runs: its cross-section
-    turns past CREASE_ANGLE, so sweep_rims never sees it whole, but the
-    merges rebuild it into one region by the time this pass runs.
-    model_area and face_ids are the whole mesh's when faces is one loose
-    part of it, see straight_runs.
-    """
     members = collections.defaultdict(list)
     for i, r in label.items():
         members[r].append(i)
@@ -474,9 +397,7 @@ def split_sweeps(
             if axial[i] >= CAP_SPLIT:
                 cap += w
         if band > SWEEP_BAND * total:
-            # either test accepts a run: normals catch a fat smooth tube,
-            # positions catch a corrugated hose the normal test reads as bent
-            # at every rib. no cap split, rib shoulders tilt like caps
+            # normals catch a fat smooth tube, positions catch a corrugated hose
             entries = {i: (w, n) for i, w, n in normals}
             by_normals = normal_fit(entries)
             by_positions = slender_fit(verts, faces, areas, entries)
@@ -513,7 +434,6 @@ def split_sweeps(
 
 
 def component_faces(subset, edges):
-    """Connected components of these faces across shared edges."""
     in_set = set(subset)
     parent = {i: i for i in subset}
     for owners in edges.values():
@@ -527,10 +447,8 @@ def component_faces(subset, edges):
     return list(groups.values())
 
 
+# above 0 a handle runs through the surface and no cut disk_cuts places opens it
 def surface_genus(subset, faces, edges):
-    """Genus of these faces as one open surface. 0 flattens, extra boundary
-    loops just take connecting cuts, but above 0 a handle runs through the
-    surface and no cut disk_cuts can place opens it."""
     in_set = set(subset)
     used = set()
     keys = set()
@@ -552,15 +470,8 @@ def surface_genus(subset, faces, edges):
     return (2 - loops - euler) // 2
 
 
+# a handle through a wall makes a surface no flatten can open
 def trim_genus(wall, verts, faces, edges, areas, axis):
-    """The wall faces minus whatever it takes to make every piece flattenable.
-
-    A handle through a wall (the hanging loop on a wrench handle) makes a
-    surface no flatten can open, and shipping it ruins the whole strip: the
-    engine rejects the island and improvises over all of it. So peel the
-    wall back along its axis until no handle remains, and leave the peeled
-    end to the engine like any unclaimed area. A component that cannot be
-    saved by giving up half its area is dropped whole."""
     kept = set()
     for comp in component_faces(wall, edges):
         if surface_genus(comp, faces, edges) <= 0:
@@ -590,10 +501,8 @@ def trim_genus(wall, verts, faces, edges, areas, axis):
     return kept
 
 
+# a hoop unrolls into a strip past the slicer bound and rims would shred it
 def wall_hoops(wall, axis, verts, faces, edges):
-    """Whether the wall is a hoop: it would unroll into a strip past the
-    slicer bound, and rims would shred it into thin loops. Also the guard
-    that keeps a sphere from reading as a stack of thin latitude runs."""
     boundary = 0.0
     for i in wall:
         for key in face_keys(faces[i]):
@@ -608,9 +517,8 @@ def wall_hoops(wall, axis, verts, faces, edges):
     return boundary > 0 and (extent <= 0 or boundary / 2 > SPLIT_ASPECT * extent)
 
 
+# the group's wall faces after the cap split, the genus trim and the hoop check
 def claim_wall(group, axial, axis, total, verts, faces, edges, areas):
-    """The group's wall faces after the cap split, the genus trim and the
-    hoop check, empty when nothing worth claiming is left."""
     is_cap = {i: axial.get(i, 0.0) >= CAP_SPLIT for i in group}
     parent, contact, comp_area = class_components(group, is_cap, edges, areas)
     cls = {find(parent, i): is_cap[i] for i in group}
@@ -624,8 +532,8 @@ def claim_wall(group, axial, axis, total, verts, faces, edges, areas):
     return wall
 
 
+# reachable faces grouped by steps taken from the seed
 def spread_rings(adjacency, seed, allowed):
-    """Reachable faces grouped by steps taken from the seed."""
     layers = [[seed]]
     seen = {seed}
     while True:
@@ -640,12 +548,8 @@ def spread_rings(adjacency, seed, allowed):
         layers.append(grown)
 
 
+# narrow panels are what let rectify straighten a bowed shell
 def profile_panels(wall, axis, entries, edges, areas):
-    """Face -> lengthwise panel of a wall whose profile has flat sides, None
-    when it reads round or faceted. One cut lands in each corner arc between
-    flat sides, at its emptiest bin: the soft ridge an artist cuts along.
-    Narrow panels are what let rectify straighten a bowed shell, one wide
-    strip flattens into a banana it reverts on."""
     u = None
     for candidate in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)):
         c = cross(axis, candidate)
@@ -716,23 +620,8 @@ def profile_panels(wall, axis, entries, edges, areas):
     return {i: find(parent, i) for i in wall}
 
 
+# a coiled cable fails the whole-cluster test though every short piece is a tube
 def straight_runs(group, entries, edges, fit_of=None, snap=None, face_ids=None):
-    """Contiguous pieces of a bent swept cluster, each straight enough to
-    pass the wall test against its own axis, with that axis.
-
-    A coiled cable fails the whole-cluster test even though every short
-    piece of it is a clean tube. So pieces grow outward from an extremity
-    and close where the accumulated turn breaks the test, cutting the
-    tube into runs. Probe sizes double then bisect to the break, so a
-    cluster with nothing straight in it costs a few failed fits, not one
-    per growth step. fit_of overrides the normal-based test with another
-    judge of a piece: it gets the faces, returns the axis or None. snap
-    gets (flat, ends, cut) and may move the cut a few growth rings back
-    to a better boundary, a valley say, returning the new cut. face_ids
-    maps each face to its id in the whole mesh when group is part of a
-    loose part run alone: a run grows from wherever the pick set iterates
-    first, and an int set iterates by the ids in it and the order they
-    went in, so the whole mesh's ids give the whole run's starts."""
     in_group = set(group)
     adjacency = collections.defaultdict(list)
     for owners in edges.values():
@@ -815,21 +704,8 @@ def ids_of(faces, face_ids):
     return faces if face_ids is None else [face_ids[i] for i in faces]
 
 
+# absorb never checks how far a boundary turns, so this reads before any merge
 def sweep_rims(verts, faces, model_area=None, face_ids=None, built=None):
-    """Rim seams for swept shapes, read before any merge pass.
-
-    absorb never checks how far a boundary turns, so a coarse cylinder's
-    narrow wall columns dissolve into its caps and no later pass can undo
-    that. So find the wall first: faces cluster across smooth edges only,
-    and a cluster whose normals curl around an axis with an empty middle
-    band is a swept wall. Faces tilted into the axis split off as caps, so
-    a closed tube end becomes its own island and the rim follows the tilt
-    contour instead of the ragged cluster border. A cluster too bent for
-    one axis splits into straight runs, each rimmed apart from the next.
-    Returns the rim edges as vertex pairs, to be forced so no merge
-    crosses them, plus the wall faces themselves. model_area and face_ids
-    are the whole mesh's when faces is one loose part of it, see
-    straight_runs. built is build(verts, faces) when the caller has it."""
     weighted, areas, edges = built or build(verts, faces)
     root = partition(faces, weighted, edges, CREASE_ANGLE)
     groups = collections.defaultdict(list)
@@ -890,9 +766,7 @@ def sweep_rims(verts, faces, model_area=None, face_ids=None, built=None):
                 band += w
             for k in range(3):
                 resultant[k] += w * n[k]
-        # tilted mass means a bent tube, a cone too steep, or a sock with a
-        # large cap smoothly attached. only the bent tube fills the middle
-        # band, and its straight runs are still worth claiming
+        # of those only a bent tube fills the middle band
         if off_wall > SWEEP_BAND * total or norm(resultant) / total > WALL_ROUND:
             if band > SWEEP_BAND * total:
                 entries = {i: (w, n) for i, w, n in normals}
@@ -925,8 +799,7 @@ def sweep_rims(verts, faces, model_area=None, face_ids=None, built=None):
         if in_a != in_b:
             rims.add(key)
         elif in_a and wall_run[a] != wall_run[b]:
-            # runs of one bent tube always part: that cut is what made
-            # them straight
+            # runs of one bent tube always part, that cut is what made them straight
             if wall_cluster[a] == wall_cluster[b]:
                 rims.add(key)
             else:

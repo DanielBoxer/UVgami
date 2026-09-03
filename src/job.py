@@ -55,8 +55,6 @@ TransferReport = namedtuple(
 
 
 class Result(Enum):
-    """The results a finished mesh can report."""
-
     FINISHED = "finished"
     INVALID = "invalid"
     CANCELLED = "cancelled"
@@ -64,7 +62,6 @@ class Result(Enum):
 
 
 def world_positions(obj):
-    """Vertex positions in world space, read in bulk."""
     mesh = obj.data
     flat = numpy.empty(len(mesh.vertices) * 3)
     mesh.vertices.foreach_get("co", flat)
@@ -72,9 +69,8 @@ def world_positions(obj):
     return flat.reshape(-1, 3) @ matrix[:3, :3].T + matrix[:3, 3]
 
 
+# in the plain form transfer_exact takes
 def output_mesh_data(output):
-    """World positions, polygons and per-face loop uvs of an engine output
-    object, in the plain form transfer_exact takes."""
     output_data = output.data
     output_uv = output_data.uv_layers.active
 
@@ -91,11 +87,9 @@ def output_mesh_data(output):
 
 
 class Preserve:
+    # welding the uv layout's coincident corners leaves seams as the only boundary
     @staticmethod
     def _seam_edges(bm):
-        """The mesh edges that carry a uv seam, found by rebuilding the uv
-        layout as its own mesh: welding its coincident corners leaves the
-        seams as the only boundary edges."""
         uvs = []
         uv_idcs = []
         mesh_verts = []
@@ -107,8 +101,7 @@ class Preserve:
             for loop in face.loops:
                 uv = loop[uv_layer].uv
                 uvs.append((uv.x, uv.y, 0))
-                # every face point is added, so the index is new each time.
-                # remove_doubles merges them below
+                # every face point is added, so the index is new each time
                 uv_i.append(uv_count)
                 uv_count += 1
                 mesh_verts.append(loop.vert)
@@ -179,15 +172,13 @@ class Join:
     _last_id = 0
 
     def __init__(self, expected):
-        # panel buttons carry this instead of a member's stem, which goes stale
-        # as soon as that piece settles
+        # a member's stem goes stale as soon as that piece settles
         Join._last_id += 1
         self.job_id = Join._last_id
         self.expected = expected
         # every piece in creation order, settled or not, for the queue ui
         self.members = []
-        # finished unwraps in creation order, the merge concatenates in this
-        # order and completion order would follow engine timing
+        # the merge concatenates in creation order, not completion order
         self.finished = []
         self.reported = 0
         # a whole-group cancel drops the finished pieces instead of joining them
@@ -240,13 +231,9 @@ class HideInput:
             input_mesh.hide_set(True)
 
 
+# the read is bpy-free and runs on a worker thread
 class Transfer:
-    """Reads the output's uv map onto the input mesh and deletes the output.
-    The read is bpy-free and runs on a worker thread, poll() writes the
-    result once it is done, so the input is untouched until then."""
-
-    # whether the manager should repack the input mesh in place of the
-    # deleted output at session end
+    # the manager repacks the input in place of the deleted output
     repack_input = True
     allows_missing_pieces = True
     # a copy of the input the result went onto, in place of the output
@@ -261,9 +248,8 @@ class Transfer:
         self.loop_count = 0
         self.settled = False
 
+    # None means poll() finishes it, a report means it failed before starting
     def start(self, input_mesh, output):
-        """Extract the meshes and start the worker. None means poll()
-        finishes it, a report means it failed before starting."""
         if not check_exists(input_mesh) or not check_exists(output):
             return TransferReport(False, 0, "input or output object missing")
         if output.data.uv_layers.active is None:
@@ -276,8 +262,8 @@ class Transfer:
         self.task = BackgroundTask(lambda cancelled: self._compute(inputs, cancelled))
         return None
 
+    # None while the worker runs, the final report once it is done
     def poll(self):
-        """None while the worker runs, the final report once it is done."""
         if not self.task.done():
             return None
         result = self.task.result()
@@ -295,9 +281,8 @@ class Transfer:
         self._show()
         return TransferReport(True, split_count, "")
 
+    # the output only makes sense with its uvs applied, so it goes too
     def cancel(self):
-        """Stop a running worker, for a cancel, a stop or a file load. The
-        output only makes sense with its uvs applied, so it goes too."""
         self.settled = True
         self.task.cancel()
         self._discard()
@@ -312,24 +297,22 @@ class Transfer:
         return TransferReport(False, 0, detail, reason)
 
     def _target(self, input_mesh):
-        """The object the uvs are written onto."""
         return input_mesh
 
+    # (detail, reason) when the read came back with nothing to apply
     def _failure(self, result):
-        """(detail, reason) when the read came back with nothing to apply."""
         return None
 
+    # drops what start() made besides the worker
     def _discard(self):
-        """Drop what start() made besides the worker."""
+        pass
 
     def _show(self):
         self.input_mesh.hide_set(False)
 
 
+# the output has the input's own vertices, its unwrap triangulated
 class TransferUVs(Transfer):
-    """Read an output that has the input's own vertices, its unwrap
-    triangulated, back onto it by position."""
-
     def _extract(self, target, output):
         return (world_positions(target), face_vertices(target.data)) + output_mesh_data(
             output
@@ -363,9 +346,8 @@ class TransferUVs(Transfer):
         data.update()
         return 0
 
+    # like _apply, but rebuilds the faces a uv cut runs through
     def _apply_with_splits(self, input_mesh, plan):
-        """Same as _apply, but rebuilds the faces a uv cut runs through. Goes
-        through bmesh because changing topology needs it."""
         bm = new_bmesh(input_mesh)
         uv_layer = bm.loops.layers.uv.verify()
 
@@ -407,8 +389,8 @@ class TransferUVs(Transfer):
         set_bmesh(bm, input_mesh)
 
 
+# the edges with one of these faces on each side, as (low, high) pairs
 def _interior_edges(data, faces):
-    """The edges with one of these faces on each side, as (low, high) pairs."""
     owner_count = {}
     for fi in faces:
         poly = data.polygons[fi].vertices
@@ -420,11 +402,8 @@ def _interior_edges(data, faces):
     return {key for key, count in owner_count.items() if count == 2}
 
 
+# rides TransferUVs' position matching, fed only the island's faces
 class IslandUVs(TransferUVs):
-    """Put an engine re-unwrap of one island back into the input mesh, scaled
-    to the uv area it used to cover so the rest of the atlas stays put. Rides
-    TransferUVs' position matching, fed only the island's faces."""
-
     repack_input = False
     allows_missing_pieces = False
 
@@ -438,9 +417,8 @@ class IslandUVs(TransferUVs):
         self.loop_base = {}
         self.loop_counts = []
 
+    # a mirrored island was exported with u negated
     def _unmirror(self, plan):
-        """A mirrored island reads as inverted to the engine, so it was
-        exported with u negated, mirror the result back before placing it."""
         if not self.mirrored:
             return
         for k in plan.loop_uvs:
@@ -472,10 +450,8 @@ class IslandUVs(TransferUVs):
 
         return (positions, polygons) + output_mesh_data(output)
 
+    # the loops a split face came from are dead
     def _fit(self, plan):
-        """Scale the engine's layout back to the island's old uv area, centered
-        on its old spot. The faces a cut split are read from their new parts,
-        the loops they came from are dead."""
         self._unmirror(plan)
         polygons = []
         for i, count in enumerate(self.loop_counts):
@@ -502,8 +478,7 @@ class IslandUVs(TransferUVs):
             for a, b in plan.seam_edges
         }
 
-        # only edges interior to the island get the plan's seams, the island
-        # boundary and the rest of the mesh keep their marks
+        # the island boundary and the rest of the mesh keep their marks
         interior = _interior_edges(data, self.faces)
 
         split_faces = {self.faces[fi]: parts for fi, parts in plan.split_faces.items()}
@@ -521,9 +496,8 @@ class IslandUVs(TransferUVs):
         data.update()
         return 0
 
+    # like _apply, but rebuilds the island faces a uv cut runs through
     def _apply_island_splits(self, input_mesh, plan, split_faces, seams, interior):
-        """Same as _apply, but rebuilds the island faces a uv cut runs
-        through, like TransferUVs._apply_with_splits."""
         bm = new_bmesh(input_mesh)
         uv_layer = bm.loops.layers.uv.verify()
         bm.faces.ensure_lookup_table()
@@ -563,14 +537,8 @@ class IslandUVs(TransferUVs):
         set_bmesh(bm, input_mesh)
 
 
+# the engine held the patch border in place, the pins undo its normalization
 class AreaUVs(IslandUVs):
-    """Put an engine fix of part of an island back into the input mesh. The
-    engine held the patch border in place, so instead of a bbox fit the
-    output is aligned by undoing its normalization through those pinned
-    loops, and they snap back to their exact old uvs so the patch rejoins
-    the island seamlessly. A patch from a mirrored island was exported with
-    u negated, so its result mirrors back before the fit."""
-
     def __init__(self, faces, pins, mirrored):
         super().__init__(faces, None, None, mirrored)
         self.pins = pins  # (face index, corner, old uv)
@@ -585,8 +553,7 @@ class AreaUVs(IslandUVs):
         if len(pairs) < 2:
             return
 
-        # the output is the solved map scaled into the unit box, recover the
-        # uniform scale and offset from the two most distant pins
+        # the output is the solved map scaled into the unit box
         lo = min(pairs, key=lambda p: p[0][0])
         hi = max(pairs, key=lambda p: p[0][0])
         if hi[1][0] == lo[1][0]:
@@ -614,10 +581,8 @@ class AreaUVs(IslandUVs):
                 plan.loop_uvs[k] = old
 
 
+# the original was never unwrapped itself, so it is cut where the map is torn
 class ProxyUVs(Transfer):
-    """Read the unwrapped proxy's uv map onto the original, which was never
-    unwrapped itself, cutting it where the map is torn."""
-
     # a missing piece is a hole in the proxy map
     allows_missing_pieces = False
 
@@ -639,10 +604,8 @@ class ProxyUVs(Transfer):
         return 0
 
 
+# the map goes onto a triangulated duplicate that stands in for the deleted output
 class ProxyCopyUVs(ProxyUVs):
-    """Proxy with transfer off: the map goes onto a triangulated duplicate of
-    the original, which stands in for the deleted output."""
-
     repack_input = False
 
     def _target(self, input_mesh):
@@ -666,11 +629,8 @@ class ProxyCopyUVs(ProxyUVs):
             bpy.data.objects.remove(self.target, do_unlink=True)
 
 
+# the island is read at full density to take the proxy's cuts
 class ProxyIslandUVs(ProxyUVs):
-    """Put a proxy re-unwrap of one island back into the input mesh, scaled to
-    the uv area it used to cover like IslandUVs. The island is read at full
-    density to take the proxy's cuts."""
-
     repack_input = False
 
     def __init__(self, faces, bbox, area):
@@ -702,19 +662,16 @@ class ProxyIslandUVs(ProxyUVs):
         seams = {
             ((ov[a], ov[b]) if ov[a] < ov[b] else (ov[b], ov[a])) for a, b in seams
         }
-        # only interior edges take the new seams, the island boundary and the
-        # rest of the mesh keep their marks
+        # the island boundary and the rest of the mesh keep their marks
         apply_interior_seams(data, _interior_edges(data, self.faces), seams)
         data.update()
         return 0
 
 
-# the engine round trips positions through 9 decimal obj text, so an output
-# vertex sits within float noise of its whole copy twin, far under this
+# the engine round trips positions through 9 decimal obj text
 OUTPUT_MATCH_CELL = 1e-5
 
-# each pass costs a flatten, and what survives a few is what splitting
-# cannot fix
+# each pass costs a flatten
 REBUILD_SPLIT_PASSES = 3
 
 
@@ -725,13 +682,11 @@ class Symmetrise:
         self.z = "Z" in axes
         self.center = center
         self.overlap = overlap
-        # set when the preseed mirrored the seams instead, so the mesh goes
-        # out whole and finish has no half to rebuild
+        # the preseed mirrored the seams and the mesh went out whole
         self.kept_whole = False
         # per-axis vertex maps from mirror_matches, set by the caller
         self.mirrors = None
-        # the untouched whole mesh and the faces deleted from the engine
-        # copy, set by prepare_half
+        # the untouched whole mesh and the faces deleted from the engine copy
         self.whole = None
         self.dropped = None
 
@@ -741,16 +696,8 @@ class Symmetrise:
     def cut(self, obj):
         cut_on_axes(obj, self.center, self.axis_names())
 
+    # an engine cut down a diagonal needs that diagonal's mirror to be a mesh edge
     def prepare_half(self, obj):
-        """Keep a whole copy aside and delete each mirrored face pair's
-        negative side from obj, so the engine unwraps one half and rebuild
-        maps its cuts back onto the whole mesh.
-
-        Triangulates first, because the whole copy's edges must match the
-        output's for every transferred seam to land on a real edge. The
-        kept side triangulates freely and each dropped quad splits along
-        its twin's diagonal mirrored: an engine cut down a diagonal needs
-        that diagonal's mirror image to be a mesh edge."""
         if self.mirrors is None:
             return
         mesh = obj.data
@@ -791,9 +738,7 @@ class Symmetrise:
 
         whole = obj.copy()
         whole.data = mesh.copy()
-        # apply_transforms baked the transform into the data, but the stored
-        # matrix_world only clears on a depsgraph update, which an unlinked
-        # copy never gets
+        # an unlinked copy never gets the depsgraph update that clears matrix_world
         whole.parent = None
         whole.matrix_world = mathutils.Matrix()
         verts = vertex_positions(mesh)
@@ -812,10 +757,8 @@ class Symmetrise:
         )
         set_bmesh(bm, obj)
 
+    # None while the twin is still unsplit
     def _twin_diagonal(self, bm, quad):
-        """Which of the quad's two diagonals mirrors the split its twin
-        already has, as a vertex index pair, or None while the twin is
-        still unsplit."""
         for m in self.mirrors:
             if any(v not in m for v in quad):
                 continue
@@ -824,11 +767,8 @@ class Symmetrise:
                     return a, b
         return None
 
+    # on a failed flatten the whole copy ships with its preseed uvs
     def rebuild(self, output, origin):
-        """The whole mesh flattened with the half output's seams mirrored
-        onto it, replacing the half output object. On a failed flatten the
-        whole copy ships with its preseed uvs instead, so the mesh is never
-        missing its deleted half."""
         whole, self.whole = self.whole, None
         if whole is None or not check_exists(whole):
             return output
@@ -836,8 +776,7 @@ class Symmetrise:
         verts = vertex_positions(mesh)
         faces = face_vertices(mesh)
         edges = face_edges(faces)
-        # the preseed marks are already mirrored and the engine only adds
-        # cuts, so they union in safely and cover a piece that failed
+        # the preseed marks are already mirrored and the engine only adds cuts
         seams = marked_seams(mesh)
         seams |= self._transferred_seams(output, verts, edges)
         seams = mirror_seams(seams, self.mirrors, edges)
@@ -847,8 +786,7 @@ class Symmetrise:
         try:
             engine = flatten_engine()
             uvs = engine.flatten(verts, faces, seams)
-            # the cuts finish_preseed would make, run here so the closure
-            # keeps them mirrored. repeated, a reflatten can ruin a new one
+            # run here so the closure keeps the new cuts mirrored
             for _ in range(REBUILD_SPLIT_PASSES):
                 extra = split_islands(verts, faces, seams, uvs, edges=edges)
                 if not extra:
@@ -871,9 +809,8 @@ class Symmetrise:
         set_origin(whole, origin)
         return whole
 
+    # vertices matched to the whole copy's by position
     def _transferred_seams(self, output, verts, edges):
-        """The half output's uv cuts as whole mesh edges, its vertices
-        matched to the whole copy's by position."""
         out_faces = face_vertices(output.data)
         torn = uv_tears(out_faces, face_uvs(output.data))
         if not torn:
@@ -899,9 +836,8 @@ class Symmetrise:
                 result.add(key)
         return result
 
+    # so the pack keeps a mirrored pair together like any other stack
     def snap_overlap(self, output):
-        """Stack each mirrored island pair exactly, so the pack keeps the
-        pair together like any other stack."""
         mesh = output.data
         if mesh.uv_layers.active is None:
             return

@@ -8,10 +8,8 @@ from ..utils.mesh import mark_not_unwrapped
 from ..utils.ui import tag_redraw
 
 
+# pieces leave manager.active between the draw and the click
 def group_targets(job_id):
-    """Every unwrap still running for one join job. Keyed by job id, not by a
-    member's stem: pieces settle and leave manager.active between the draw and
-    the click, so the stem the button was drawn with may already be gone."""
     return [
         u
         for u in manager.active
@@ -19,9 +17,8 @@ def group_targets(job_id):
     ]
 
 
+# resolved at execute time, so a stale click on a settled piece does nothing
 def piece_target(stem):
-    """Resolved at execute time, so a stale click on a settled piece does
-    nothing."""
     return [u for u in manager.active if u.path.stem == stem]
 
 
@@ -50,19 +47,16 @@ class UVGAMI_OT_stop(bpy.types.Operator):
         to_cancel = []
         for unwrap in unwraps:
             if unwrap.is_solving and manager.engine.supports_early_stop:
-                # the flag re-sends the request each tick and arms the
-                # manager's STOP_SECONDS force kill
+                # the flag re-sends each tick and arms the STOP_SECONDS force kill
                 unwrap.is_stopped = True
                 delivered = manager.engine.request_early_stop(unwrap.process)
                 # a process that exited since the last tick finishes on its own
                 if not delivered and unwrap.process.poll() is None:
                     self.report({"ERROR"}, "Could not stop unwrap")
             elif not unwrap.is_running:
-                # queued or never reached by its process: stopping would give
-                # a map with no work in it, so drop it as not unwrapped
+                # stopping a queued mesh would give a map with no work in it
                 to_cancel.append(unwrap)
-            # a solving mesh on an engine without early stop, and one already
-            # finishing, both settle on their own
+            # a mesh with no early stop settles on its own
 
         self._cancel_collected(context, to_cancel)
         if to_cancel:
@@ -75,8 +69,7 @@ class UVGAMI_OT_stop(bpy.types.Operator):
         return {"FINISHED"}
 
     def _cancel_collected(self, context, to_cancel):
-        # pieces of one separated mesh share a join_job, so merge them into
-        # one import instead of adding an object per piece
+        # pieces of one separated mesh share a join_job
         groups = {}
         singles = []
         for unwrap in to_cancel:
@@ -134,15 +127,13 @@ class UVGAMI_OT_cancel(bpy.types.Operator):
     def execute(self, context):
         unwraps = group_targets(self.job_id) if self.job_id else piece_target(self.stem)
         if self.job_id:
-            # the user dropped the whole mesh, so the already finished pieces
-            # get discarded instead of joined when the group settles
+            # the already finished pieces get discarded instead of joined
             for unwrap in unwraps:
                 if unwrap.join_job is not None:
                     unwrap.join_job.discard = True
 
         for unwrap in unwraps:
-            # an individual cancel from a group goes to the collection, so the
-            # joined result visibly misses a piece
+            # the joined result visibly misses a piece
             is_individual_from_group = (
                 not self.job_id
                 and unwrap.join_job is not None

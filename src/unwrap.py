@@ -46,16 +46,14 @@ class Unwrap:
         self.symmetrize_job = jobs[3]
         self.transfer_uvs_job = jobs[4]
 
-        # a duplicate piece skips the engine and takes copy_of's output moved
-        # by copy_matrix. a reordered copy's indices don't line up with that
-        # output, so it exports copy_of's metadata instead
+        # a duplicate skips the engine and takes copy_of's output moved by copy_matrix
         self.copy_of = None
         self.copy_matrix = None
+        # a reordered copy's indices don't line up with that output
         self.copy_reordered = False
         self.twins = []
 
-        # snapshot: the edge file was written for this mode, so a later change
-        # must not reach the untriangulate pass
+        # the edge file was written for this mode
         self.maintain_mode = maintain_mode
 
         # result state, set once through manager.record_result
@@ -99,6 +97,7 @@ class Unwrap:
         self._stderr_thread = None
         self._output_thread = None
 
+    # the defaults cover a fix export, which carries no mesh metadata
     def set_export_data(
         self,
         *,
@@ -113,7 +112,6 @@ class Unwrap:
         face_smooth=(),
         shading_modifiers=(),
     ):
-        """The defaults cover a fix export, which carries no mesh metadata."""
         self.guide_path = guide_path
         self.edge_path = edge_path
         self.origin = mathutils.Vector(origin)
@@ -152,45 +150,39 @@ class Unwrap:
         self.is_active = True
         self.started_at = time.monotonic()
 
+    # run inside a shared batch process instead of spawning our own
     def join_batch(self, batch_process):
-        """Run inside a shared batch process instead of spawning our own."""
         self.batch_process = batch_process
         self.process = batch_process.process
         self.is_active = True
 
+    # detach from a dead batch process so this mesh can be re-queued into a fresh one
     def leave_batch(self):
-        """Detach from a dead batch process so this mesh can be re-queued into
-        a fresh batch. Mirrors join_batch."""
         self.batch_process = None
         self.process = None
         self.is_active = False
 
+    # None while running, 0 on success, or a failure code
     def poll_engine(self):
-        """None while running, 0 on success, or a failure code."""
         if self.batch_process is None:
             return self.process.poll()
-        # the engine reports when it reaches each mesh, which starts the
-        # timeout clock
+        # the engine reports when it reaches each mesh
         if self.started_at is None and self.path.stem in self.batch_process.started:
             self.started_at = time.monotonic()
         return self.batch_process.poll_result(self.path.stem)
 
+    # for a batch member this kills the whole batch process
     def stop_process(self):
-        """Hard stop: for a batch member this kills the whole batch process."""
         if self.process is not None and self.process.poll() is None:
             manager.engine.stop(self.process, manager.engine_ctx)
 
+    # the process stays alive for the rest of the queue
     def cancel_solve(self):
-        """Ask a batch process to abandon this mesh, so teardown doesn't wait
-        out a cancelled solve. The process stays alive for the rest of the
-        queue."""
         if self.batch_process is not None and self.is_solving:
             manager.engine.request_cancel(self.process)
 
+    # deleting the input file in cleanup is what makes the cli skip this mesh
     def release_engine(self):
-        """This unwrap no longer needs the engine. A batch process is left
-        running for the other meshes, and deleting the input file in cleanup()
-        is what makes the cli skip this mesh."""
         if self.batch_process is not None:
             return
         self.stop_process()
@@ -211,7 +203,6 @@ class Unwrap:
         self.process.wait()
 
     def get_stderr_tail(self):
-        """Last stderr lines from this unwrap's process, batch or solo."""
         if self.batch_process is not None:
             return self.batch_process.stderr_lines()
         if self._stderr_thread is not None:
@@ -224,7 +215,6 @@ class Unwrap:
             parser.feed(line)
 
     def update_progress(self):
-        """Read progress from the stdout reader thread."""
         if len(self.progress_data) > 0:
             # only the newest queued line matters
             progress = self.progress_data.pop()
@@ -238,43 +228,39 @@ class Unwrap:
                 self.progress = parsed
                 self.progress_changed_at = time.monotonic()
 
+    # a batch process takes the whole queue when it spawns
     @property
     def is_running(self):
-        """Whether the engine is on this mesh now. A batch process takes the
-        whole queue when it spawns, so is_active alone would show them all."""
         if self.batch_process is None:
             return self.is_active
         return self.is_active and self.path.stem in self.batch_process.started
 
+    # a stdin stop reaches this mesh, not the process's next one
     @property
     def is_solving(self):
-        """The engine is on this mesh with no result out yet, so a stdin stop
-        or cancel reaches this mesh and not a process's next one."""
         if not self.is_running:
             return False
         if self.batch_process is None:
             return self.process.poll() is None
         return self.batch_process.poll_result(self.path.stem) is None
 
+    # progress frozen for minutes. False on engines that never report it
     @property
     def is_stalled(self):
-        """Progress frozen for minutes. False on engines that never report it."""
         return (
             self.is_active
             and self.progress_changed_at is not None
             and time.monotonic() - self.progress_changed_at > PROGRESS_STALL_SECONDS
         )
 
+    # reporting, so stopping keeps a uv map instead of dropping the piece
     @property
     def is_stoppable(self):
-        """Reporting, so stopping keeps a uv map instead of dropping the piece."""
         return self.is_running and self.has_reported
 
+    # an all-high-distortion report is the 0 0 1 the progress numbers start at
     @property
     def is_viewable(self):
-        """Running and reporting, so the engine has uvs to snapshot. The
-        progress numbers can't say it, an all-high-distortion report is the
-        0 0 1 this starts at."""
         return self.is_active and self.has_reported
 
     def update_viewer(self):
@@ -288,7 +274,6 @@ class Unwrap:
                 tag_redraw(("WINDOW",))
 
     def cleanup(self):
-        """Clean up input files."""
         try:
             if self.path.is_file():
                 self.path.unlink()

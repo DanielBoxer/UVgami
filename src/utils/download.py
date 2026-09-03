@@ -4,8 +4,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# github releases honor Range, so a dropped transfer resumes from the .part
-# file instead of restarting from zero (the ai checkpoint is over a gigabyte)
+# github releases honor Range, so a dropped download resumes
 _CHUNK = 1 << 20
 _ATTEMPTS = 4
 _BACKOFF = 2.0
@@ -24,10 +23,6 @@ def _worth_retrying(error):
 
 
 def with_retries(url, call, attempts=_ATTEMPTS, backoff=_BACKOFF):
-    """Run call until it returns, waiting longer after each failure.
-
-    url is only for the error message.
-    """
     error = None
     tried = 0
     while tried < attempts:
@@ -47,14 +42,6 @@ def with_retries(url, call, attempts=_ATTEMPTS, backoff=_BACKOFF):
 def download_file(
     url, dest, attempts=_ATTEMPTS, timeout=30, backoff=_BACKOFF, progress=None
 ):
-    """Download url to dest, resuming a partial .part across retries.
-
-    streams into <dest>.part and atomically replaces dest on success. each
-    retry resumes with a Range request when bytes are already on disk; a 200
-    reply to that range restarts the file from scratch. progress, if given, is
-    called as progress(done_bytes, total_bytes_or_None) with done_bytes counting
-    from the start of the file, including any resumed offset.
-    """
     dest = Path(dest)
     part = dest.with_name(dest.name + ".part")
 
@@ -62,7 +49,7 @@ def download_file(
         try:
             _fetch(url, part, timeout, progress)
         except urllib.error.HTTPError as error:
-            # a full-size .part yields an unsatisfiable range, drop it to refetch
+            # a full-size .part yields an unsatisfiable range
             if error.code == 416:
                 part.unlink(missing_ok=True)
             raise
@@ -79,7 +66,7 @@ def _fetch(url, part, timeout, progress=None):
     with urllib.request.urlopen(request, timeout=timeout) as response:
         resumed = response.status == 206
         if not resumed:
-            # server ignored the range (or none was sent), start the file over
+            # server ignored the range, or none was sent
             resume_from = 0
         length = response.headers.get("Content-Length")
         expected = resume_from + int(length) if length is not None else None

@@ -1,40 +1,23 @@
-"""Boundary targets that straighten near-rectangular islands.
-
-The solve itself stays in the addon: the caller pins these targets and runs
-a pinned unwrap over the island interior. Everything walks uv points, not
-mesh vertices: an island bordering its own cut carries two uvs on each cut
-vertex and the slit is part of the boundary."""
-
 import bisect
 import itertools
 import math
 
 from .mesh import signed_area
 
-# uv area over fitted rectangle area an island needs to rectify. a circle
-# fills 0.785 of its square, so blobs stay under the gate
+# a circle fills 0.785 of its square, so blobs stay under the gate
 RECTANGLE_SHARE = 0.8
-# boundary length squared over circle length squared at equal area. strips
-# measure 3 and up, blobs 1 to 2.5, so this admits the wavy and curled
-# strips the share gate misses
+# boundary length squared over circle length squared, strips measure 3 and up
 STRIP_ELONGATION = 3.0
-# corner picking by boundary turning: a corner concentrates about 90
-# degrees inside a window this share of the perimeter, a bend spreads its
-# turn thin and never reaches the floor. the window must stay under a
-# slender strip's short side or one end's corners crowd each other out
+# a corner concentrates about 90 degrees inside this share of the perimeter
 CORNER_WINDOW = 0.02
 CORNER_TURN = 45
-# opposite sides of a real strip match in arc length, and the rectangle
-# the corners cut must hold about the island's own area. picks that break
-# either caught a tooth or a jag, not a corner
+# opposite sides of a real strip match, and the rectangle holds its area
 CORNER_SIDE_RATIO = 2.0
 CORNER_FIT_AREA = 1.6
-# corner windows tried against the fit, so a jagged edge full of sharp
-# turns cannot crowd out a strip's real end corners
+# a jagged edge full of sharp turns must not crowd out the real end corners
 CORNER_CANDIDATES = 12
 SPINE_SAMPLES = 64
 # rings around a flipped face that move to the neighbor average, and the cap
-# on repeats
 RELAX_RING = 2
 RELAX_ROUNDS = 200
 
@@ -43,18 +26,12 @@ def island_area(group, uvs):
     return abs(sum(signed_area(uvs[fi]) for fi in group))
 
 
-# uv areas under this fraction of the island count as degenerate in the
-# distortion measure: a boundary triangle pinned collinear reads as flipped
-# at float noise, a real flip is orders of magnitude bigger
+# a boundary triangle pinned collinear reads as flipped at float noise
 FLIP_NOISE = 1e-6
 
 
+# scale-free symmetric Dirichlet, 4.0 at isometry
 def flatten_distortion(verts, faces, uvs, group, uv_areas=None):
-    """Scale-free symmetric Dirichlet of the island's map, 4.0 at isometry.
-    A face flipped against the island's own orientation, above noise scale,
-    is infinity: the map is broken there, not just stretched. A mirrored
-    island measures like its source, orientation is the island's majority.
-    uv_areas are the per-face signed uv areas, when the caller has them."""
     if uv_areas is None:
         signed_total = sum(signed_area(uvs[fi]) for fi in group)
     else:
@@ -110,10 +87,8 @@ def flatten_distortion(verts, faces, uvs, group, uv_areas=None):
     return 2 * math.sqrt(grow * shrink) / total
 
 
+# uv points, not mesh vertices: a cut vertex carries two uvs
 def _boundary_loop(group, uvs):
-    """The island's single boundary loop as uv points in walk order. None
-    when the boundary splits into several loops (holes) or pinches through
-    a point."""
     counts = {}
     for fi in group:
         face = uvs[fi]
@@ -147,9 +122,8 @@ def _boundary_loop(group, uvs):
     return loop
 
 
+# cyclic, one entry per point of the segment including both ends
 def _arc_lengths(points, start, stop):
-    """Cumulative distance along points from index start to index stop,
-    cyclic, one entry per point of the segment including both ends."""
     lengths = [0.0]
     i = start
     while i != stop:
@@ -159,13 +133,8 @@ def _arc_lengths(points, start, stop):
     return lengths
 
 
+# a curled strip's outer bulge sits closer to the box corner than its real end
 def _turning_corners(points, area):
-    """Four boundary indices where turning concentrates, in loop order, None
-    when four clear corners do not stand out. Nearest-to-box picking twists
-    a curled strip, its outer bulge sits closer to the box corner than the
-    strip's real end does, so corners are read from the boundary itself: a
-    corner keeps its turn sharp, a bend spreads it, and a tooth's zigzag
-    cancels inside the window."""
     n = len(points)
     if n < 4:
         return None
@@ -214,9 +183,7 @@ def _turning_corners(points, area):
     if len(candidates) < 4:
         return None
 
-    # take the four candidates that partition the loop into a rectangle
-    # fitting the island, matching area and opposite sides. picking the
-    # sharpest four instead lets a jagged seam edge outscore a real corner
+    # picking the sharpest four lets a jagged seam edge outscore a real corner
     best, best_fit = None, math.inf
     for combo in itertools.combinations(sorted(candidates), 4):
         arcs = [
@@ -244,13 +211,8 @@ def _turning_corners(points, area):
     return best
 
 
+# the strip unbends but keeps its own width profile
 def _spine_targets(rotated, picks, sides, width, queries):
-    """Straightened positions for uv points of a strip: each keeps its
-    fraction along the strip's spine and its signed offset across it, so the
-    strip unbends but keeps its own width profile. A direct placement
-    because blender's unwrap reinitializes from scratch, so a pinned solve
-    cannot unbend a deep curl without folding, however the pins are
-    staged."""
     n = len(rotated)
 
     def along(side, lengths, fraction):
@@ -360,8 +322,7 @@ def _rectangle_targets(loop, area, interior=None):
     picks = _turning_corners(points, area)
     sides = sides_for(picks)
     if sides is not None and sides[0][-1] + sides[2][-1] < sides[1][-1] + sides[3][-1]:
-        # the longer side pair maps onto the rectangle's width along the
-        # fitted axis, so the island does not land turned a quarter over
+        # the longer side pair maps onto the rectangle's width along the fitted axis
         picks = picks[1:] + picks[:1]
         sides = sides[1:] + sides[:1]
     turned = sides is not None
@@ -386,8 +347,7 @@ def _rectangle_targets(loop, area, interior=None):
         sides = sides_for(picks)
         if sides is None:
             return None
-    # side lengths come from the boundary, not the box. a strip that still
-    # curls unrolls to its real length, which the box undershoots
+    # a strip that still curls unrolls to its real length, which the box undershoots
     width = (sides[0][-1] + sides[2][-1]) / 2
     height = (sides[1][-1] + sides[3][-1]) / 2
     rectangle = [
@@ -404,8 +364,7 @@ def _rectangle_targets(loop, area, interior=None):
         )
 
     if turned and interior:
-        # the boundary shares the spine mapping: arc length instead forces a
-        # constant width, stretching a tapered strip past the distortion gate
+        # arc length would force a constant width, stretching a tapered strip
         rotated_interior = [
             (
                 (q[0] - mean_x) * cos_a + (q[1] - mean_y) * sin_a,
@@ -433,12 +392,8 @@ def _rectangle_targets(loop, area, interior=None):
     return targets, None
 
 
+# the spine projection can jump between samples where the strip wiggles
 def _relax_flips(group, uvs, targets, inner):
-    """Untangle the triangles a direct placement flipped, moving their uv
-    points and a ring around them onto the average of their neighbors. The
-    spine projection can jump between samples where the strip wiggles, and one
-    flipped sliver would revert the whole island at the distortion gate.
-    Updates targets and inner in place."""
     position = dict(targets)
     position.update(inner)
     neighbors = {}
@@ -465,8 +420,7 @@ def _relax_flips(group, uvs, targets, inner):
     total = sum(signed_area(placed(fi)) for fi in group)
     orientation = 1.0 if total >= 0 else -1.0
     floor = FLIP_NOISE * abs(total)
-    # only a face touching a moved uv can change. iterating group, not the
-    # candidate set, keeps the order fixed
+    # only a face touching a moved uv can change
     candidates = set(group)
     for _ in range(RELAX_ROUNDS):
         flipped = [fi for fi in group if fi in candidates and flipped_face(fi)]
@@ -489,13 +443,8 @@ def _relax_flips(group, uvs, targets, inner):
             targets[uv] = p
 
 
+# without four turning corners the interior is None, for the pinned unwrap
 def rectify_targets(uvs, groups):
-    """Per qualifying island, the faces, the boundary targets, and the
-    interior positions. Corners found by boundary turning make a strip: every
-    uv is placed directly by its spine coordinates, so no solve is needed.
-    Without four turning corners the boundary maps onto the fitted rectangle
-    by arc length (corners nearest the bounding box) and the interior is None,
-    for the pinned unwrap."""
     plans = []
     for group in groups:
         loop = _boundary_loop(group, uvs)

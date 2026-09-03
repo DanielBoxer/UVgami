@@ -22,29 +22,24 @@ def loop_totals(mesh):
 
 
 def face_vertices(mesh):
-    """Per-face vertex index lists, read in bulk."""
     corners = numpy.empty(len(mesh.loops), dtype=numpy.int64)
     mesh.loops.foreach_get("vertex_index", corners)
     return split_per_face(corners.tolist(), loop_totals(mesh))
 
 
 def vertex_positions(mesh):
-    """Vertex positions in the mesh's own space, read in bulk."""
     flat = numpy.empty(len(mesh.vertices) * 3)
     mesh.vertices.foreach_get("co", flat)
     return flat.reshape(-1, 3).tolist()
 
 
 def loop_starts(mesh):
-    """Each face's first loop index, read in bulk."""
     starts = numpy.empty(len(mesh.polygons), dtype=numpy.int64)
     mesh.polygons.foreach_get("loop_start", starts)
     return starts
 
 
 def loop_uvs(mesh):
-    """The active layer's uvs, one loop per row, written back with
-    set_loop_uvs."""
     flat = numpy.empty(len(mesh.loops) * 2)
     mesh.uv_layers.active.data.foreach_get("uv", flat)
     return flat.reshape(-1, 2)
@@ -55,38 +50,28 @@ def set_loop_uvs(mesh, coords):
 
 
 def corner_uvs(mesh):
-    """Per-face loop uvs from the active layer, in face vertex order, read in
-    bulk."""
     corners = [tuple(uv) for uv in loop_uvs(mesh).tolist()]
     return split_per_face(corners, loop_totals(mesh))
 
 
+# float noise between loops of one vert would read as a seam
 def face_uvs(mesh):
-    """corner_uvs rounded, so float noise between loops of one vert doesn't
-    read as a seam. Rounded in python: numpy rounds by scaling and lands a ulp
-    off on some values, which would split an island this kept together."""
     return [[(round(u, 6), round(v, 6)) for u, v in face] for face in corner_uvs(mesh)]
 
 
+# BEAUTY alone can give two quads the same diagonal, leaving an edge with 4 faces
 def triangulate(bm, mesh):
-    """Triangulate for engine input. bm has to be fresh from mesh, the quad
-    scan reads mesh and splits by face index. BEAUTY alone can give two quads
-    the same diagonal (Suzanne's mouth fold), leaving an edge with 4 faces that
-    the engines reject as non-manifold, so split conflicting quads safely
-    first."""
     _split_conflicting_quads(bm, mesh)
     bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="BEAUTY")
 
 
+# one integer per edge, the same for both directions
 def _edge_keys(tail, head, vertex_count):
-    """One integer per edge, the same for both directions."""
     return numpy.minimum(tail, head) * vertex_count + numpy.maximum(tail, head)
 
 
+# conflicting: the diagonal is already an edge or another quad's diagonal
 def _conflicting_quads(mesh):
-    """(face index, diagonal keys, diagonal is a mesh edge) for each quad with
-    a diagonal that is an existing edge or another quad's diagonal. Every
-    other quad is safe for BEAUTY as is."""
     totals = numpy.empty(len(mesh.polygons), dtype=numpy.int64)
     mesh.polygons.foreach_get("loop_total", totals)
     quads = numpy.flatnonzero(totals == 4)
@@ -146,7 +131,7 @@ def _split_conflicting_quads(bm, mesh):
         edge_of = dict(zip(keys, edge_flags))
 
         def conflicts(key):
-            # a split face drops to 3 verts, so resolved partners don't count
+            # a split face drops to 3 verts
             return (
                 edge_of[key]
                 or key in split_keys
@@ -191,9 +176,8 @@ def check_collection(name, parent):
 NOT_UNWRAPPED_COLLECTION = "UVgami Not Unwrapped"
 
 
+# reason goes first in the name, the outliner cuts long names short
 def mark_not_unwrapped(obj, reason, name=None):
-    """Hide obj in the Not Unwrapped collection named reason first, the
-    outliner cuts long names short."""
     collection = check_collection(
         NOT_UNWRAPPED_COLLECTION, bpy.context.scene.collection
     )
@@ -246,9 +230,8 @@ def set_active_any():
 
 
 @contextlib.contextmanager
+# a hidden object is left out of objects_in_mode even after mode_set succeeds
 def _shown(objects):
-    """A hidden object is left out of objects_in_mode even after mode_set
-    succeeds, so the uv operators return CANCELLED without a message."""
     view_layer = bpy.context.view_layer
     targets = set(objects)
     restore = []
@@ -287,8 +270,7 @@ def edit_restore(input, func, *args, **kwargs):
     old_selection = bpy.context.selected_objects
     old_active = bpy.context.view_layer.objects.active
 
-    # a hidden active object (e.g. one just moved to the not unwrapped
-    # collection) fails the mode_set poll the same as no active object
+    # a hidden active object fails the mode_set poll the same as no active object
     if old_active is None or not old_active.visible_get():
         old_active = set_active_any()
 
@@ -317,8 +299,6 @@ def edit_restore(input, func, *args, **kwargs):
 
 
 def in_object_mode(target, func, *args):
-    """Run func with target in object mode, which mesh reads and writes
-    need."""
     if target.mode == "OBJECT":
         return func(*args)
     old_active = bpy.context.view_layer.objects.active
@@ -348,8 +328,8 @@ def _is_auto_smooth(modifier):
     return modifier.type == "NODES" and AUTO_SMOOTH_MODIFIER_NAME in modifier.name
 
 
+# Smooth by Angle and Weighted Normal only change normals
 def is_shading_modifier(modifier):
-    """Smooth by Angle and Weighted Normal only change normals."""
     return _is_auto_smooth(modifier) or modifier.type == "WEIGHTED_NORMAL"
 
 

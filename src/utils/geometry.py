@@ -31,9 +31,7 @@ def apply_transforms(obj):
     obj.matrix_basis = mathutils.Matrix()
 
 
-# verts this close to the plane, relative to object size, count as on it:
-# bisecting just past a near-plane vert shaves off needle faces, which the
-# engine later sheds as single face uv islands
+# bisecting just past a near-plane vert leaves needle faces
 PLANE_SNAP = 0.0001
 
 

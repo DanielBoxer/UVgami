@@ -5,8 +5,6 @@ from ..utils.mesh import deselect_all
 
 
 def _decimated_copy(obj, target_faces):
-    """A copy of obj decimated to target_faces, or None when it already has
-    fewer."""
     copy_object = obj.copy()
     copy_object.data = obj.data.copy()
     copy_object.animation_data_clear()

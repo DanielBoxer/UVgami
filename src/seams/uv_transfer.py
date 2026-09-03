@@ -5,11 +5,8 @@ import numpy as np
 
 from .proxy_transfer import uv_tears
 
-# planner is bpy-free: it turns plain mesh data into a complete uv transfer plan
-# or a structured failure. loops are numbered consecutively in polygon order,
-# matching blender's poly.loop_start layout.
 
-
+# loops are numbered consecutively in polygon order, matching poly.loop_start
 @dataclass
 class TransferPlan:
     loop_uvs: dict  # input loop index -> (u, v), for faces kept whole
@@ -32,7 +29,7 @@ class TransferFailure:
 
 
 def _default_tol(positions):
-    # the engine writes 7 significant digits, so error grows with distance from origin
+    # the engine writes 7 significant digits
     if len(positions) == 0:
         return 1e-5
     return max(float(np.abs(positions).max()) * 2e-6, 1e-5)
@@ -69,8 +66,8 @@ def _query_grid(grid, inv, positions, p, tol2):
     return found
 
 
+# in the input face's own winding order
 def _order_part(local, assign, uvs):
-    """Put a piece of a split face in the input face's own winding order."""
     order = sorted(range(len(assign)), key=lambda c: local[assign[c]])
     return [assign[c] for c in order], [uvs[c] for c in order]
 
@@ -85,9 +82,8 @@ def _uv_area(uvs):
     return area / 2
 
 
+# counterclockwise, None when the part has no area
 def _flatten_part(assign, positions):
-    """The part's corners flattened in its own plane as complex numbers,
-    counterclockwise, or None when it has no area."""
     rel = positions[assign] - positions[assign[0]]
     normal = np.zeros(3)
     for i in range(1, len(rel) - 1):
@@ -102,10 +98,8 @@ def _flatten_part(assign, positions):
     return [complex(float(r @ axis_u), float(r @ axis_v)) for r in rel]
 
 
+# the conjugate term carries the shear and mirroring a similarity can't
 def _uv_map_of(flat, uvs):
-    """The map z -> p*z + q*conj(z) + r taking a part's flattened corners onto
-    its uvs, as (p, q, r). The conjugate term carries the shear and mirroring
-    a similarity can't."""
     d1, d2 = flat[1] - flat[0], flat[2] - flat[0]
     u0, u1, u2 = (complex(*uv) for uv in uvs[:3])
     e1, e2 = u1 - u0, u2 - u0
@@ -117,13 +111,8 @@ def _uv_map_of(flat, uvs):
     return p, q, u0 - p * flat[0] - q * flat[0].conjugate()
 
 
+# the pieces unfold about their shared edges into the largest piece's plane
 def _weld_parts(parts, positions):
-    """Glue the pieces of a face a uv cut runs through back into one patch.
-    The pieces unfold about their shared edges into the largest piece's plane
-    and the whole patch is drawn by that piece's uv map, so the face comes out
-    at one density instead of either chart's scale. Returns (input vertex ->
-    uv, anchor part index), or None when it can't glue and the caller should
-    split instead."""
     anchor = max(range(len(parts)), key=lambda i: abs(_uv_area(parts[i][1])))
     anchor_assign, anchor_uvs = parts[anchor]
     anchor_flat = _flatten_part(anchor_assign, positions)
@@ -154,8 +143,7 @@ def _weld_parts(parts, positions):
             za, zb = flat[assign.index(a)], flat[assign.index(b)]
             if za == zb:
                 return None
-            # both frames hold the true 3d shape wound the same way, so this
-            # comes out a rotation and the piece hinges onto the placed edge
+            # both frames hold the true 3d shape wound the same way
             s = (placed[a] - placed[b]) / (za - zb)
             t = placed[a] - s * za
 
@@ -194,9 +182,6 @@ def _do_overlap(a, b, c, d):
 
 
 class _OutputLayout:
-    """The output uv layout indexed for the weld overlap check: face edges by
-    corner on a uniform grid, plus the island each output face belongs to."""
-
     def __init__(self, output_polygons, output_uvs):
         self.parent = list(range(len(output_polygons)))
         corner_face = {}
@@ -241,10 +226,8 @@ class _OutputLayout:
         return found
 
 
+# the pack pulls the other islands clear anyway
 def _weld_overlaps(parts, part_out_faces, anchor, welded_uvs, layout, repack):
-    """True when a welded piece lands on uv space another face already uses.
-    With a pack to come only the piece's own island counts, since the pack
-    pulls the other islands clear anyway."""
     own = set(part_out_faces)
     island = layout.find(part_out_faces[anchor])
 
@@ -278,6 +261,7 @@ def _weld_overlaps(parts, part_out_faces, anchor, welded_uvs, layout, repack):
 SEAM_TOLERANCE = 1e-6
 
 
+# a pack to come makes the weld overlap check looser
 def transfer_exact(
     input_positions,
     input_polygons,
@@ -288,12 +272,6 @@ def transfer_exact(
     repack=True,
     partial=False,
 ):
-    """Plan the output's uvs onto an input with the same vertex positions,
-    each output face matched to the input face on its vertices.
-
-    repack says a pack runs on the result, which sets how strict the weld
-    overlap check has to be. partial lets input faces the output doesn't reach
-    keep their uvs, for an output missing whole pieces."""
     in_pos = np.asarray(input_positions, dtype=float)
     out_pos = np.asarray(output_positions, dtype=float)
 
@@ -319,8 +297,7 @@ def transfer_exact(
             local[v] = corner
         input_vertex_local.append(local)
 
-    # optcuts and xatlas keep the input vertex indices and append cut copies,
-    # partuv merges doubles and shifts them, so check before trusting an index
+    # optcuts and xatlas keep the input vertex indices, partuv merges doubles
     n_in = len(in_pos)
     keeps_indices = 0 < n_in <= len(out_pos) and bool(
         (((out_pos[:n_in] - in_pos) ** 2).sum(axis=1) <= tol2).all()
@@ -336,8 +313,7 @@ def transfer_exact(
             candidate_cache[out_v] = cached
         return cached
 
-    # output pieces landing on each input face, gathered before any uv is written
-    # so a face that can't hold one uv set can be split instead of failing
+    # gathered before any uv is written so a face can be split instead of failing
     face_parts = [[] for _ in input_polygons]
     part_out_faces = [[] for _ in input_polygons]
 
@@ -452,8 +428,7 @@ def transfer_exact(
     if len(untouched) == len(input_polygons):
         return TransferFailure("incomplete_coverage", "no input face got uvs")
 
-    # a weld moves a cut onto the input face's outer edges, off the engine's
-    # seam list
+    # a weld moves a cut onto the input face's outer edges
     faces = []
     for fi, poly in enumerate(input_polygons):
         if fi in untouched:

@@ -1,34 +1,17 @@
-"""Boundary cleanup: the merges settle face by face, so region
-boundaries come out staircased and one edge off the crease they
-should sit on. flatten_teeth relabels single-face zigzags,
-reroute_boundaries redraws each boundary run between anchored ends as
-the cheapest nearby path, discounted along creases, so seams
-straighten and settle onto sharp edges."""
-
 import collections
 
 from .cuts import CREASED_RELIEF, cut_path, path_cost
 from .mesh import face_keys, find, norm, pair, turn_angle
 from .regions import CREASE_ANGLE
 
-# a boundary may only move within this many face rings of where it is, so it
-# can snap to a crease beside it but never shortcut across a region
+# far enough to snap to a crease beside it, never across a region
 REROUTE_RINGS = 2
-# a closed loop has no junctions to hold it, so it reroutes as arcs split at
-# its sharpest vertices, but only when at least this share of its edges is
-# creased: a dull loop has nothing to snap to and would just drift
+# a closed loop has no junctions to hold it, a dull one would drift
 LOOP_SHARE = 0.5
 
 
+# a tooth is a face with every edge but one on the boundary to the same neighbour
 def flatten_teeth(weighted, faces, edges, label, angle=CREASE_ANGLE, forced=None):
-    """Zigzag teeth relabeled away so region boundaries follow clean chains.
-
-    A tooth is a face with every edge but one on the boundary to the same
-    neighbour: relabeling it strictly shortens the boundary, so the sweep
-    terminates, and removing an ear held by a single edge cannot break disk
-    topology. A corner face on a real crease looks like a tooth too, so a
-    flip never trades crease edges for a dull one.
-    """
     turns = {}
 
     def sharp(key):
@@ -72,18 +55,8 @@ def flatten_teeth(weighted, faces, edges, label, angle=CREASE_ANGLE, forced=None
     return label
 
 
+# the merges settle face by face and leave boundaries staircased
 def reroute_boundaries(verts, faces, areas, edges, label, relief, forced=None):
-    """Region boundaries redrawn as the cheapest paths under crease relief.
-
-    Each stretch of a two-region boundary between anchored vertices is
-    rerouted as the cheapest path between the same ends, so a staircase
-    straightens and a seam one edge off a crease drops onto it. The path
-    stays within REROUTE_RINGS of the old run and off every other seam,
-    and the relabel must split the union into exactly two pieces with
-    topology no worse, so a reroute can move a seam but never a junction.
-    A closed loop that is mostly creased is split at its sharpest vertices
-    and its arcs rerouted the same way.
-    """
     label = dict(label)
 
     # a reroute reads its two regions instead of every face in the mesh
@@ -96,8 +69,7 @@ def reroute_boundaries(verts, faces, areas, edges, label, relief, forced=None):
         for v in face:
             vert_faces[v].append(fi)
 
-    # boundary edges per region pair, and the vertices no path may pass
-    # through: everything on a rim or a seam, its own run's vertices excepted
+    # no path may pass through an anchored vertex, its own run's excepted
     pair_keys = collections.defaultdict(list)
     anchored = set()
     vert_pairs = collections.defaultdict(set)
@@ -118,8 +90,7 @@ def reroute_boundaries(verts, faces, areas, edges, label, relief, forced=None):
         creased = sum(1 for k in loop if relief.get(k, 1.0) < CREASED_RELIEF)
         if creased < LOOP_SHARE * n:
             return
-        # a vertex is as sharp as the duller of its two loop edges, so both
-        # anchors of an arc sit where the seam is already right
+        # a vertex is as sharp as the duller of its two loop edges
         sharp = [
             1.0 - max(relief.get(loop[i - 1], 1.0), relief.get(loop[i], 1.0))
             for i in range(n)
@@ -188,8 +159,7 @@ def reroute_boundaries(verts, faces, areas, edges, label, relief, forced=None):
         vs = {v for key in ks for v in key}
         return len(vs) - len(ks) + len(group)
 
-    # relief squared, so a moving boundary prefers a crease more strongly than
-    # a free cut does. a mild discount loses to a dull shortcut
+    # relief squared, a mild discount loses to a dull shortcut
     pull = {k: r * r for k, r in relief.items()}
 
     def run_seq(run, j0):
@@ -249,13 +219,11 @@ def reroute_boundaries(verts, faces, areas, edges, label, relief, forced=None):
             verts, run_seq(run, j0), relief=pull
         ):
             return
-        # a reroute puts seams on creases or straightens dull ones, it never
-        # trades crease for shortcut
+        # a reroute never trades crease for shortcut
         if creased_share(new) < creased_share(run_set):
             return
 
-        # split the union along the new path: other seams still divide, the
-        # old run no longer does
+        # split the union along the new path, the old run no longer divides
         union = region_faces[ra] | region_faces[rb]
         parent = {f: f for f in union}
 
@@ -308,8 +276,8 @@ def reroute_boundaries(verts, faces, areas, edges, label, relief, forced=None):
     return label
 
 
+# edges between two regions, as sorted vertex index pairs
 def boundary_edges(edges, label):
-    """Edges between two regions, as sorted vertex index pairs."""
     return {
         pair for pair, owners in edges.items() if len({label[o] for o in owners}) > 1
     }

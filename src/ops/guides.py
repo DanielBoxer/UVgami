@@ -54,9 +54,8 @@ def is_draw_active():
     )
 
 
+# remembers the old mode and group so Exit can put them back
 def _enter_draw_mode(context, obj):
-    """Weight paint with the restrictions group active. Remembers what was
-    there first so Exit can put it back."""
     vertex_groups = obj.vertex_groups
     if not is_draw_active():
         global _old_mode
@@ -130,8 +129,7 @@ def _exposure_weights(obj):
             if bvh.ray_cast(origin, direction)[0] is None:
                 escaped += 1
         exposure = escaped / total if total else 1.0
-        # exposure is ~1 on flat surface, ~0.5 in an inside corner, so spread
-        # that band over 0..1
+        # exposure is ~1 on a flat surface and ~0.5 in an inside corner
         weights[v.index] = min(max((exposure - 0.45) / 0.5, 0.0), 1.0) ** 2
     return weights
 
@@ -140,9 +138,7 @@ FREE_FRACTION = 0.5
 
 
 def _rank_normalize(weights):
-    # a mostly-convex mesh gives a near-uniform high map, which slows the
-    # engine without expressing a preference. ties break by vertex index,
-    # measured faster than giving tied verts one shared weight
+    # a mostly-convex mesh gives a near-uniform high map, which slows the engine
     order = sorted(weights, key=weights.get)
     n = len(order)
     if n < 2:
@@ -206,8 +202,7 @@ class UVGAMI_OT_seed_restrictions(bpy.types.Operator):
                 weights = _rank_normalize({i: view[i] * exposure[i] for i in view})
             _set_group_weights(obj, weights)
 
-        # land in weight paint so the seeded map is visible and paintable, the
-        # same place the Draw button goes
+        # weight paint so the seeded map is visible and paintable
         active = context.active_object
         if active is not None and validate_obj(self, active):
             _enter_draw_mode(context, active)

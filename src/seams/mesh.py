@@ -1,12 +1,7 @@
-"""Mesh primitives the rest of the package shares: edge maps, turn
-angles, island grouping, and uv fitting. No seam logic."""
-
 import collections
 import math
 
-# the package's base angle in degrees: edges turning less than this read as
-# flat. it is the partition angle, low on purpose, over-segmenting is what
-# makes region width meaningful, and the merges reassemble the pieces
+# low on purpose: a bevel splits one crease into several small turns
 LOW_ANGLE = 10
 
 
@@ -33,9 +28,8 @@ def pair(a, b):
     return (a, b) if a < b else (b, a)
 
 
+# each polygon covers a contiguous run of loops, so the totals alone place it
 def split_per_face(values, totals):
-    """Slice one entry per loop into one list per face. Each polygon covers a
-    contiguous run of loops, so the totals alone place every face."""
     faces = []
     start = 0
     for total in totals:
@@ -44,22 +38,21 @@ def split_per_face(values, totals):
     return faces
 
 
+# parent maps each element to its parent, itself for a root
 def find(parent, x):
-    """Union-find root of x with path compression. parent is a list or a dict
-    mapping each element to its parent, itself for a root."""
     while parent[x] != x:
         parent[x] = parent[parent[x]]
         x = parent[x]
     return x
 
 
+# a face's edges as sorted vertex index pairs
 def face_keys(face):
-    """A face's edges as sorted vertex index pairs."""
     return [pair(face[i], face[(i + 1) % len(face)]) for i in range(len(face))]
 
 
+# edge -> owning faces, keyed by sorted vertex index pair
 def face_edges(faces):
-    """Edge -> owning faces, keyed by sorted vertex index pair."""
     edges = collections.defaultdict(list)
     for fi, face in enumerate(faces):
         for key in face_keys(face):
@@ -67,12 +60,11 @@ def face_edges(faces):
     return edges
 
 
+# degrees the surface turns across an edge
 def turn_angle(weighted, owners):
-    """Degrees the surface turns across an edge, from its two face normals."""
     ax, ay, az = weighted[owners[0]]
     bx, by, bz = weighted[owners[1]]
-    # two roots, not one over the product: folding them shifts the last ulp
-    # and flips the odd seam
+    # two roots, not one over the product: folding them flips the odd seam
     scale = math.sqrt(ax * ax + ay * ay + az * az) * math.sqrt(
         bx * bx + by * by + bz * bz
     )
@@ -82,8 +74,8 @@ def turn_angle(weighted, owners):
     return math.degrees(math.acos(max(-1.0, min(1.0, dot))))
 
 
+# scaled by twice the area of the first three corners
 def weighted_normals(verts, faces):
-    """Per-face normals scaled by twice the area of the first three corners."""
     weighted = []
     for face in faces:
         a, b, c = (verts[i] for i in face[:3])
@@ -93,8 +85,8 @@ def weighted_normals(verts, faces):
     return weighted
 
 
+# per-face weighted normals and areas, plus edge -> owning faces
 def build(verts, faces):
-    """Per-face weighted normals and areas, plus edge -> owning faces."""
     weighted = weighted_normals(verts, faces)
     return weighted, [norm(n) / 2 for n in weighted], face_edges(faces)
 
@@ -111,13 +103,13 @@ def signed_area(pts):
 COLLAPSED_UV_AREA = 1e-8
 
 
+# a uv map crushed to points, a failed flatten's signature
 def uvs_collapsed(polygons):
-    """Whether a uv map is crushed to points, a failed flatten's signature."""
     return sum(abs(signed_area(pts)) for pts in polygons) < COLLAPSED_UV_AREA
 
 
+# joined by interior edges not on a seam
 def island_groups(faces, seams, edges):
-    """Faces grouped into uv islands: joined by interior edges not on a seam."""
     parent = list(range(len(faces)))
 
     for key, owners in edges.items():
@@ -132,9 +124,8 @@ def island_groups(faces, seams, edges):
     return list(members.values())
 
 
+# edges whose faces don't share their corner uvs. a boundary edge is never one
 def uv_seams(faces, uvs, edges):
-    """The uv map's own seams: edges whose faces don't share their corner
-    uvs. Boundary edges are never seams."""
     seams = set()
     for (u, v), owners in edges.items():
         if len(owners) < 2:
@@ -152,16 +143,13 @@ def uv_seams(faces, uvs, edges):
     return seams
 
 
+# follows the uv map itself, so it needs no seam marks
 def uv_island_groups(faces, uvs, edges):
-    """Faces grouped into uv islands: joined by interior edges whose corner
-    uvs agree on both faces, so the grouping follows the uv map itself and
-    needs no seam marks."""
     return island_groups(faces, uv_seams(faces, uvs, edges), edges)
 
 
+# joined by any shared vertex, what mesh.separate(type="LOOSE") splits on
 def vertex_components(faces):
-    """Faces grouped into loose parts: joined by any shared vertex, the same
-    connectivity mesh.separate(type="LOOSE") splits on."""
     parent = {}
 
     for face in faces:
@@ -178,9 +166,8 @@ def vertex_components(faces):
     return list(members.values())
 
 
+# boxes can touch without the boundaries crossing
 def islands_overlap(boxes):
-    """True when any two island bboxes intersect. Boxes can touch without the
-    boundaries crossing, which only costs an unneeded relayout."""
     order = sorted(range(len(boxes)), key=lambda i: boxes[i][0])
     for k, i in enumerate(order):
         for j in order[k + 1 :]:
@@ -191,11 +178,8 @@ def islands_overlap(boxes):
     return False
 
 
+# applied as u -> flip - u when flip is not None, then add (du, dv)
 def island_layout(boxes, areas):
-    """Per-island uv transforms (flip, du, dv) that mirror negative-area
-    islands within their own bounds and lay all islands side by side, so the
-    exported map has no inverted or overlapping charts. Apply as u -> flip - u
-    when flip is not None, then add (du, dv)."""
     gap = 0.05 * max(x1 - x0 for x0, _, x1, _ in boxes)
     transforms = []
     cursor = 0.0
@@ -206,9 +190,8 @@ def island_layout(boxes, areas):
     return transforms
 
 
+# keeps a repaired island inside the spot its old layout occupied
 def uv_fit(points, bbox):
-    """Mapping that scales the points uniformly into the bbox, centered.
-    Keeps a repaired island inside the spot its old layout occupied."""
     xs = [u for u, _ in points]
     ys = [v for _, v in points]
     x0, y0, x1, y1 = bbox
@@ -224,10 +207,8 @@ def uv_fit(points, bbox):
     return lambda uv: (ox + (uv[0] - cx) * s, oy + (uv[1] - cy) * s)
 
 
+# keeps the island's texel density, which uv_fit loses
 def uv_area_fit(polygons, area, bbox):
-    """Mapping that scales the polygons to cover the uv area the island had,
-    centered on its old bbox. Keeps the island's texel density, which a bbox
-    fit loses whenever the new layout packs to a different shape."""
     new_area = sum(abs(signed_area(p)) for p in polygons)
     points = [uv for p in polygons for uv in p]
     if area <= 0 or new_area <= 0:

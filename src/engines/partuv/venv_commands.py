@@ -8,14 +8,12 @@ TORCH_SCATTER_FIND_LINKS = f"https://data.pyg.org/whl/torch-{TORCH_VERSION}+cu12
 VENV_PYTHON = "3.11"
 
 
+# a user's uv.toml can pin an index or an exclude-newer cutoff
 def _uv(uv, *args):
-    """A uv command line. --no-config keeps a user's uv.toml, which can pin an
-    index or an exclude-newer cutoff, out of the addon's venv."""
     return [uv, "--no-config", *args]
 
 
 def build_install_commands(uv, venv_python, venv_path, wheel_url, ai, create_venv):
-    """The uv command lines that put partuv and its deps in the managed venv."""
     commands = []
     if create_venv:
         commands.append(_uv(uv, "venv", "--python", VENV_PYTHON, venv_path))

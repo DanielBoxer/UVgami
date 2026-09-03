@@ -35,9 +35,9 @@ class ProgressBar:
         shader.uniform_float("color", COLOUR[index])
         self._batch[index].draw(shader)
 
+    # draws in the editor the run was started from
     def start(self, uv_editor=False):
-        """Draw in the editor the run was started from."""
-        # idempotent: re-registering would leak the old draw handlers
+        # re-registering would leak the old draw handlers
         if self.is_active:
             return
         self.is_active = True

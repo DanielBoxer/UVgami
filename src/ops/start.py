@@ -62,8 +62,8 @@ Preseeding = namedtuple("Preseeding", ["task", "apply", "obj", "symmetrize_job"]
 TICK_BUDGET = 0.033
 
 
+# two faces walking one shared edge in the same direction
 def has_inconsistent_winding(mesh):
-    """Two faces walking one shared edge in the same direction."""
     corners = numpy.empty(len(mesh.loops), dtype=numpy.int64)
     mesh.loops.foreach_get("vertex_index", corners)
     totals = numpy.empty(len(mesh.polygons), dtype=numpy.int64)
@@ -75,9 +75,8 @@ def has_inconsistent_winding(mesh):
     return len(numpy.unique(directed)) < len(directed)
 
 
+# mixed winding is optcuts exit 115
 def fix_inconsistent_winding(obj):
-    """Mixed winding is a refusal at the engine (optcuts exit 115), so rewind
-    the piece copy to consistent outward normals instead."""
     if not has_inconsistent_winding(obj.data):
         return
     bm = new_bmesh(obj)
@@ -85,11 +84,8 @@ def fix_inconsistent_winding(obj):
     set_bmesh(bm, obj)
 
 
+# the engine re-cuts a mirrored or stacked chart, losing its seams
 def normalize_uvs(mesh):
-    """The engine reads a mirrored island as inverted and stacked islands as
-    self-intersecting, and re-cuts those charts, losing their seams. Mirror
-    them back and lay the islands side by side, the output layout is the
-    engine's repack either way."""
     layer = mesh.uv_layers.active
     face_count = len(mesh.polygons)
     totals = numpy.empty(face_count, dtype=numpy.int64)
@@ -102,8 +98,7 @@ def normalize_uvs(mesh):
     layer.uv.foreach_get("vector", coords)
     coords = coords.reshape(-1, 2)
 
-    # the grouping helpers walk plain lists, so convert in bulk once instead of
-    # indexing the rna collections per loop
+    # the grouping helpers walk plain lists
     vert_list = loop_verts.tolist()
     uv_list = coords.tolist()
     faces = []
@@ -161,10 +156,8 @@ def normalize_uvs(mesh):
     mesh.update()
 
 
+# writes across timer ticks so the UI stays responsive
 class InputExporter:
-    """Writes separated objects to engine input files across timer ticks so the
-    UI stays responsive."""
-
     def __init__(self, engine, engine_ctx, pieces, start_objects, temp_collection):
         self.engine = engine
         self.engine_ctx = engine_ctx
@@ -180,7 +173,7 @@ class InputExporter:
 
         # the session we joined was cancelled mid-export (Cancel All)
         if self.pieces and not manager.is_active:
-            # report it first so a failure below can't leave the count stuck
+            # reported first so a failure below can't leave the count stuck
             manager.finished_adding()
             for obj, _ in self.remaining:
                 bpy.data.objects.remove(obj, do_unlink=True)
@@ -207,8 +200,7 @@ class InputExporter:
                 bpy.data.objects.remove(piece, do_unlink=True)
             bpy.data.collections.remove(self.temp_collection)
             manager.finished_adding()
-            # settle the pieces that never got exported so their groups and
-            # the session can still finish
+            # settle the pieces that never got exported or the session can't finish
             for _, unwrap in self.pieces:
                 if unwrap.result is None and not unwrap.is_exported:
                     manager.record_result(unwrap, Result.INVALID)
@@ -232,8 +224,7 @@ class InputExporter:
         # seams and uvs were built before separation, see create_jobs
         if unwrap.has_uvs:
             normalize_uvs(obj.data)
-        # the winding only matters on the plain path, a transfer writes onto
-        # the original
+        # a transfer writes onto the original, where the winding doesn't matter
         vt_verts = export_obj(
             obj, path, unwrap.has_uvs, flip_mirrored=unwrap.keeps_output, matrix=matrix
         )
@@ -259,11 +250,8 @@ class InputExporter:
 
         bpy.data.objects.remove(obj, do_unlink=True)
 
+    # a reordered twin's own indices point at the wrong vertices
     def _export_twin(self, obj, unwrap, props):
-        """A twin writes no engine input, but its metadata must line up with
-        the representative's output faces: an index-matched twin triangulates
-        the same way, a reordered one reuses the representative's data
-        outright since its own indices point at the wrong vertices."""
         representative = unwrap.copy_of
         if unwrap.copy_reordered:
             unwrap.set_export_data(
@@ -286,8 +274,7 @@ class InputExporter:
             )
             unwrap.set_export_data(
                 edge_path=edge_path,
-                # pieces of one object share a transform, and the
-                # representative exported before this twin
+                # pieces of one object share a transform
                 origin=representative.origin,
                 materials=materials,
                 added_edges=new_edges,
@@ -312,7 +299,6 @@ class InputExporter:
         manager.finished_adding()
 
     def _triangulate_mesh(self, obj, unwrap, path, props):
-        """Triangulate the mesh if needed, tracking added edges for untriangulation."""
         new_edges = []
         bm = new_bmesh(obj)
 
@@ -330,8 +316,7 @@ class InputExporter:
                         ngon_dict[vert.index] = set()
                     ngon_dict[vert.index].add(face_idx)
 
-        # the panel hides the setting where it doesn't apply but the value
-        # persists, so read the same derived flag the panel does
+        # the panel hides the setting where it doesn't apply but the value persists
         untriangulate = props.preserve_mesh
 
         edge_path = None
@@ -353,8 +338,7 @@ class InputExporter:
                             and len(ngon_dict[edge[0]].intersection(ngon_dict[edge[1]]))
                             > 0
                         ):
-                            # both ends sit on the same ngon, so the edge is
-                            # inside it and must not dissolve
+                            # both ends sit on the same ngon, the edge is inside it
                             continue
                         new_edges.append(edge)
                         f.write(f"{edge[0]} {edge[1]}\n")
@@ -365,9 +349,8 @@ class InputExporter:
 
         return edge_path, new_edges
 
+    # _weights repels seams, _importance protects faces from stretching
     def _create_guide_file(self, obj, path, props, vt_verts):
-        """Write the per-vertex weight sidecars from the restriction group.
-        _weights repels seams, _importance protects faces from stretching."""
         weights = {}
         if (
             self.engine.supports_guided
@@ -385,8 +368,7 @@ class InputExporter:
             return None
 
         if vt_verts is not None:
-            # optcuts rebuilds a UV-carrying obj with one vertex per vt, so
-            # vertex-indexed weights would land on the wrong vertices
+            # optcuts rebuilds a UV-carrying obj with one vertex per vt
             weights = {
                 vt: weights[v] for vt, v in enumerate(vt_verts.tolist()) if v in weights
             }
@@ -405,7 +387,6 @@ class InputExporter:
         return guide_path
 
     def _get_mesh_metadata(self, obj):
-        """Gather materials and shading info from the mesh."""
         # keep empty slots as None so the per-face indices below stay valid
         materials = [
             slot.material.name if slot.material else None for slot in obj.material_slots
@@ -430,10 +411,8 @@ class InputExporter:
         return materials, material_indices.tolist(), vertex_groups, face_smooth.tolist()
 
 
+# proxied says the mesh was decimated, one under Proxy Faces never is
 def input_job(props, proxied):
-    """The job that finishes an unwrap against the original input mesh.
-
-    proxied says the mesh was decimated, one under Proxy Faces never is."""
     if proxied:
         return ProxyUVs() if props.transfer_uvs else ProxyCopyUVs()
     if props.transfer_uvs:
@@ -441,11 +420,8 @@ def input_job(props, proxied):
     return None
 
 
+# the preseed runs on a worker thread and the rest across timer ticks
 class SessionBuilder:
-    """Runs each object's preseed in a worker thread, then separates it and
-    hands every piece to an InputExporter, all across timer ticks so the UI
-    stays live through the slow part."""
-
     def __init__(
         self,
         engine,
@@ -489,8 +465,7 @@ class SessionBuilder:
             return self._advance()
         except Exception as e:
             handle_error(e, "START", objects=self.start_objects)
-            # an undo past the session start kills the collection datablock,
-            # and a second ReferenceError here would leave the count stuck
+            # an undo past the session start kills the collection datablock
             if check_exists(self.temp_collection):
                 # handle_error leaves these alone during a live session
                 for piece in list(self.temp_collection.objects):
@@ -511,9 +486,8 @@ class SessionBuilder:
         if entry is not None:
             manager.drop_preparing(entry)
 
+    # a running preseed only stops at its next check, so it is left to unwind
     def cancel_object(self, obj):
-        """Drop one object from the session. A running preseed only stops at
-        its next check, so it is left to unwind."""
         if self.pending is not None and self.pending.obj is obj:
             self.pending.task.cancel()
             self.cancelled.add(obj)
@@ -535,8 +509,7 @@ class SessionBuilder:
                 return 0.1
             self.pending = None
             if obj in self.cancelled:
-                # it may have finished before it saw the flag, so the result
-                # is thrown away rather than trusted to be Cancelled
+                # it may have finished before it saw the flag
                 self.cancelled.discard(obj)
                 self._drop_object(obj)
                 return 0.0
@@ -547,8 +520,7 @@ class SessionBuilder:
             preseeded = apply(result)
             if symmetrize_job is not None:
                 if preseeded:
-                    # the seams are mirrored, so the mesh ships whole with
-                    # no cut at the plane
+                    # the seams are mirrored, so the mesh ships whole
                     symmetrize_job.kept_whole = True
                     symmetrize_job.prepare_half(obj)
                 else:
@@ -575,10 +547,7 @@ class SessionBuilder:
         #     mirrors = mirror_matches(obj.data, center, sorted(props.sym_axes))
         #     symmetrize_job.mirrors = mirrors
 
-        # seams and uvs are built on the whole mesh, before the symmetry cut
-        # and separation: the seams package reads region widths off the full
-        # model, a bisected half merges its regions away, and a small loose
-        # part run alone shatters (auto width tunes to the piece)
+        # the seams package reads region widths off the full model
         work = self.engine.preseed_work(obj, props, mirrors)
         if work is None:
             has_uvs = self.engine.prepare_uvs(obj, props)
@@ -591,14 +560,12 @@ class SessionBuilder:
         return 0.1
 
     def _input_jobs(self, props, obj, proxied):
-        """The hide or transfer job that finishes against the input mesh."""
         transfer_uvs_job = input_job(props, proxied)
         hide_job = None
         if transfer_uvs_job is not None:
             manager.input[transfer_uvs_job] = self.input_for[obj]
         else:
-            # the hide job can come after join because it doesn't depend
-            # on the unwrapped objects
+            # the hide job doesn't depend on the unwrapped objects
             hide_job = HideInput()
             manager.input[hide_job] = self.input_for[obj]
         return hide_job, transfer_uvs_job
@@ -606,8 +573,7 @@ class SessionBuilder:
     def _add_piece(
         self, obj, input_name, piece_name, jobs, has_uvs, props, preseeded, keeps_output
     ):
-        """Create the piece's session record before its input file exists, so
-        cancels and the queue ui see the whole session upfront."""
+        # created before the input file exists, so the queue ui is complete upfront
         path = self.input_path / f"{engine_file_stem(piece_name)}.obj"
         # names can repeat across pieces, and the output file is keyed by stem
         claimed = {u.path for u in manager.active}
@@ -676,8 +642,7 @@ class SessionBuilder:
             if props.stack_similar:
                 # the new pieces' matrix_world needs an evaluation first
                 bpy.context.view_layer.update()
-                # a representative always precedes its twins in valid order,
-                # so it exports and settles first
+                # a representative always precedes its twins in valid order
                 for twin_obj, (rep_obj, twin_matrix, exact) in find_twins(
                     valid
                 ).items():
@@ -767,8 +732,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
                 context.scene.uvgami, unwrap_settings(context.scene.uvgami)
             )
 
-            # a mesh added to a running session would take the first one's
-            # engine and settings
+            # a mesh added to a running session would take the first one's settings
             if manager.is_active:
                 self.report({"ERROR"}, "Finish or cancel the current unwrap first")
                 logger.discard_info()
@@ -795,8 +759,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
             bpy.app.timers.register(builder.tick)
             builder_registered = True
 
-            # before the first piece exists, so the bar and the queue ui are
-            # up while the builder works
+            # before the first piece exists, the bar is up while the builder works
             manager.engine = self.engine
             manager.engine_ctx = self.engine_ctx
             manager.pieces_still_arriving += 1
@@ -812,13 +775,12 @@ class UVGAMI_OT_start(bpy.types.Operator):
             if not builder_registered and self.temp_collection is not None:
                 bpy.data.collections.remove(self.temp_collection)
 
-        # these variables should only be used while operator is running
+        # only valid while the operator is running
         self.reset_variables()
         return {"FINISHED"}
 
     def _prepare_unwrap_session(self, context):
-        # the builder's separation ops need object mode, and leaving edit mode
-        # flushes the mesh so the copies below don't take pre-edit geometry
+        # leaving edit mode flushes the mesh the copies below take
         active = context.active_object
         if active is not None and active.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
@@ -835,8 +797,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
         self.input_path, _ = self.prepare_io_folders()
         deselect_all()
 
-        # stash the copies in a collection not linked to the scene so they
-        # don't flash in the viewport or outliner between builder ticks
+        # an unlinked collection doesn't flash in the viewport between ticks
         self.temp_collection = bpy.data.collections.new("UVgami Temp")
         for obj in self.objects:
             for coll in obj.users_collection:
@@ -904,8 +865,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
             triangles = triangle_count(obj.evaluated_get(depsgraph))
             input_sizes.append((obj.name, triangles))
             proxied = self.engine.uses_proxy(props) and triangles > props.proxy_faces
-            # the result comes from the input mesh itself, so the engine has to
-            # see that mesh and not a modifier bake of it
+            # the engine has to see the input mesh itself, not a modifier bake of it
             if input_job(props, proxied) is not None:
                 copy_object.modifiers.clear()
             elif self._apply_modifiers(context, copy_object):
@@ -933,7 +893,6 @@ class UVGAMI_OT_start(bpy.types.Operator):
         return objects, names, reports, proxied_objects, input_for
 
     def _apply_modifiers(self, context, obj):
-        """True when anything was baked into the copy."""
         context.view_layer.objects.active = obj
         applied = False
         for modifier in obj.modifiers:

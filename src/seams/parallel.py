@@ -1,12 +1,3 @@
-"""seam_edges one loose part at a time across worker processes.
-
-Every pass reads only its own part once the auto width and the model area
-come from the whole mesh (whole_mesh_inputs), so the parts' seams joined
-are the whole run's seams, and 484 parts spread over the cores instead of
-one 30s pass. The parts keep the mesh's vertex ids, reindexing would move
-the tie breaks in the heap searches, and carry their face ids for the
-sweep run seeds (WholeMesh)."""
-
 import os
 import pickle
 import subprocess
@@ -21,9 +12,8 @@ WORKER_SCRIPT = Path(__file__).with_name("worker.py")
 POLL_INTERVAL = 0.05
 
 
+# largest first onto the lightest, so the workers carry about the same face count
 def balanced_chunks(parts, count):
-    """Parts dealt to count workers, largest first onto the lightest, so
-    the workers carry about the same face count."""
     loads = [0] * count
     chunks = [[] for _ in range(count)]
     for part in sorted(parts, key=len, reverse=True):
@@ -33,6 +23,7 @@ def balanced_chunks(parts, count):
     return [chunk for chunk in chunks if chunk]
 
 
+# the parts keep the mesh's vertex ids, reindexing would move the tie breaks
 def seam_edges_parallel(
     python,
     verts,
@@ -43,9 +34,6 @@ def seam_edges_parallel(
     forced=None,
     cancelled=None,
 ):
-    """seam_edges with the loose parts run on worker processes, one per
-    core. python is (executable, leading args) for the workers, Blender's
-    bundled interpreter in the addon. A mesh with one part runs here."""
     parts = vertex_components(faces)
     count = min(os.cpu_count() or 1, len(parts))
     if count < 2:

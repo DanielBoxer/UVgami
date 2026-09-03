@@ -1,9 +1,3 @@
-"""The entry points. seam_edges runs the whole thing: partition and
-merges (feature_labels), boundary cleanup, then the surviving region
-boundaries plus disk cuts are the seams. is_hard_surface reads the
-same region structure to decide whether a loose part has features
-worth preseeding."""
-
 import collections
 
 from .boundaries import boundary_edges, flatten_teeth, reroute_boundaries
@@ -28,8 +22,8 @@ from .sweeps import split_sweeps, sweep_rims
 WholeMesh = collections.namedtuple("WholeMesh", "min_width model_area face_ids")
 
 
+# the forced edges with the sweep rims added, and the wall faces
 def rim_cuts(verts, faces, rims, forced=None, whole=None, built=None):
-    """The forced edges with the sweep rims added, and the wall faces."""
     if not rims:
         return forced, None
     model_area, face_ids = (None, None) if whole is None else whole[1:]
@@ -39,13 +33,8 @@ def rim_cuts(verts, faces, rims, forced=None, whole=None, built=None):
     return forced, walls
 
 
+# walls partition as one region however sharply the coarse wall turns
 def low_partition(verts, faces, forced=None, walls=None, built=None):
-    """The over-segmented partition every pass starts from, with the
-    per-face normals, areas and edge map it was built on. walls are faces
-    sweep_rims verified as one swept wall: they partition as one region
-    however sharply the coarse wall turns, so an annulus never depends on
-    the merges rebuilding it from columns. built is build(verts, faces)
-    when the caller has it."""
     weighted, areas, edges = built or build(verts, faces)
     smooth = None
     if walls:
@@ -58,10 +47,8 @@ def low_partition(verts, faces, forced=None, walls=None, built=None):
     return weighted, areas, edges, root
 
 
+# a run over one loose part gets the seams the whole run would
 def whole_mesh_inputs(verts, faces, rims=True, forced=None):
-    """The two numbers the passes read off the whole mesh, the auto width
-    and the model area. Given to a run over one loose part, it gets the
-    seams the whole run would."""
     built = build(verts, faces)
     cut_from_start, walls = rim_cuts(verts, faces, rims, forced, built=built)
     weighted, areas, edges, root = low_partition(
@@ -71,6 +58,7 @@ def whole_mesh_inputs(verts, faces, rims=True, forced=None):
     return min_width, sum(areas)
 
 
+# what survives the merges is the feature structure the seams will trace
 def feature_labels(
     verts,
     faces,
@@ -83,17 +71,6 @@ def feature_labels(
     whole=None,
     built=None,
 ):
-    """Region labels from the merge passes: partition at auto width, the three
-    merges, sweep rims. What survives is the feature structure the seams will
-    trace, before the boundary cleanup passes move any edge. scale is the
-    model size the width cap reads, the full diagonal of verts by default.
-    whole is the WholeMesh a loose part run alone reads, None reads the
-    width off faces.
-
-    Also returns the absorb width and the deliberate boundary pairs, region
-    pairs a forced edge or the sweep split separates, so a later width pass
-    can absorb leftovers without dissolving structure. built is
-    build(verts, faces) when the caller has it."""
     weighted, areas, edges, root = low_partition(verts, faces, forced, walls, built)
     if whole is None:
         if scale is None:
@@ -135,36 +112,21 @@ def feature_labels(
     return weighted, areas, edges, label, min_width, locked
 
 
-# auto mode guards, tuned on the bench sets.
-# a part is hard surface only when every one holds:
-# one region covering the part means no structure, a smooth blob,
+# one region covering the part means no structure, a smooth blob
 ORGANIC_SHARE = 0.9
 # regions averaging under this many faces mean the partition found noise
-# (chainmail reads 1 face per region),
 FRAGMENT_FACES = 8
-# turn between LOW_ANGLE and this is spread curvature. a bevel is spread
-# turn beside a boundary and a sculpt is spread turn everywhere, so the
-# share is read away from the region boundaries,
+# spread curvature, read away from the region boundaries
 SPREAD_ANGLE = 25
 SPREAD_SHARE = 0.21
-# and the boundaries must mostly be deliberate: creased, or a rim
-# split_sweeps placed
+# the boundaries must mostly be creased or a rim split_sweeps placed
 BOUNDARY_ANGLE = 20
 BOUNDARY_CREASED = 0.6
 
 
+# ties fall organic, seams on sculpt ridges cost more than a slow unwrap
 def is_hard_surface(verts, faces):
-    """Whether a loose part's features are worth preseeding.
-
-    Reads the merged region structure at the CREASE_ANGLE floor, not the
-    feature angle knob: the question is whether structure exists at all.
-    Detected sweep walls are forced apart and count as structure, so a
-    smooth cylinder still reads hard, and split_sweeps runs so a filleted
-    one does too. Misreading organic costs a slow from-scratch unwrap,
-    misreading hard costs seams on sculpt ridges, so ties fall organic.
-    """
-    # verts can be the whole mesh with faces one loose part, so the width cap
-    # must read the part's own size or nearby geometry changes the label
+    # verts can be the whole mesh with faces one loose part
     used = {v for face in faces for v in face}
     part_scale = diagonal([verts[v] for v in used])
     built = build(verts, faces)
@@ -203,8 +165,7 @@ def is_hard_surface(verts, faces):
     for key, owners in edges.items():
         if len(owners) == 2 and label[owners[0]] != label[owners[1]]:
             near.update(owners)
-    # two rings, so a dissolved bevel band beside a seam stays out of the
-    # interior read
+    # two rings, so a dissolved bevel band beside a seam stays out
     for _ in range(2):
         grown = set(near)
         for owners in edges.values():
@@ -236,6 +197,7 @@ def is_hard_surface(verts, faces):
     ) and boundary_creased / boundary >= BOUNDARY_CREASED
 
 
+# a closed mesh with every feature under the angle reruns at the CREASE_ANGLE floor
 def seam_edges(
     verts,
     faces,
@@ -246,27 +208,6 @@ def seam_edges(
     cancelled=None,
     whole=None,
 ):
-    """The full pipeline at auto width: partition, merges, cleanup, seams.
-
-    angle is what counts as a feature: boundaries turning less than it
-    merge away, so lower keeps more shallow-feature seams at the cost of
-    shattering coarse curved walls. rims off skips the sweep passes and the
-    unfold, so a smooth cylinder keeps its end caps. weights are painted
-    restrictions the cuts avoid, region boundaries sit where the shape says
-    and paint does not move them. forced edges cut from the partition on,
-    so the merges route around them, and they are seams in the end.
-
-    Sweep rims cut the partition the same way but stay out of the cleanup
-    passes' forced set: a rim traces a per-face wall/cap or panel split, so
-    it staircases, and only flatten_teeth and reroute_boundaries can settle
-    it. A moved rim stays a seam through boundary_edges, no re-adding.
-
-    cancelled is checked between passes, so a cancel lands at the next one.
-
-    whole is the WholeMesh a loose part run alone reads (seam_edges_parallel
-    runs the parts that way), None on a whole mesh. A closed mesh with every feature under the angle
-    cannot flatten, so it reruns at the CREASE_ANGLE floor.
-    """
     built = build(verts, faces)
     seams, closed = seams_at_angle(
         verts, faces, angle, rims, weights, forced, cancelled, whole, built
@@ -278,12 +219,10 @@ def seam_edges(
     return seams
 
 
+# a caller joining parts decides the rerun for all of them
 def seams_at_angle(
     verts, faces, angle, rims, weights, forced, cancelled, whole, built=None
 ):
-    """seam_edges at one angle with no rerun, plus whether the mesh is
-    closed, so a caller joining parts decides the rerun for all of them.
-    built is build(verts, faces) when the caller has it."""
     if built is None:
         built = build(verts, faces)
     cut_from_start, walls = rim_cuts(verts, faces, rims, forced, whole, built)
@@ -322,8 +261,7 @@ def seams_at_angle(
         else set()
     )
     check_cancelled(cancelled)
-    # disk_cuts counts in-region forced edges as slits, so it gets only the
-    # user marks: a rim the cleanup moved would otherwise linger as one
+    # disk_cuts counts in-region forced edges as slits, so it gets only user marks
     seams = (boundary_edges(edges, label) - hinges) | disk_cuts(
         verts, edges, label, weights, relief, forced
     )

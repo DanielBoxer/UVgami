@@ -1,15 +1,3 @@
-"""Partition and merge, the core of the mode.
-
-A per-edge angle test cannot seam a beveled model: a bevel splits one
-crease into several small turns, and what separates it from a corner
-is width, not angle. So partition at a low angle, which over-segments
-bevels and curved surfaces into narrow bands, then merge back: absorb
-dissolves anything narrower than the auto width, merge_smooth takes
-any boundary that turns less than a crease, merge_flat joins
-neighbours whose union is still nearly flat, and close_rings rejoins
-disk pairs whose union is a short annulus. Every merge refuses to
-leave a region with a hole, the engine throws non-disk charts away."""
-
 import collections
 import functools
 import heapq
@@ -18,41 +6,27 @@ import math
 from .islands import SPLIT_ASPECT
 from .mesh import LOW_ANGLE, cross, find, norm, pair, turn_angle
 
-# auto width: at the low partition angle region widths are dominated by
-# narrow bands, real surfaces are the top few percent, and no clean gap
-# separates them, so take a high quantile with clearance on top. the cap, a
-# fraction of the diagonal, stops sparse cases like a beveled cube from
-# getting an oversized width
+# a fraction of the diagonal, so a beveled cube can't get an oversized width
 WIDTH_CAP = 0.05
+# no clean gap separates real surfaces from narrow bands
 WIDTH_QUANTILE = 0.9
 WIDTH_FACTOR = 2.0
-# flat merge: |sum of weighted normals| / (2 * area) is 1 on a plane. merge
-# while the union stays above a spherical cap of this half-angle, so shallow
-# creases merge and real corners (~0.7 for a 90 degree pair) survive
+# merge while the union stays above a spherical cap of this half-angle
 FLAT_ANGLE = 30
-# smooth merge: how far a boundary must turn to count as a crease. read at
-# the boundary because flatness cannot pass a cylinder, whose panels spread
-# as far as a corner once enough of them merge
+# how far a boundary must turn to count as a crease
 CREASE_ANGLE = 30
-# unfold: a region whose mass sums flat panel by panel is paper, it unfolds
-# rigidly however far a hinge turns. curved mass drops the share: a
-# hemisphere reads 0.5, a quarter-bent strip about 0.9
+# mass that sums flat panel by panel is paper, a hemisphere reads 0.5
 PANEL_SHARE = 0.95
-# every edge of a hinge must lie on one line, within this cosine of the
-# first edge's direction, or the fold cannot open rigidly
+# every edge of a hinge must lie on one line or the fold cannot open rigidly
 HINGE_LINE_COS = 0.996
 
 
-# per region boundary, the length-weighted sums the smooth merge reads: turn
-# carried across dissolved bands, turn at the boundary's own edges, the
-# width that carry crossed, and length to divide by
+# turn is carried across dissolved bands, step is the boundary's own edges
 Boundaries = collections.namedtuple("Boundaries", "turn step spread length")
 
 
+# forced wins when an edge is both forced and smooth
 def partition(faces, weighted, edges, angle, forced=None, smooth=None):
-    """Union-find over faces, cutting every edge sharper than angle. Edges in
-    forced cut whatever they turn, edges in smooth merge whatever they turn,
-    and forced wins when an edge is in both."""
     parent = list(range(len(faces)))
 
     for key, owners in edges.items():
@@ -69,11 +43,8 @@ def partition(faces, weighted, edges, angle, forced=None, smooth=None):
     return functools.partial(find, parent)
 
 
+# kept as a sum so merges can add boundaries together
 def boundary_turns(verts, weighted, edges, label):
-    """Per region boundary, its turn summed over the edges, weighted by length.
-
-    Divided by the boundary's length this is the angle the surface turns
-    crossing it. Kept as a sum so merges can add boundaries together."""
     total = collections.defaultdict(float)
     for (v0, v1), owners in edges.items():
         if len(owners) != 2:
@@ -86,12 +57,8 @@ def boundary_turns(verts, weighted, edges, label):
     return total
 
 
+# EC is 1 for a disk, 0 once a region has a hole
 def region_topology(edges, label):
-    """Per-region euler characteristic, vertex sets and shared edge counts.
-
-    EC is 1 for a disk, 0 once a region has a hole. Both merge passes refuse
-    anything that lowers it, the engine throws non-disk charts away.
-    """
     face_count = collections.Counter(label.values())
     rverts = collections.defaultdict(set)
     edge_count = collections.Counter()
@@ -108,28 +75,19 @@ def region_topology(edges, label):
     return ec, rverts, shared
 
 
+# 2 when they meet twice, so the union has a hole, 0 for a closed loop
 def joint_count(rverts, shared, a, b):
-    """Shared vertices minus shared edges: 1 when the two regions meet along a
-    single path, 2 when they meet twice (so the union has a hole), 0 when the
-    contact is a closed loop (so the union is closed)."""
     return len(rverts[a] & rverts[b]) - shared[pair(a, b)]
 
 
+# meeting twice would open a hole, swallowing a region closes the surface
 def keeps_topology(ec, rverts, shared, a, b):
-    """A merge is allowed when the union is no worse than the worse of the two
-    and not a closed surface: meeting along one path keeps a disk, meeting
-    twice would open a hole, and swallowing the region inside a hole closes
-    one.
-    """
     merged = ec[a] + ec[b] - joint_count(rverts, shared, a, b)
     return min(ec[a], ec[b]) <= merged <= 1
 
 
+# no merge may take one, so a hand-marked edge survives as a region boundary
 def locked_pairs(edges, label, forced):
-    """Region pairs whose shared boundary holds a forced seam. No merge may
-    take one, so a hand-marked edge survives as a region boundary and the
-    passes route around it.
-    """
     locked = set()
     if not forced:
         return locked
@@ -161,7 +119,6 @@ def region_stats(verts, areas, edges, label):
 
 
 def detect_width(verts, faces, areas, edges, root, scale):
-    """Absolute merge width from a high quantile of the region widths."""
     label = {i: root(i) for i in range(len(faces))}
     area, _, perimeter = region_stats(verts, areas, edges, label)
     ws = sorted(2 * area[r] / perimeter[r] for r in area if perimeter[r] > 0)
@@ -171,20 +128,10 @@ def detect_width(verts, faces, areas, edges, root, scale):
     return min(WIDTH_FACTOR * quantile, WIDTH_CAP * scale)
 
 
+# a dissolved band moves its turn and width onto the boundaries it leaves
 def absorb(
     verts, faces, weighted, areas, edges, root, min_width, forced=None, locked=None
 ):
-    """Repeatedly merge the narrowest region into its longest-shared neighbour.
-
-    Stats update incrementally per merge and the heap is lazy, an entry
-    whose width no longer matches its region is stale. Dissolving a band
-    moves its turn and width onto the boundaries it leaves, so an absorbed
-    bevel still reads as the crease it was, while step, the turn at a
-    boundary's own edges, never moves. Returns labels plus the per-boundary
-    sums the smooth merge reads. locked adds region pairs that may never
-    merge on top of the pairs forced edges lock, for a caller whose
-    deliberate boundaries no longer sit on their original edges.
-    """
     label = {i: root(i) for i in range(len(faces))}
     area, shared, perimeter = region_stats(verts, areas, edges, label)
     turns = boundary_turns(verts, weighted, edges, label)
@@ -213,9 +160,7 @@ def absorb(
         ]
         if not partners:
             continue
-        # prefer a neighbour already over the threshold: a bevel should
-        # dissolve into its surface, not accrete into a wider strip that
-        # then survives the threshold itself
+        # a bevel should dissolve into its surface, not accrete into a wider strip
         wide = [p for p in partners if width(p[1]) >= min_width]
         rest = [p for p in partners if width(p[1]) < min_width]
         best = next(
@@ -232,8 +177,7 @@ def absorb(
             continue
 
         contact = shared[pair(region, best)]
-        # the turn crossing the band that is about to disappear, and how wide
-        # it is, so the far side can tell a crease from spread out curvature
+        # the far side can tell a crease from spread out curvature
         crossed = turns[pair(region, best)] / contact if contact > 0 else 0.0
         crossed_width = width(region) + (
             spread[pair(region, best)] / contact if contact > 0 else 0.0
@@ -278,15 +222,8 @@ def absorb(
     return {i: find(parent, r) for i, r in label.items()}, bounds
 
 
+# a boundary on a cylinder wall turns one segment angle however much has merged
 def merge_smooth(edges, label, bounds, min_width, angle=CREASE_ANGLE, forced=None):
-    """Merge neighbours whose shared boundary is not a crease.
-
-    A crease is a turn with no width: every boundary on a cylinder wall
-    turns one segment angle however much has merged, while a corner turns
-    the whole corner. The turn absorb carried over counts only while its
-    spread stays band-narrow, past that the boundary is judged by its own
-    edges alone. Least turn first, lazy heap.
-    """
     turns, steps, spread, shared = bounds
     neighbors = collections.defaultdict(set)
     for ra, rb in shared:
@@ -297,11 +234,8 @@ def merge_smooth(edges, label, bounds, min_width, angle=CREASE_ANGLE, forced=Non
     alive = set(label.values())
     parent = {r: r for r in alive}
 
+    # a dissolved band's edges count only while it is still band width
     def crease(a, b):
-        """How sharply the surface turns crossing this boundary: its own edges
-        always count, a dissolved band's carry only while it is still band
-        width.
-        """
         key = pair(a, b)
         length = shared[key]
         if length <= 0:
@@ -362,10 +296,8 @@ def merge_smooth(edges, label, bounds, min_width, angle=CREASE_ANGLE, forced=Non
     return {i: find(parent, r) for i, r in label.items()}
 
 
+# flattest pair first, with the same lazy heap as absorb
 def merge_flat(weighted, areas, edges, label, angle=FLAT_ANGLE, forced=None):
-    """Merge adjacent regions while their union stays nearly flat, flattest
-    pair first, with the same lazy heap as absorb.
-    """
     total = collections.defaultdict(lambda: [0.0, 0.0, 0.0])
     mass = collections.defaultdict(float)
     for i, r in label.items():
@@ -435,15 +367,8 @@ def merge_flat(weighted, areas, edges, label, angle=FLAT_ANGLE, forced=None):
     return {i: find(parent, r) for i, r in label.items()}
 
 
+# closing the ring is safe when the cut-open wall unrolls into a compact strip
 def close_rings(verts, weighted, areas, edges, label, angle=CREASE_ANGLE, forced=None):
-    """Merge disk pairs whose union is a short annulus, for one cut not two.
-
-    keeps_topology leaves a coarse tube wall as two half shells with two
-    seams where a fine one gets a single disk_cuts seam. Closing the ring
-    is safe exactly when the cut-open wall unrolls into a compact strip,
-    and the boundary must be smooth at its own edges, a lid meeting a
-    channel twice turns a corner there and keeps both seams.
-    """
     area, shared, perimeter = region_stats(verts, areas, edges, label)
     turns = boundary_turns(verts, weighted, edges, label)
     ec, rverts, shared_edges = region_topology(edges, label)
@@ -477,9 +402,8 @@ def close_rings(verts, weighted, areas, edges, label, angle=CREASE_ANGLE, forced
     return {i: closed.get(r, r) for i, r in label.items()}
 
 
+# 1 when every group is planar, lower the more each one curls
 def panel_share(weighted, groups):
-    """How much of these faces' mass sums to flat panels: 1 when every group
-    is planar, lower the more each one curls."""
     flat = mass = 0.0
     for group in groups:
         resultant = [0.0, 0.0, 0.0]
@@ -491,10 +415,8 @@ def panel_share(weighted, groups):
     return flat / mass if mass > 0 else 0.0
 
 
+# the sides swing about a single fold axis, a bent contact cannot open flat
 def straight_path(verts, keys):
-    """Whether these edges form one connected path along one line. Rigid
-    unfolding needs exactly that: the sides swing about a single fold axis,
-    a bent or split contact cannot open flat."""
     reference = None
     ends = collections.Counter()
     parent = {}
@@ -520,15 +442,13 @@ def straight_path(verts, keys):
 
 
 def path_ends(keys):
-    """The two endpoint vertices of a connected open path of edges."""
     counts = collections.Counter(v for key in keys for v in key)
     ends = [v for v, count in counts.items() if count == 1]
     return ends if len(ends) == 2 else None
 
 
+# origin and in-plane axes projecting a flat panel to 2D
 def panel_basis(verts, faces, weighted, members):
-    """Origin and in-plane axes projecting a flat panel to 2D, or None when
-    the panel has no usable normal."""
     normal = [0.0, 0.0, 0.0]
     for i in members:
         for k in range(3):
@@ -578,9 +498,8 @@ def compose_transforms(outer, inner):
     )
 
 
+# rotation only, both panels project with their normal up
 def glue_transform(a0, a1, b0, b1):
-    """Rigid 2D map taking segment b0-b1 onto a0-a1, rotation only: both
-    panels project with their normal up, so an unfold never mirrors."""
     dax, day = a1[0] - a0[0], a1[1] - a0[1]
     dbx, dby = b1[0] - b0[0], b1[1] - b0[1]
     la, lb = math.hypot(dax, day), math.hypot(dbx, dby)
@@ -597,11 +516,8 @@ def glue_transform(a0, a1, b0, b1):
     )
 
 
+# touching at an endpoint or running collinear is not a crossing
 def segments_cross(a, b, c, d):
-    """Whether the two segments properly cross. Touching at an endpoint or
-    running collinear is not a crossing, so glued neighbours sharing their
-    hinge line stay clean."""
-
     def orient(p, q, r):
         return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
 
@@ -612,9 +528,8 @@ def segments_cross(a, b, c, d):
     return o3 != 0 and o4 != 0 and (o3 > 0) != (o4 > 0)
 
 
+# half-open so a vertex on the ray counts once
 def point_in_polygon(point, segments):
-    """Ray parity over an unordered boundary, the half-open rule so a vertex
-    on the ray counts once."""
     px, py = point
     hits = 0
     for (x0, y0), (x1, y1) in segments:
@@ -628,7 +543,6 @@ def _boxes_meet(a, b):
 
 
 def _span(boxes):
-    """The one box covering all of them."""
     return (
         min(b[0] for b in boxes),
         min(b[1] for b in boxes),
@@ -637,8 +551,8 @@ def _span(boxes):
     )
 
 
+# the caller box-rejects first
 def panels_overlap(placed_a, placed_b):
-    """Whether two placed panels share area. The caller box-rejects first."""
     _, segs_a, _, inner_a = placed_a
     _, segs_b, _, inner_b = placed_b
     for sa in segs_a:
@@ -648,20 +562,9 @@ def panels_overlap(placed_a, placed_b):
     return point_in_polygon(inner_a, segs_b) or point_in_polygon(inner_b, segs_a)
 
 
+# a hinge is the contact between two flat panels along one straight path
 def unfold_hinges(verts, faces, weighted, edges, label, forced=None):
-    """Boundary edges to leave uncut so flat panels unfold as one island,
-    the way an artist opens a box into a cross.
-
-    A hinge is the contact between two flat panels when it is one straight
-    path: the sides then swing rigidly open like paper and the flatten
-    stays isometric. Hinges are picked longest first into a spanning
-    forest over the regions, each glue along one path keeps every island a
-    disk, and a contact holding a forced seam never hinges. Each candidate
-    is test-placed in the flat net first, and one whose side would land on
-    panels already placed is dropped, so the boundary ships as a seam
-    there instead of an overlapping net the engine recuts as one blob."""
-    # forced cuts here too, or a panel spans two regions and the forest
-    # cannot tell which one a contact connects
+    # forced cuts here too, or a panel spans two regions
     root = partition(faces, weighted, edges, LOW_ANGLE, forced)
     contacts = collections.defaultdict(list)
     outline = collections.defaultdict(list)
@@ -733,8 +636,7 @@ def unfold_hinges(verts, faces, weighted, edges, label, forced=None):
         box = (min(xs), min(ys), max(xs), max(ys))
         return move, moved, box, apply_transform(move, inner)
 
-    # pre-glue panels within a region across straight flat contacts: those
-    # folds are never cut
+    # those folds are never cut
     cluster = {}
     placement = {}
     glue_adjacency = collections.defaultdict(list)
@@ -781,8 +683,7 @@ def unfold_hinges(verts, faces, weighted, edges, label, forced=None):
                 placement[neighbor] = move
                 stack.append(neighbor)
 
-    # clusters merged so far, each with its panels laid out in one shared
-    # frame. only panels inside a group can be overlap-tested
+    # only panels inside a group can be overlap-tested
     group_parent = {}
     layouts = {}
 

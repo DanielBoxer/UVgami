@@ -20,10 +20,8 @@ from ..utils.ui import (
 from .props import PRIORITY_LABELS
 
 
+# a sub-setting of something already listed is left out
 def unwrap_settings(props):
-    """The settings a full unwrap will apply, as (icon, label, path) entries
-    for draw_active. Only ones that change the result, so a sub-setting of
-    something already listed is left out."""
     engine = active_engine(props.engine)
     return engine.active_settings(props) + only_active(
         (
@@ -90,7 +88,6 @@ SETTING_VALUES = {
 
 
 def describe_settings(props, settings):
-    """The active settings as one string for the log."""
     parts = []
     for _, label, path in settings:
         value = SETTING_VALUES.get(path)
@@ -98,9 +95,8 @@ def describe_settings(props, settings):
     return ", ".join(parts)
 
 
+# the uv editor operators always run optcuts
 def fix_settings(props):
-    """Same idea for the uv editor operators, which always run optcuts, so
-    this is a different set from the main panel's."""
     return only_active(
         (
             (
@@ -120,11 +116,8 @@ def fix_settings(props):
     )
 
 
+# the enum getter clamps to an installed engine, so active_engine can't be None
 class EnginePanel:
-    """Hidden until an engine is installed, so the body can assume one. The
-    enum getter clamps to an installed engine, so installed non-empty means
-    active_engine can't return None."""
-
     @classmethod
     def poll(cls, context):
         return bool(installed_engines())
@@ -138,10 +131,8 @@ def optcuts_installed():
 ICON_BUTTON_SPLIT = 0.85
 
 
+# waiting_for is the engine that would fill the panel, None when any will do
 def draw_missing_engine(layout, waiting_for=None):
-    """Stands in for a panel body that has no engine to run. waiting_for is the
-    engine that would fill the panel, None when any will do: another engine's
-    install never unblocks it."""
     box = layout.box()
     if task_state["running"] and waiting_for in (None, task_state["owner"]):
         draw_progress(box, "Downloading engine")
@@ -172,12 +163,10 @@ FAILED_ICON = "COLORSET_01_VEC"
 
 
 def draw_summary(layout):
-    """Banner with the last session's summary, until dismissed or the next run."""
     if not manager.summary:
         return
     box = layout.box()
-    # a split, not a row: a label sizes to its text and leaves the x stranded
-    # at the far end of an empty row, a full width one centers the message
+    # a label sizes to its text and leaves the x stranded at the end of a row
     split = box.split(factor=0.9)
     split.operator(
         "uvgami.clear_summary",
@@ -196,7 +185,6 @@ def draw_summary(layout):
 
 
 def draw_queue(box):
-    """The running and queued unwraps, with their stop and cancel buttons."""
     active_unwraps = manager.active
     if not active_unwraps and not manager.preparing and not manager.pending_transfers:
         return
@@ -228,15 +216,13 @@ def draw_queue(box):
 
 
 def _draw_background_row(box, label, name):
-    """A preseed or transfer, with the cancel that drops it."""
     row = box.box().row()
     row.label(text=label, icon="SORTTIME")
     row.operator("uvgami.cancel_background", text="", icon="CANCEL").name = name
 
 
+# the key type tells a join job from a lone piece when drawing
 def _build_unwrap_groups(active_unwraps):
-    """Unwraps keyed by their join job, or by index when they have none. The
-    key type is what tells the two apart when drawing."""
     groups = {}
     active_groups = []
     for unwrap_idx, unwrap in enumerate(active_unwraps):
@@ -313,9 +299,8 @@ _RESULT_ICONS = {
 }
 
 
+# settled pieces keep their rows until the whole group finishes
 def _draw_group_pieces(box, job):
-    """One row per piece. Settled pieces keep their rows until the whole group
-    finishes, so the panel height only changes per group, not per piece."""
     small = job.expected <= PIECE_ROW_LIMIT
     for item in job.members:
         if item.result is not None:
@@ -334,14 +319,13 @@ def _draw_group_pieces(box, job):
         box.row().label(text=f"{job.reported} of {job.expected} done", icon="INFO")
 
 
+# only one viewer at a time, cycling inside it reaches the rest
 def _is_viewable(item):
-    """Only one viewer at a time, cycling inside it reaches the rest."""
     return item.is_viewable and not manager.is_viewer_active
 
 
+# greyed out rather than left out, so the row keeps its shape
 def _icon_button(row, enabled, operator, icon):
-    """Greyed out rather than left out while it can't be used, so the row keeps
-    its shape instead of growing a button at a time as the queue moves."""
     sub = row.row()
     sub.enabled = enabled
     return sub.operator(operator, text="", icon=icon)
@@ -361,8 +345,7 @@ def _draw_piece_buttons(row, item):
 
 
 class UVGAMI_PT_main(bpy.types.Panel):
-    # blank so draw_header can put the name before the icons: blender draws
-    # bl_label after the header content
+    # blender draws bl_label after the header content
     bl_label = ""
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -425,7 +408,6 @@ def draw_concurrent(layout, props, engine):
 
 
 def draw_proxy(layout, props):
-    """Shared with the uv editor settings."""
     sub = toggle(layout, props, "use_proxy", "Proxy", "MOD_DECIM")
     if sub is not None:
         row = sub.row(align=True)
@@ -437,7 +419,6 @@ def draw_proxy(layout, props):
 
 
 def draw_timeout(layout, props):
-    """Shared with the uv editor settings."""
     row = layout.row()
     row.label(text="Timeout", icon="TIME")
     row.prop(props, "unwrap_timeout")
@@ -498,8 +479,7 @@ class UVGAMI_PT_weights(bpy.types.Panel):
         # proxy mode never unwraps the original
         engine = active_engine(props.engine)
         stretch_ignored = engine.uses_proxy(props) and props.reduce_stretching
-        # active, not enabled: painting turns the checkbox on itself, so the
-        # buttons have to stay clickable while the panel reads as off
+        # active, not enabled: painting turns the checkbox on itself
         layout.active = props.use_weights and not stretch_ignored
         box = layout.box()
 
@@ -517,8 +497,7 @@ class UVGAMI_PT_weights(bpy.types.Panel):
         row.operator("uvgami.exit_draw", icon="PANEL_CLOSE")
 
         row = box.row()
-        # the engine only reads the strength for seam avoidance (-s), stretch
-        # mode runs at a fixed face weight
+        # the engine only reads the strength for seam avoidance (-s)
         row.active = props.avoid_seams
         row.label(text="Strength", icon="MOD_VERTEX_WEIGHT")
         row.prop(props, "weight_value", slider=True)

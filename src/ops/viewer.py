@@ -32,8 +32,7 @@ WIRE_FULL_PIXELS = 10.0
 old_workspace = None
 old_mode = None
 
-# POST_VIEW in the image editor draws in uv space, so snapshot uvs go
-# straight into gpu batches, no viewer mesh or edit mode needed
+# POST_VIEW in the image editor draws in uv space
 _handler = None
 _text_handler = None
 # (typical uv edge, batch) per edge length, so short bevel edges fade alone
@@ -44,14 +43,13 @@ _fill_shader = None
 # edges within this factor of each other share a wire batch
 WIRE_EDGE_BUCKET = 2.0
 # PACK_MARGIN = 0.01
+
 # per-corner 3d angles of the engine input, for stretch colors
 _corner_angle = None
 
 
+# the dot and the lengths give the cross magnitude, in 2d and 3d alike
 def _corner_angles(pts):
-    """Interior angle at each corner of every triangle, (faces, 3). The cross
-    magnitude comes from the lengths and the dot, so 2d and 3d points both
-    take the same line."""
     to_next = pts[:, [1, 2, 0]] - pts
     to_prev = pts[:, [2, 0, 1]] - pts
     dot = numpy.einsum("ijk,ijk->ij", to_next, to_prev)
@@ -59,9 +57,8 @@ def _corner_angles(pts):
     return numpy.arctan2(numpy.sqrt(numpy.maximum(squared, 0)), dot)
 
 
+# the engine keeps face order, so snapshot faces line up with these by index
 def load_input_mesh(path):
-    """Per-corner 3d angles of the input obj. The engine keeps face order, so
-    snapshot faces line up with these by index."""
     global _corner_angle
     _corner_angle = None
     if not path.is_file():
@@ -83,10 +80,8 @@ def load_input_mesh(path):
     _corner_angle = _corner_angles(pts)
 
 
+# blender's weight ramp, ported from BKE_defvert_weight_to_rgb, GPL-2.0-or-later
 def _weight_to_rgb(weight):
-    """Blender's weight ramp, dark blue through cyan, green and yellow to red.
-    Ported from BKE_defvert_weight_to_rgb, GPL-2.0-or-later, whose four
-    branches come to the same curve as these three clamped ramps."""
     rgb = numpy.empty(weight.shape + (3,), dtype=numpy.float32)
     rgb[..., 0] = numpy.clip((weight - 0.5) * 4, 0, 1)
     rgb[..., 1] = numpy.clip(numpy.minimum(weight, 1 - weight) * 4, 0, 1)
@@ -95,9 +90,8 @@ def _weight_to_rgb(weight):
     return rgb
 
 
+# the same measurement as the uv editor's angle stretch overlay
 def _stretch_colors(uv_pts):
-    """Per-corner colors from how far each uv corner angle is off its 3d angle,
-    the same measurement as the uv editor's angle stretch overlay."""
     off = numpy.abs(_corner_angles(uv_pts) - _corner_angle) / numpy.pi
     weight = 1 - (1 - off) ** 2
     colors = numpy.ones((weight.size, 4), dtype=numpy.float32)
@@ -150,7 +144,6 @@ def _stretch_colors(uv_pts):
 
 
 def _wire_batches_by_edge_length(co, edges):
-    """One (typical edge, batch) per bucket of similar edge lengths."""
     length = numpy.linalg.norm(co[edges[:, 0]] - co[edges[:, 1]], axis=1)
     bucket = numpy.floor(
         numpy.log(numpy.maximum(length, 1e-9)) / numpy.log(WIRE_EDGE_BUCKET)
@@ -166,7 +159,6 @@ def _wire_batches_by_edge_length(co, edges):
 
 
 def set_snapshot(uv_co, uv_indices):
-    """Build the fill and wire batches for the latest engine snapshot."""
     global _wire_batches, _fill_batch, _wire_shader, _fill_shader
     if _wire_shader is None:
         # polyline sets width in the shader, past the driver's line limit of 1
@@ -199,8 +191,8 @@ def clear_snapshot():
     _fill_batch = None
 
 
+# 0 to 1 on how many pixels wide the typical triangle draws
 def _wire_fade(typical_edge):
-    """0 to 1 on how many pixels wide the typical triangle draws right now."""
     view2d = bpy.context.region.view2d
     left = view2d.view_to_region(0.0, 0.0, clip=False)[0]
     right = view2d.view_to_region(1.0, 0.0, clip=False)[0]
@@ -234,7 +226,6 @@ def _draw():
 
 
 def _trim_to_uv(window):
-    """Collapse the viewer workspace down to a single uv editor area."""
     screen = window.screen
     while len(screen.areas) > 1:
         smallest = min(screen.areas, key=lambda a: a.width * a.height)
@@ -249,9 +240,8 @@ def _trim_to_uv(window):
         bpy.ops.image.view_all(fit_view=True)
 
 
+# a workspace switch lands on the next main loop tick
 def _schedule_workspace_trim(window, name):
-    """Workspace switches are deferred to the next main loop tick, so the
-    layout edit has to wait on a timer until the new workspace is active."""
     attempts = [0]
 
     def tick():
@@ -267,9 +257,8 @@ def _schedule_workspace_trim(window, name):
     bpy.app.timers.register(tick, first_interval=0.0)
 
 
+# blf works in pixels, so the grid corner anchor is converted from uv space
 def _draw_hint_text():
-    """Pixel-space companion to _draw: blf works in pixels, so the grid
-    corner anchor is converted from uv space each redraw."""
     font = 0
     blf.color(font, 1.0, 1.0, 1.0, 0.9)
     view2d = bpy.context.region.view2d
@@ -282,8 +271,8 @@ def _draw_hint_text():
         _draw_switch_arrows(font, view2d)
 
 
+# outside the grid's top corners, so they clear the islands
 def _draw_switch_arrows(font, view2d):
-    """Outside the grid's top corners, so they clear the islands."""
     left, top = view2d.view_to_region(0.0, 1.0, clip=False)
     right = view2d.view_to_region(1.0, 1.0, clip=False)[0]
     blf.size(font, ARROW_FONT_SIZE)
@@ -372,9 +361,8 @@ class UVGAMI_OT_view_unwrap(bpy.types.Operator):
         context.window_manager.modal_handler_add(self)
         return {"RUNNING_MODAL"}
 
+    # the new map arrives on the next manager tick
     def _show(self, unwrap):
-        """Point the viewer at one unwrap. The new map arrives on the next
-        manager tick."""
         if manager.current_viewer is not None:
             manager.current_viewer.viewing = False
         manager.viewer_done = False
@@ -407,8 +395,7 @@ class UVGAMI_OT_view_unwrap(bpy.types.Operator):
                 manager.current_viewer = None
             stop_viewer_draw()
 
-            # both ops are deferred a tick but process in order: the delete
-            # removes the active viewer workspace, then the old one activates
+            # both ops are deferred a tick but process in order
             workspace = bpy.data.workspaces.get(VIEWER_WORKSPACE)
             if workspace is not None and context.window.workspace == workspace:
                 bpy.ops.workspace.delete()

@@ -15,13 +15,8 @@ from ..utils.mesh import (
 )
 
 
+# the bulk reads come back empty for an object in edit mode
 def island_stacks(obj, faces=None, edges=None):
-    """The object's stacked duplicate islands. Read in bulk, which comes
-    back empty for an object in edit mode, so it runs before the session.
-    Returns per stack the kept island's anchor and reference loops with
-    their uvs, which recover the transform the pack applied, and the
-    duplicate faces to move along. faces and edges are face_vertices and
-    face_edges of the mesh, for a caller that has them."""
     mesh = obj.data
     if mesh.uv_layers.active is None:
         return []
@@ -62,9 +57,8 @@ def island_stacks(obj, faces=None, edges=None):
     return stacks
 
 
+# a deselected face is invisible to every uv operator while sync is off
 def _deselect_stacked_duplicates(obj, stacks):
-    """Deselect the duplicates' mesh faces, which drops them from every uv
-    operator while sync is off, so the pack leaves them in place."""
     if not stacks:
         return
     bm = bmesh.from_edit_mesh(obj.data)
@@ -74,9 +68,8 @@ def _deselect_stacked_duplicates(obj, stacks):
             bm.faces[fi].select = False
 
 
+# replays the kept island's similarity transform onto its duplicates
 def _restack(obj, stacks):
-    """Move each stack's duplicates onto wherever the pack put its kept
-    island, by replaying the kept island's similarity transform."""
     if not stacks:
         return
     bm = bmesh.from_edit_mesh(obj.data)
@@ -92,9 +85,7 @@ def _restack(obj, stacks):
         )
         new_anchor = loop_uv(anchor_loop)
         ratio = (loop_uv(reference_loop) - new_anchor) / (reference - anchor)
-        # duplicates snap to the kept island's exact packed values: a replayed
-        # transform lands within float noise, and the next pack must still see
-        # the stack as bit equal copies
+        # the next pack must still see the stack as bit equal copies
         exact = {
             uv: tuple(bm.faces[fi].loops[ci][uv_layer].uv)
             for uv, (fi, ci) in kept_loops.items()
@@ -110,9 +101,8 @@ def _restack(obj, stacks):
     bmesh.update_edit_mesh(obj.data)
 
 
+# topology maps an object to its (faces, edges) for a caller that read them already
 def pack_objects(objects, topology=None):
-    """Pack these objects' uvs together in one edit session. topology maps
-    an object to its (faces, edges) for a caller that read them already."""
     if not objects:
         return
     topology = topology or {}
@@ -124,23 +114,15 @@ def pack_objects(objects, topology=None):
     in_object_mode(objects[0], read_and_pack)
 
 
+# blender's merge_overlap can't keep stacks together
 def pack(stacks_of):
-    """Inside the edit session, with island_stacks per object.
-
-    Blender's merge_overlap can't keep stacks together, it also glues the
-    accidental overlaps of a multi piece output into one blob, so exact
-    stacks are packed as one island and the duplicates moved after."""
     tool_settings = bpy.context.scene.tool_settings
     old_sync = tool_settings.use_uv_select_sync
-    # with sync on, uv operators follow the mesh selection their own way per
-    # blender version, sync off makes deselected faces reliably invisible
+    # with sync on, uv operators follow the mesh selection differently per version
     tool_settings.use_uv_select_sync = False
     try:
         select_uvs()
-        # stacks are found before averaging: the island scale comes from the
-        # 3d area, which floats compute a few ulps apart on a rotated twin,
-        # and that noise breaks the exact uv match. the duplicates sit out
-        # both operators and snap to their kept island after
+        # a rotated twin's 3d area computes a few ulps apart
         for obj, stacks in stacks_of.items():
             _deselect_stacked_duplicates(obj, stacks)
         if bpy.context.scene.uvgami.fix_scale:

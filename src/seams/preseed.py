@@ -1,10 +1,3 @@
-"""Preseed uvs without Blender.
-
-The flatten solve runs in the optcuts binary's flatten mode, everything here
-is plain data: verts, polygon faces, per-face corner uvs. hard_surface.py
-adapts a Blender mesh onto these calls, so this module stays unit-testable
-and can run off the main thread."""
-
 import collections
 import functools
 import shutil
@@ -30,19 +23,14 @@ class FlattenError(RuntimeError):
 POLL_INTERVAL = 0.05
 
 
+# the engine doesn't validate in flatten mode, a non-manifold mesh returns exit 0
 def check_manifold(faces):
-    """Guard for flattens whose result ships as the final map. The engine
-    doesn't validate in flatten mode: a non-manifold mesh comes back as
-    degenerate uvs with exit 0. The unwrap path skips this on purpose, a
-    ruined island there is recut by the engine."""
     if any(len(owners) > 2 for owners in face_edges(faces).values()):
         raise FlattenError("Non Manifold Edges")
 
 
+# result() also removes the workdir
 class FlattenRun:
-    """One flatten subprocess. poll() is None while it runs, result() parses
-    the uvs and removes the workdir, progress is the engine's done fraction."""
-
     def __init__(self, process, workdir, out_path, face_count):
         self.process = process
         self.workdir = workdir
@@ -75,7 +63,6 @@ class FlattenRun:
         return self.result()
 
     def result(self):
-        """Uvs of a finished run. Raises FlattenError on a failed exit."""
         code = self.process.wait()
         self._close()
         try:
@@ -100,20 +87,14 @@ class FlattenRun:
             pipe.close()
 
 
+# the preview operator and a builder thread can flatten at once
 class FlattenEngine:
-    """Client for the engine's flatten mode. Each call gets its own subdir of
-    workdir: the preview operator and a builder thread can flatten at once,
-    and shared filenames would swap uvs between them."""
-
     def __init__(self, engine_path, workdir):
         self.engine_path = str(engine_path)
         self.workdir = Path(workdir)
 
+    # with cancelled or progress the engine is polled instead of waited on
     def flatten(self, verts, faces, seams, cancelled=None, progress=None):
-        """Per-face corner uvs for faces cut along seams, packed.
-
-        With cancelled or progress the engine is polled instead of waited on,
-        so a cancel kills the subprocess instead of sitting out the solve."""
         run = self.start(verts, faces, seams)
         if cancelled is None and progress is None:
             return run.wait()
@@ -127,7 +108,6 @@ class FlattenEngine:
         return run.result()
 
     def start(self, verts, faces, seams):
-        """Spawn the flatten and return its FlattenRun without waiting."""
         self.workdir.mkdir(parents=True, exist_ok=True)
         workdir = Path(tempfile.mkdtemp(dir=self.workdir))
         obj_path = workdir / "flatten.obj"
@@ -180,8 +160,8 @@ def _read_uvs(path, face_count):
     return face_uvs
 
 
+# compact copy of just these faces, with the seams reindexed
 def submesh(verts, faces, subset, seams):
-    """Compact copy of just these faces, with the seams reindexed."""
     vmap = {}
     sub_verts = []
     sub_faces = []
@@ -202,6 +182,7 @@ def submesh(verts, faces, subset, seams):
     return sub_verts, sub_faces, sub_seams
 
 
+# a ruined island ships as-is, the engine's own cut search benches better
 def preseed_uvs(
     engine,
     verts,
@@ -215,21 +196,6 @@ def preseed_uvs(
     cancelled=None,
     python=None,
 ):
-    """Seam the strip-merged feature boundaries and flatten.
-
-    The data twin of hard_surface.build_seam_uvs: engine is a FlattenEngine
-    (or anything with its flatten signature), marked/weights/only mean
-    what they do there, marked_seams are the mesh's own marked edges as
-    vertex pairs, mirrors are per-axis vertex maps the seam set is closed
-    under, so a symmetric mesh flattens into mirrored islands with no cut at
-    the plane. Returns (seams, uvs) where uvs is per-face corner lists,
-    None for faces outside only. Returns None when the subset is closed and
-    the seam set came out empty, which cannot flatten: the caller falls back
-    to a scratch unwrap. python is (executable, leading args) for the seam
-    worker processes, None runs the passes here.
-
-    A ruined island ships as-is on purpose: the engine rejects it and its
-    own cut search replaces it, which benches better than repairing here."""
     subset = list(range(len(faces))) if only is None else sorted(only)
     in_subset = set(subset)
     edges = face_edges(faces)

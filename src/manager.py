@@ -35,17 +35,14 @@ SETTLE_TICK_SECONDS = 0.05
 DISPATCH_SECONDS = 0.1
 # a finished piece waits for the tick
 QUEUED_DISPATCH_SECONDS = 0.02
-# the uv transfer's share of a piece's progress, held back from the start or
-# the bar drops when the engine hands over
+# held back from the start or the bar drops when the engine hands over
 TRANSFER_PROGRESS_SHARE = 0.4
 # a sidebar rebuild mid click drops the click
 PANEL_REDRAW_SECONDS = 1.0
 
 
+# frozen at session start, a slider moved mid-run changes nothing
 class Settings:
-    """A frozen copy of scene.uvgami taken at session start. Everything the
-    session does reads this, so a slider moved mid-run changes nothing."""
-
     def __init__(self, props):
         for prop in props.bl_rna.properties:
             if prop.identifier == "rna_type":
@@ -99,9 +96,8 @@ class UnwrapManager:
         self.summary_failed = False
         self._reset_session()
 
+    # called from __init__ too, end_session can run before a session starts
     def _reset_session(self):
-        """Per-run state. Called from __init__ too, so the error path can reach
-        end_session() before a session ever starts."""
         # frozen scene.uvgami, set in start()
         self.props = None
         self.moved_to_invalid = False
@@ -129,7 +125,6 @@ class UnwrapManager:
 
     @property
     def active(self):
-        """All unwraps (running and queued)"""
         return self._running + list(self._queue)
 
     def add(self, unwrap):
@@ -154,7 +149,6 @@ class UnwrapManager:
         bpy.app.timers.register(self._dispatch_handle)
 
     def _fill_slots(self):
-        """Start queued unwraps up to the concurrency limit."""
         props = self.props
         engine = self.engine
         if engine.batches_queue(props):
@@ -168,14 +162,13 @@ class UnwrapManager:
                 return
             # a single queued mesh runs the normal solo path
         max_concurrent = 1 if engine.batches_queue(props) else props.max_cores
-        # pieces export in queue order, so an unexported piece means everything
-        # behind it is unexported too. copy twins never run, their representative
-        # settles them
+        # pieces export in queue order, so nothing behind an unexported one is ready
         for unwrap in list(self._queue):
             if len(self._running) >= max_concurrent:
                 break
             if not unwrap.is_exported:
                 break
+            # a copy twin never runs, its representative settles it
             if unwrap.copy_of is not None:
                 continue
             self._queue.remove(unwrap)
@@ -188,16 +181,15 @@ class UnwrapManager:
                 self._send_to_shared_process(unwrap, shared_args)
             self._running.append(unwrap)
 
+    # a lone mesh gets every core
     def _shared_threads(self, unwrap, props):
-        """Threads per shared engine: the cores split between the slots once
-        a mesh has enough pieces to fill them, every core for a lone mesh."""
         pieces = unwrap.join_job.expected if unwrap.join_job is not None else 1
         if pieces < props.max_cores:
             return 0
         return max(1, multiprocessing.cpu_count() // props.max_cores)
 
+    # spawning costs 50ms inside Blender, so processes are reused
     def _send_to_shared_process(self, unwrap, args):
-        """Spawning costs 50ms inside Blender, so processes are reused."""
         process = next((p for p in self._shared_processes if p.is_idle), None)
         if process is None:
             process = BatchProcess(args, self.engine.build_env(self.engine_ctx))
@@ -211,7 +203,6 @@ class UnwrapManager:
         self._shared_processes.clear()
 
     def _start_batch_process(self, engine, props):
-        """Unwrap every queued mesh in one engine process."""
         unwraps = [u for u in self._queue if u.copy_of is None]
         self._queue = deque(u for u in self._queue if u.copy_of is not None)
         args = engine.build_batch_args(
@@ -276,12 +267,10 @@ class UnwrapManager:
                     if ret_code == 0 and unwrap.output_path.is_file():
                         completed.append(unwrap)
                     elif ret_code == 0:
-                        # exit 0 with no output file, the unwrap would
-                        # otherwise stay running forever
+                        # exit 0 with no output file
                         failed.append((unwrap, -4))
                     else:
                         # a batched mesh that never started goes back to the queue
-                        # rather than take the dead process's exit code
                         stem = unwrap.path.stem
                         if (
                             unwrap.batch_process is not None
@@ -318,8 +307,7 @@ class UnwrapManager:
 
             self._fill_slots()
 
-            # an empty queue is not the end, an exporter or a transfer may
-            # still be running
+            # an exporter or a transfer may still be running
             if (
                 not self._running
                 and not self._queue
@@ -343,11 +331,8 @@ class UnwrapManager:
                 return
             time.sleep(SETTLE_TICK_SECONDS)
 
+    # a piece with a uv transfer splits its bar between the engine and the transfer
     def _update_progress_bar(self):
-        """Session progress as the mean of every piece's (done, running,
-        remaining). A finished piece is all done, an unexported one sits at
-        (0, 0, 1), and a piece with a uv transfer splits its bar between the
-        engine and the transfer."""
         active = self.active
         pieces = active + [unwrap for unwrap, _ in self.results]
         if not pieces:
@@ -380,8 +365,8 @@ class UnwrapManager:
             self._panel_drawn_at = now
             tag_redraw(("UI",))
 
+    # everything the queue ui draws, as a comparable value
     def _panel_state(self):
-        """Everything the queue ui draws, as a comparable value."""
         return (
             len(self.results),
             self.is_viewer_active,
@@ -399,8 +384,8 @@ class UnwrapManager:
             ),
         )
 
+    # every piece ends here as finished, invalid, or cancelled
     def record_result(self, unwrap, result):
-        """Every piece ends here as finished, invalid, or cancelled."""
         if unwrap.result is not None:
             return
         unwrap.result = result
@@ -422,9 +407,8 @@ class UnwrapManager:
         for twin in unwrap.twins:
             self._settle_twin(twin, result)
 
+    # an unexported twin has no metadata, the exporter settles it
     def _settle_twin(self, twin, result):
-        """A copy twin ends however its representative ended. One that hasn't
-        exported yet can't finish (no metadata), the exporter settles it."""
         if twin.result is not None:
             return
         if result is Result.FINISHED:
@@ -435,8 +419,8 @@ class UnwrapManager:
             )
         self.record_result(twin, result)
 
+    # every result imports here on the timer
     def _drain_imports(self):
-        """Every result imports here on the timer."""
         for item in self._to_import:
             is_group = isinstance(item, Join)
             unwrap = item.finished[-1] if is_group else item
@@ -447,8 +431,7 @@ class UnwrapManager:
                     path = unwrap.output_path
                     edge_path, added_edges = unwrap.edge_path, []
                 self._import_and_finalize(unwrap, path, edge_path, added_edges)
-                # checkpoint each result, so a mid-session ctrl z can't
-                # discard it. the last push is in finish()
+                # a mid-session ctrl z would otherwise discard the result
                 if self._running or self._queue or self.pieces_still_arriving:
                     bpy.ops.ed.undo_push(message="UVgami Unwrap")
             except Exception:
@@ -462,9 +445,8 @@ class UnwrapManager:
                 )
         self._to_import.clear()
 
+    # settles either way, an exception here would leave its group waiting forever
     def _settle_step(self, unwrap, doing, step, *args):
-        """Run one piece's settle step. It settles either way, an exception
-        here would leave its group waiting forever."""
         try:
             step(unwrap, *args)
         except Exception:
@@ -535,8 +517,7 @@ class UnwrapManager:
                 if start != len(output.data.polygons):
                     ranges = None
             reads = read_mesh(output.data)
-            # rebuild sliced the strips already, mirrored, and a second
-            # pass in uv space would land differently on each side
+            # a second pass in uv space would land differently on each side
             if not half_rebuilt:
                 reads = finish_preseed(output, reads, ranges)
             rectify_islands(output, reads)
@@ -552,8 +533,7 @@ class UnwrapManager:
 
         edit_restore([output], show_seams)
 
-        # the whole copy kept its own groups, and the piece's indices point
-        # at the half's vertices
+        # the piece's indices point at the half's vertices
         if not half_rebuilt:
             self._restore_vertex_groups(unwrap, output)
 
@@ -584,8 +564,7 @@ class UnwrapManager:
                         job, output, pack_index, unwrap.input_name, time.monotonic()
                     )
                 )
-                # unlinked while it waits, or it sits in the scene beside
-                # the original
+                # or it sits in the scene beside the original
                 for collection in output.users_collection:
                     collection.objects.unlink(output)
                 return
@@ -597,9 +576,8 @@ class UnwrapManager:
         collection = check_collection("UVgami Unwrapped", bpy.context.scene.collection)
         move_to_collection(output, collection)
 
+    # everything after a transfer's report: pack list, hide state, grid, collection
     def _settle_transfer(self, job, output, pack_index, report):
-        """Everything after a transfer's report: pack list, hide state, grid,
-        collection."""
         job.settled = True
         props = self.props
         input_mesh = self.input[job]
@@ -615,8 +593,7 @@ class UnwrapManager:
                 self._pack_output_objects[pack_index] = replacement
             output = replacement
         else:
-            # no hide job exists when a transfer job holds the slot, so
-            # without this the original sits on top of the kept output
+            # no hide job exists when a transfer job holds the slot
             if check_exists(input_mesh):
                 input_mesh.hide_set(True)
             self.transfer_uv_failed = True
@@ -636,7 +613,6 @@ class UnwrapManager:
         move_to_collection(output, collection)
 
     def _finish_transfers(self):
-        """Apply transfers whose worker thread is done."""
         timeout_minutes = bpy.context.scene.uvgami.unwrap_timeout
         for entry in list(self.pending_transfers):
             job, output, pack_index = entry.job, entry.output, entry.pack_index
@@ -671,15 +647,13 @@ class UnwrapManager:
                     logger.add_data("errors", line)
                     print(line)
 
+    # the input mesh survives once a transfer has deleted the output
     def _add_auto_grid(self, props, obj):
-        """Grid goes on whichever object survives the run, which is the input
-        mesh once a transfer has deleted the output."""
         if props.auto_grid:
             add_grid(obj, make_grid_mat(make_grid_img()))
 
+    # in piece order when the mesh was separated
     def _restore_face_data(self, unwrap, output, attribute, field):
-        """Put a per-face list captured at export back on the output, in piece
-        order when the mesh was separated."""
         pieces = unwrap.join_job.finished if unwrap.join_job is not None else [unwrap]
         values = []
         for piece in pieces:
@@ -762,17 +736,15 @@ class UnwrapManager:
         self.record_result(unwrap, Result.INVALID)
 
     def _reached_scene(self, unwrap):
-        """Whether a finished piece's unwrap is in the scene. A discarded or
-        unsettled group is never imported, and a cancelled transfer deletes
-        the output it was about to read."""
         group = unwrap.join_job
+        # a discarded or unsettled group is never imported
         if group is not None and (group.discard or not group.is_settled()):
             return False
+        # a cancelled transfer deletes the output it was about to read
         return unwrap.transfer_uvs_job not in self.cancelled_transfers
 
+    # a finished piece that never reached the scene counts as cancelled
     def _result_counts(self):
-        """Per-result piece counts. A finished piece that never reached the
-        scene counts as cancelled."""
         counts = dict.fromkeys(Result, 0)
         for unwrap, result in self.results:
             if result is Result.FINISHED and not self._reached_scene(unwrap):
@@ -780,15 +752,13 @@ class UnwrapManager:
             counts[result] += 1
         return counts
 
+    # its piece already recorded FINISHED, so the counts have to take it back
     def cancel_transfer(self, entry):
-        """Drop a proxy finish the user cancelled. Its piece already recorded
-        FINISHED, so the counts have to take it back."""
         entry.job.cancel()
         self.pending_transfers.remove(entry)
         self.cancelled_transfers.add(entry.job)
 
     def cancel_session(self):
-        """Cancel everything still unsettled, then conclude the session."""
         # a still pending transfer would otherwise count its piece as finished
         for entry in list(self.pending_transfers):
             self.cancel_transfer(entry)
@@ -800,9 +770,8 @@ class UnwrapManager:
             self.record_result(unwrap, Result.CANCELLED)
         self.finish_session()
 
+    # the dispatch timer and cancel all both end here
     def finish_session(self):
-        """Conclude the session once every piece has a result: teardown, then
-        the summary. The dispatch timer and cancel all both end here."""
         props = self.props
         if props.pack_after_unwrap and self._pack_output_objects:
             valid_objects = [o for o in self._pack_output_objects if check_exists(o)]
@@ -887,9 +856,8 @@ class UnwrapManager:
         else:
             self.clear_summary()
 
+    # a run with problems stays up until the next one
     def _show_status(self):
-        """Put the summary in the status bar. A clean run clears itself, a run
-        with problems stays until the next one so it can't be missed."""
         text = f"UVgami: {self.summary[0]}"
         if self.summary_failed:
             set_status(f"{text}", "ERROR")
@@ -909,7 +877,6 @@ class UnwrapManager:
         logger.write_latest()
 
     def clear_summary(self):
-        """Drop the banner and the status bar message."""
         self.summary = []
         self.summary_failed = False
         set_status(None)
@@ -920,19 +887,17 @@ class UnwrapManager:
                 bpy.app.timers.unregister(self._dispatch_handle)
             self._dispatch_handle = None
 
+    # tolerant, end_session clears the list before the builder gets here
     def drop_preparing(self, entry):
-        """Tolerant: end_session clears the list before the builder gets here."""
         if entry in self.preparing:
             self.preparing.remove(entry)
 
+    # a timer that outlives end_session would go negative
     def finished_adding(self):
-        """Clamped: end_session zeroes the count, so a timer that outlives it
-        would otherwise go negative and the session could never finish."""
         self.pieces_still_arriving = max(0, self.pieces_still_arriving - 1)
 
+    # the one teardown every ending goes through, idempotent
     def end_session(self):
-        """The one teardown every ending goes through: a settled session, a
-        cancel, an error, a file load. Safe from any state and idempotent."""
         # late import: ops.viewer imports the manager
         from .ops.viewer import stop_viewer_draw
 
@@ -967,10 +932,8 @@ class UnwrapManager:
         # erasing the progress bar needs a repaint
         tag_redraw()
 
+    # a file load kills the timer that would have cleaned these up
     def shutdown(self):
-        """Drop everything, for a file load or the addon unloading. The engine
-        processes and the draw handlers survive both, and a file load kills the
-        timer that would have cleaned them up."""
         self.end_session()
         self.clear_summary()
         logger.reset()

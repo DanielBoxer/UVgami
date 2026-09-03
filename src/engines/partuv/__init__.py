@@ -37,8 +37,7 @@ from .paths import (
 GEOMETRIC_SEGMENTATION = 0
 AI_SEGMENTATION = 1
 
-# built once so the item strings stay referenced, which blender requires for
-# dynamic enum callbacks
+# blender requires a dynamic enum's item strings to stay referenced
 _SEGMENTATION_ITEMS = (
     (
         "GEOMETRIC",
@@ -63,8 +62,7 @@ def _segmentation_items(self, context):
     return [_SEGMENTATION_ITEMS[GEOMETRIC_SEGMENTATION]]
 
 
-# clamped without touching the stored value, so ai comes back as the selection
-# once its checkpoint is downloaded
+# ai comes back as the selection once its checkpoint is downloaded
 def _segmentation_get(self):
     stored = self.get("segmentation", AI_SEGMENTATION)
     if stored == AI_SEGMENTATION and not is_ai_segmentation_available():
@@ -90,11 +88,9 @@ class UVGAMI_PG_partuv(bpy.types.PropertyGroup):
     )
 
 
-# cached: validate runs on every panel redraw and shutil.which scans the
-# whole PATH. a dev checkout doesn't change mid-session
+# validate runs on every panel redraw and shutil.which scans the whole PATH
 @functools.cache
 def find_partuv_dev_repo():
-    """Return the repo path if the developer CLI is usable, else None."""
     repo = get_dir_path()
     if (
         (repo / "dev" / "uvgami_cli").is_dir()
@@ -121,8 +117,7 @@ def is_ai_segmentation_available():
 
 @dataclass
 class PartuvRun:
-    # dev runs the workspace partuv through uv, installed runs the wheel's
-    # python -m partuv from the install operator's venv
+    # "dev" runs the workspace partuv through uv, "installed" the wheel's python
     mode: str
     path: pathlib.Path
 
@@ -140,8 +135,7 @@ class PartuvEngine(Engine):
         return platform.system() in PARTUV_PLATFORMS
 
     def batches_queue(self, props):
-        # one process loads the model once for every queued mesh, running more
-        # than one runs out of vram
+        # more than one process runs out of vram
         return props.partuv.segmentation == "AI"
 
     def validate(self, prefs):
@@ -267,10 +261,7 @@ class PartuvEngine(Engine):
             ]
         else:
             base = [str(get_partuv_venv_python()), "-m", "partuv"]
-        # windows caps a command line near 32k chars, so a large batch of mesh
-        # paths as argv overflows CreateProcess. named per invocation since solo
-        # mode spawns several over one session, and it goes in the input dir so
-        # manager.finish cleans it up
+        # windows caps a command line near 32k chars, which a large batch overflows
         input_list = (
             get_extension_dir_path() / "input" / f"{input_paths[0].stem}_inputs.txt"
         )
@@ -293,8 +284,7 @@ class PartuvEngine(Engine):
 
     def build_env(self, ctx):
         env = os.environ.copy()
-        # the checkpoint isn't shipped in the wheel, and the cli's source-tree
-        # default resolves relative to the installed package
+        # the cli's source-tree default resolves relative to the installed package
         if ctx.mode == "dev":
             checkpoint = ctx.path / "engine" / "partuv" / "model_objaverse.ckpt"
         else:

@@ -2,15 +2,12 @@ import itertools
 
 import numpy
 
-# rms fit error under this fraction of the piece's bounding box diagonal
-# counts as the same shape
+# rms fit error as a fraction of the piece's bounding box diagonal
 MATCH_TOLERANCE = 1e-4
 
 
+# rotation or reflection, then translation
 def rigid_fit(source, target):
-    """Best rigid transform (rotation or reflection, then translation) taking
-    source points onto target points matched by index, as a 4x4 matrix, with
-    the rms error of the fit."""
     source_center = source.mean(axis=0)
     target_center = target.mean(axis=0)
     u, _, vt = numpy.linalg.svd((source - source_center).T @ (target - target_center))
@@ -40,17 +37,13 @@ def _topology(mesh):
     return totals, corners
 
 
-# duplicates land on each other to float precision after pca alignment, so a
-# cell this big (fraction of the diagonal) separates distinct vertices while
-# keeping a boundary miss rare
+# duplicates land on each other to float precision after pca alignment
 MATCH_CELL = 1e-4
 
-# pca eigenvalue mismatch above this fraction of the largest one means a
-# different shape, skip the alignment attempts
+# pca eigenvalue mismatch above this fraction of the largest means a different shape
 SPREAD_TOLERANCE = 1e-3
 
-# an eigenvalue pair closer than this fraction of the largest makes the pca
-# axes in that plane arbitrary, so alignment needs the rotation search
+# closer than this and the pca axes in that plane are arbitrary
 DEGENERATE_GAP = 1e-2
 
 
@@ -86,9 +79,6 @@ _NEIGHBOR_CELLS = [
 
 
 def _match_vertices(rep_local, grid, aligned, cell):
-    """Permutation sending each aligned candidate vertex index to the rep
-    vertex at the same position, or None when some vertex has no
-    counterpart."""
     permutation = numpy.empty(len(aligned), dtype=numpy.int64)
     used = numpy.zeros(len(rep_local), dtype=bool)
     keys = numpy.round(aligned / cell).astype(numpy.int64).tolist()
@@ -110,10 +100,8 @@ def _match_vertices(rep_local, grid, aligned, cell):
     return permutation
 
 
+# the anchor is the rep vertex farthest from the symmetry axis
 def _plane_alignments(rep, piece, plane, unique, cell):
-    """Aligned copies of piece's local coords for a rotationally symmetric
-    rep: every in-plane rotation, mirror, and axis flip taking a candidate
-    vertex onto the rep vertex farthest from the symmetry axis."""
     rep_radius = numpy.hypot(rep.local[:, plane[0]], rep.local[:, plane[1]])
     anchor = int(rep_radius.argmax())
     anchor_angle = numpy.arctan2(
@@ -144,11 +132,8 @@ def _plane_alignments(rep, piece, plane, unique, cell):
                 yield aligned
 
 
+# covers a box but not a freely rotated ball-like shape
 def _alignments(rep, piece, cell):
-    """Aligned copies of piece's local coords to try against rep's: the axis
-    sign flips when the pca frame is stable, the rotation search when two
-    eigenvalues coincide, the axis permutations and sign flips when all three
-    do, which covers a box but not a freely rotated ball-like shape."""
     scale = rep.spread[2]
     low_gap = (rep.spread[1] - rep.spread[0]) / scale
     high_gap = (rep.spread[2] - rep.spread[1]) / scale
@@ -165,9 +150,8 @@ def _alignments(rep, piece, cell):
                 yield piece.local[:, order] * signs
 
 
+# each cycle rotated, and reversed if that is smaller, to its smallest tuple
 def _face_keys(totals, corners):
-    """Faces as order-free keys: each cycle rotated, and reversed if that is
-    smaller, to its smallest tuple, the whole list sorted."""
     keys = []
     face_corners = corners.tolist()
     start = 0
@@ -184,11 +168,8 @@ def _face_keys(totals, corners):
     return sorted(keys)
 
 
+# the cheap index-for-index fit first, then pca alignment for a reordered copy
 def _twin_matrix(rep, piece):
-    """(matrix taking rep's world positions onto piece's, exact) when the two
-    are congruent duplicates, else None. Tries the cheap index-for-index fit
-    first (exact True), then pca alignment to find the vertex permutation of
-    a reordered copy (exact False)."""
     tolerance = MATCH_TOLERANCE * piece.diagonal
     same_order = numpy.array_equal(rep.totals, piece.totals) and numpy.array_equal(
         rep.corners, piece.corners
@@ -220,12 +201,8 @@ def _twin_matrix(rep, piece):
     return None
 
 
+# only pieces made by duplication qualify
 def find_twins(objects):
-    """Group congruent pieces: same shape under a rigid transform with the
-    same topology in any vertex order, so only pieces made by duplication
-    qualify. Returns twin object -> (representative object, matrix taking the
-    representative's world positions onto the twin's, exact), exact meaning
-    the vertex order matches index for index."""
     representatives = {}
     twins = {}
     for obj in objects:
@@ -249,9 +226,8 @@ def _find(parent, a):
     return a
 
 
+# -1 where no vertex is close enough
 def _partial_match(positions, grid, reflected, cell):
-    """Index of the vertex at each reflected position, -1 where none is
-    close enough. Matched pairs stay one to one."""
     permutation = numpy.full(len(reflected), -1, dtype=numpy.int64)
     used = numpy.zeros(len(positions), dtype=bool)
     keys = numpy.round(reflected / cell).astype(numpy.int64).tolist()
@@ -287,16 +263,12 @@ def _mesh_positions(mesh):
     return positions.reshape(-1, 3)
 
 
-# looser than MATCH_CELL: seam mirroring wants the nearest counterpart under
-# small modeling drift, and mirror_seams drops any pair that is not a mesh edge
+# looser than MATCH_CELL, seam mirroring has to survive small modeling drift
 SEAM_MATCH_CELL = 1e-3
 
 
+# a vertex with no counterpart is absent from its map
 def mirror_matches(mesh, center, axes):
-    """Per-axis partial vertex maps sending each vertex to the nearest vertex
-    across the axis plane through center, within tolerance. No topology
-    requirement: a vertex with no counterpart is absent from its map, so an
-    asymmetric region simply drops out. None when nothing matches."""
     if len(mesh.vertices) == 0:
         return None
     positions = _mesh_positions(mesh)
@@ -317,14 +289,8 @@ def mirror_matches(mesh, center, axes):
     return maps
 
 
+# a part with any vertex or face lacking a mirror image drops out
 def mirror_permutations(mesh, center, axes):
-    """Per-axis vertex maps, as dicts, sending each mirror-symmetric loose
-    part onto itself or its twin across the axis plane through center.
-
-    Coverage is per part: a part with any vertex or face that has no mirror
-    image drops out, along with everything mapped into a dropped part, so a
-    wrench keeps its symmetric handle while the asymmetric worm gear opts
-    out. A part must qualify on every chosen axis. None when no part does."""
     if len(mesh.vertices) == 0:
         return None
     positions = _mesh_positions(mesh)
@@ -367,8 +333,7 @@ def mirror_permutations(mesh, center, axes):
         axis_covered = set(part_of) - bad
         covered = axis_covered if covered is None else covered & axis_covered
 
-    # a covered part's image must be covered too, or its mirrored seams
-    # land on a part that will not mirror back
+    # mirrored seams would land on a part that will not mirror back
     changed = True
     while changed and covered:
         changed = False
@@ -387,17 +352,12 @@ def mirror_permutations(mesh, center, axes):
     ]
 
 
-# intentional stacks are exact copies (mirror modifier, twin outputs from the
-# same vt text), so round tightly: loose rounding merges distinct islands that
-# average_islands_scale happens to land on the same spot
+# loose rounding merges distinct islands average_islands_scale lands together
 STACK_DECIMALS = 9
 
 
+# only the kept island packs, the duplicates follow it
 def find_stacks(groups, uvs):
-    """Islands whose loop uvs match exactly, as (kept island, duplicate
-    islands) pairs. Those are intentional stacks (symmetry twins, detected
-    duplicates, artist stacks): only the kept one should pack, the duplicates
-    follow it."""
     by_key = {}
     for group in groups:
         key = tuple(
@@ -413,10 +373,8 @@ def find_stacks(groups, uvs):
     ]
 
 
+# a reflection flips each face's winding so normals stay outward
 def write_twin_output(source_path, target_path, matrix):
-    """Write the twin's engine output: the representative's output with the
-    vertex positions moved by matrix and the uvs kept, so the islands stack
-    exactly. A reflection flips each face's winding so normals stay outward."""
     rotation = numpy.array(matrix)[:3, :3]
     translation = numpy.array(matrix)[:3, 3]
     mirrored = numpy.linalg.det(rotation) < 0

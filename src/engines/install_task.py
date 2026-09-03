@@ -4,9 +4,7 @@ import bpy
 
 from ..utils.ui import tag_redraw
 
-# written by the install or uninstall thread, read by the preferences ui.
-# shared across engines, so only one install task runs at a time. owner names
-# the engine whose task ran last, so each prefs section shows only its own.
+# shared across engines, only one install task runs at a time
 task_state = {
     "running": False,
     "owner": "",
@@ -27,15 +25,14 @@ NOT_DOWNLOADED_ERROR = "Engine not downloaded. Download it in the add-on prefere
 
 
 def parse_version(version):
-    """(1, 20, 2) for "1.20.2", or None when the name is not a version."""
     parts = version.split(".")
     if len(parts) != 3 or not all(part.isdigit() for part in parts):
         return None
     return tuple(int(part) for part in parts)
 
 
+# Blender requires add-ons to check this before any download
 def offline_error():
-    """Blender requires add-ons to check this before any download."""
     if bpy.app.online_access:
         return None
     if bpy.app.online_access_override:
@@ -43,9 +40,8 @@ def offline_error():
     return "Turn on Allow Online Access in the preferences"
 
 
+# True when it drew, meaning no download can run yet
 def draw_online_access(layout):
-    """Blender's own button for the Allow Online Access preference. True when it
-    drew, meaning no download can run yet."""
     if bpy.app.online_access:
         return False
     row = layout.row()
@@ -72,10 +68,6 @@ def _run_task(task):
 
 
 class InstallTask:
-    """Runs an engine install or uninstall on a thread, with a modal that
-    redraws the preferences while it works. Subclasses return the work as a
-    callable from build_task and may reject the run from precheck."""
-
     done_message = ""
     owner = ""
 
@@ -83,7 +75,6 @@ class InstallTask:
         raise NotImplementedError
 
     def precheck(self):
-        """Return an error message to block the run, or None to proceed."""
         return None
 
     def execute(self, context):
@@ -117,7 +108,7 @@ class InstallTask:
             tag_redraw(area_types=INSTALL_AREAS)
             return {"PASS_THROUGH"}
         context.window_manager.event_timer_remove(self._timer)
-        # imported late: the engines package imports this module while loading
+        # imported late, the engines package imports this module while loading
         from . import invalidate_engine_caches
 
         invalidate_engine_caches()
@@ -133,10 +124,8 @@ UPDATE_ICON = "FILE_REFRESH"
 UPDATE_LABEL_SPLIT = 0.9
 
 
+# the download button is in the preferences, not here
 def draw_update_row(layout, owner, default_phase, text, required=False):
-    """Shared body for Engine.draw_update_notice: progress while this engine's
-    task runs, else the message. text is None when no update is pending. The
-    download button for it is in the preferences, not here."""
     if task_state["running"] and task_state["owner"] == owner:
         draw_progress(layout, default_phase)
         return
@@ -147,16 +136,14 @@ def draw_update_row(layout, owner, default_phase, text, required=False):
     split.row().operator("uvgami.open_preferences", text="", icon="PREFERENCES")
 
 
+# only the first line, a label cannot wrap
 def draw_error(layout, owner):
-    """The last failure for this engine, kept after the operator report is gone.
-    Only the first line: a label cannot wrap."""
     if task_state["error"] is None or task_state["owner"] != owner:
         return
     layout.row().label(text=task_state["error"].partition("\n")[0], icon="ERROR")
 
 
 def draw_progress(layout, default_phase):
-    """Draw the running task's progress row in the preferences."""
     row = layout.row()
     phase = task_state["phase"] or default_phase
     total = task_state["bytes_total"]

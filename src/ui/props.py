@@ -8,16 +8,13 @@ from ..utils.paths import get_addon_id
 # hang backstop, generous so a slow legitimate piece never hits it
 UNWRAP_TIMEOUT_DEFAULT_MINUTES = 60
 
-# built once so the item strings stay referenced, which blender requires for
-# dynamic enum callbacks. explicit numbers keep saved files stable as the
-# installed set changes
+# blender requires a dynamic enum's item strings to stay referenced
 _ENGINE_ITEMS = {
     e.id: (e.id, e.label, e.description, e.enum_value) for e in ENGINES.values()
 }
 
 
-# blender warns on every redraw when an enum has no items. the 0 matches what
-# the getter falls back to
+# blender warns on every redraw when an enum has no items
 NO_ENGINE_ITEM = ("NONE", "No engine installed", "", 0)
 
 PRIORITY_LABELS = {
@@ -34,9 +31,7 @@ def _engine_items(self, context):
     return [_ENGINE_ITEMS[e.id] for e in installed]
 
 
-# the getter clamps to an installed engine without touching the stored value,
-# so the widget can't go blank when the selected engine is deleted, and
-# reinstalling it restores the old selection
+# clamps without touching the stored value, reinstalling restores the choice
 def _engine_get(self):
     stored = self.get("engine", -1)
     installed = installed_engines()
@@ -255,8 +250,7 @@ class UVGAMI_PG_properties(bpy.types.PropertyGroup):
 
     @property
     def preserve_mesh(self):
-        # a transfer writes onto the original, which never lost its quads.
-        # engines without preserve renumber verts, dissolving the wrong edges
+        # a transfer writes onto the original, which never lost its quads
         return False
         # engine = ENGINES.get(self.engine)
         # return (

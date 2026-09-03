@@ -14,7 +14,6 @@ class XatlasEngine(BinaryEngine):
     icon = "MESH_GRID"
     classes = (UVGAMI_OT_install_xatlas,)
     release = XATLAS
-    # xatlas packs its own atlas, so it never needs forced packing
 
     def build_args(self, ctx, input_path, props):
         output_path = get_extension_dir_path() / "output" / f"{input_path.stem}.obj"

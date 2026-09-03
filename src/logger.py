@@ -16,9 +16,8 @@ def get_log_path():
     return get_extension_dir_path() / LOG_FILE_NAME
 
 
+# the .blend is in it so the runs under one header all came from that file
 def block_header():
-    """What a pasted log needs to say what produced it. The .blend is in it so
-    the runs under one header all came from that file."""
     name = bpy.path.basename(bpy.data.filepath) or UNSAVED_FILE_NAME
     return (
         f"{HEADER_PREFIX}{get_addon_version()} | Blender {bpy.app.version_string}"
@@ -26,9 +25,8 @@ def block_header():
     )
 
 
+# anything before the first header line is dropped
 def split_blocks(content):
-    """The log's blocks, oldest first, each starting with its header line.
-    Anything before the first header is dropped."""
     blocks = []
     for line in content.splitlines():
         if line.startswith(HEADER_PREFIX):
@@ -38,9 +36,8 @@ def split_blocks(content):
     return blocks
 
 
+# the newest block is kept whole however long its file was open
 def trim_blocks(blocks):
-    """Drop the oldest blocks past the line limit. The newest is kept whole
-    however long its file was open."""
     kept = []
     lines = 0
     for block in reversed(blocks):
@@ -63,9 +60,8 @@ def _join_blocks(blocks):
     return "\n\n".join("\n".join(block) for block in blocks)
 
 
+# starts a block when the last one belongs to another file or another Blender
 def _append_lines(blocks, header, lines):
-    """Add the lines under header, starting a block when the last one belongs
-    to another file or another Blender."""
     if not blocks or blocks[-1][0] != header:
         blocks.append([header])
     blocks[-1].extend(lines)
@@ -120,7 +116,6 @@ class Info:
         return f"Pieces: {counts}" if counts else ""
 
     def get_info(self):
-        """One line for the run."""
         fields = [self.started, self.status, self.get_time()]
         if self.engine:
             fields.append(self.engine)
@@ -143,9 +138,8 @@ class Logger:
         self.unwrap_end = None
         self.header = None
 
+    # the next run opens a block of its own, under a header naming the file it ran on
     def reset(self):
-        """Drop the runs on the file being closed. The next one opens a block
-        of its own, under a header naming the file it ran on."""
         self.unwrap_info.clear()
         self.header = None
 
@@ -155,8 +149,8 @@ class Logger:
         self.start_timer()
         return info
 
+    # for a run that was refused before it started
     def discard_info(self):
-        """Drop the entry for a run that was refused before it started."""
         self.unwrap_info.pop()
 
     def add_data(self, target, data):
@@ -168,13 +162,12 @@ class Logger:
     def get_latest(self):
         return self.unwrap_info[-1]
 
+    # oldest first
     def get_all(self):
-        """One line per run, oldest first."""
         return [info.get_info() for info in self.unwrap_info]
 
+    # a crash or a file load loses the in-memory list
     def write_latest(self):
-        """Append the finished run to the log file. A crash or a file load takes
-        the in-memory list, and a crash is what the log is asked for."""
         if self.header is None:
             self.header = block_header()
         info = self.get_latest()
@@ -184,8 +177,8 @@ class Logger:
         body = _join_blocks(trim_blocks(blocks))
         get_log_path().write_text(body + "\n", encoding="utf-8")
 
+    # the log file, plus the runs on this file that haven't finished
     def read_log(self):
-        """The log file, plus the runs on this file that haven't finished."""
         blocks = _read_blocks()
         pending = [
             info.get_info() for info in self.unwrap_info if not info.written_to_file
@@ -199,9 +192,8 @@ class Logger:
         self.unwrap_start = None
         self.unwrap_end = None
 
+    # the first and last call bound the unwrap phase
     def mark_unwrapping(self):
-        """Called while any engine still has work. Everything before the first
-        call is pre-processing, everything after the last is post-processing."""
         self.unwrap_end = time.perf_counter()
         if self.unwrap_start is None:
             self.unwrap_start = self.unwrap_end

@@ -14,7 +14,7 @@ from ...utils.ui import is_non_default, only_active
 from ..binary_engine import BinaryEngine
 from .install import OPTCUTS, UVGAMI_OT_install_optcuts
 
-# what counts as a sharp feature
+# degrees, what counts as a sharp feature
 HARD_SURFACE_ANGLE = 66
 
 PRIORITY_VALUES = {"LESS_STRETCH": "4.05", "BALANCED": "4.2", "FEWER_SEAMS": "5.0"}
@@ -224,9 +224,7 @@ class OptcutsEngine(BinaryEngine):
         )
 
     def piece_uses_uvs(self, obj, props, has_uvs):
-        # auto mode routes per loose part: a piece the preseed skipped has no
-        # seams and goes to the engine bare, to be cut from scratch. with
-        # import uvs on, organic pieces keep the user's map instead
+        # a piece the preseed skipped has no seams and goes to the engine bare
         if props.optcuts.is_auto and not props.import_uvs:
             has_uvs = has_uvs and bool(seam_flags(obj.data).any())
         if not has_uvs or obj.data.uv_layers.active is None:
@@ -234,9 +232,8 @@ class OptcutsEngine(BinaryEngine):
         # a collapsed flatten goes bare too, the engine can fail re-cutting it
         return not uvs_collapsed(corner_uvs(obj.data))
 
+    # under the loose bound a broken patch already counts as feasible
     def _loose_bound_pinned(self, input_path, props):
-        """A pinned repair under the loose bound is a no-op: the broken patch
-        already counts as feasible, so no cut gets added."""
         pinned = (input_path.parent / f"{input_path.stem}_fixed").is_file()
         return pinned and props.priority == "FEWER_SEAMS"
 
@@ -275,8 +272,7 @@ class OptcutsEngine(BinaryEngine):
             114: ("Island UVs Too Broken To Relax", True),
             115: ("Inconsistent Face Orientation", True),
             116: ("Zero Area Faces", True),
-            # 90 (the engine's terminate handler) stays unmapped on purpose:
-            # the unknown-code path surfaces the fatal line from stderr
+            # 90 is the terminate handler, unmapped so stderr's fatal line surfaces
         }.get(code) or super().describe_failure(code)
 
     def request_early_stop(self, process):

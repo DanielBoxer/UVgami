@@ -1,13 +1,3 @@
-"""Finish a proxy unwrap on plain data.
-
-The proxy's uv map is read onto the dense mesh instead of unwrapping it
-again. Each dense vertex takes the uv its nearest proxy face's affine map
-gives its position, so the map is exact inside a proxy triangle and continues
-linearly past its edges. A dense face straddling a proxy cut gets corners from
-both sides of the cut, so it is redrawn through one side's map, and the seams
-are then the edges the uvs are torn across. proxy.py adapts a Blender mesh
-onto these calls."""
-
 import collections
 import heapq
 
@@ -30,9 +20,8 @@ ABSORB_SHARE = 0.29
 WELD_FRACTION = 0.5
 
 
+# (low, high) vertex pairs. a boundary edge has one face and never counts
 def uv_tears(faces, corner_uvs, tolerance=0.0):
-    """Edges whose faces put a shared corner at different uvs, as (low, high)
-    vertex pairs. Boundary edges have one face and never count."""
     sizes = [len(face) for face in faces]
     corners = numpy.fromiter(
         (v for face in faces for v in face), dtype=numpy.int64, count=sum(sizes)
@@ -53,12 +42,11 @@ def edge_adjacency(edges):
 
 
 def snap_cuts(verts, edges, mapped, cuts):
-    """Another mesh's cut network redrawn along this mesh's own edges."""
     return snap_paths(verts, edge_adjacency(edges), mapped, cuts)
 
 
+# dense positions and normals in the proxy's own space
 def _proxy_space(dense, proxy):
-    """Dense positions and normals in the proxy's own space."""
     matrix = numpy.linalg.inv(proxy["matrix"]) @ numpy.asarray(
         dense["matrix"], dtype=numpy.float64
     )
@@ -69,12 +57,8 @@ def _proxy_space(dense, proxy):
     return positions, normals
 
 
+# the proxy is engine output, so its faces are triangles
 class AffineMaps:
-    """Each proxy face's uv map as an affine function of position: exact on
-    the face's plane and continued linearly off it. The proxy is engine
-    output, so its faces are triangles and an ngon's map is its first three
-    corners'."""
-
     def __init__(self, positions, faces, corner_uvs):
         positions = numpy.asarray(positions, dtype=numpy.float64).reshape(-1, 3)
         first = numpy.array([face[:3] for face in faces], dtype=numpy.int64)
@@ -88,18 +72,16 @@ class AffineMaps:
         uv_edges = numpy.stack([uvs[:, 1] - uvs[:, 0], uvs[:, 2] - uvs[:, 0]], axis=2)
         self.jacobian = uv_edges @ numpy.linalg.pinv(edges)
 
+    # face and positions paired
     def uv(self, face, positions):
-        """Face face's map at each position, face and positions paired."""
         offset = numpy.asarray(positions) - self.origin[face]
         return self.origin_uv[face] + numpy.einsum(
             "nij,nj->ni", self.jacobian[face], offset
         )
 
 
+# two faces either side of a cut give their shared vertex different uvs
 def proxy_links(faces, corner_uvs):
-    """Sorted packed (f, g) pairs of proxy faces that share a vertex at the
-    same uv, which is every pair the proxy's map is continuous across. Two
-    faces either side of a cut give their shared vertex different uvs."""
     at_uv = collections.defaultdict(list)
     for f, (face, uvs) in enumerate(zip(faces, corner_uvs)):
         for v, uv in zip(face, uvs):
@@ -112,11 +94,8 @@ def proxy_links(faces, corner_uvs):
     return numpy.array(sorted(pairs), dtype=numpy.int64)
 
 
+# their maps agree all along that edge, so the difference is a crack, not a cut
 def proxy_edge_links(faces, corner_uvs):
-    """Sorted packed (f, g) pairs of proxy faces either side of an edge that
-    is not a cut. Their maps agree all along that edge, so a dense corner
-    drawn through one and another through the other differ by a crack,
-    never a cut."""
     pairs = set()
     for (u, v), owners in face_edges(faces).items():
         if len(owners) != 2:
@@ -148,12 +127,8 @@ CROSSING_CHUNK = 100000
 ON_LINE = 1e-6
 
 
+# judged in the first point's proxy face plane, against the cuts at its vertices
 class CutCrossings:
-    """Whether a straight segment between two dense points crosses one of
-    the proxy's cuts. Judged in the first point's proxy face's plane against
-    the cuts touching that face's vertices, which is every cut a segment
-    inside one dense face can reach from there."""
-
     def __init__(self, positions, faces, cuts):
         positions = numpy.asarray(positions, dtype=numpy.float64).reshape(-1, 3)
         cuts = numpy.array(sorted(cuts), dtype=numpy.int64).reshape(-1, 2)
@@ -198,11 +173,8 @@ class CutCrossings:
     def _flat(self, faces, points):
         return numpy.einsum("nij,nj->ni", self.axes[faces], points - self.origin[faces])
 
+    # a point on the cut line takes the side its own face's middle is on
     def crosses(self, faces_a, faces_b, points_a, points_b):
-        """Whether each segment crosses a cut, judged in the first point's
-        face's plane. A point lying on the cut line, common where the proxy
-        kept an original edge and the dense vertices along it, takes the side
-        its own face's middle is on."""
         crossed = numpy.zeros(len(faces_a), dtype=bool)
         if not len(self.cut_ends):
             return crossed
@@ -240,8 +212,6 @@ class CutCrossings:
         return crossed
 
     def nearest(self, faces, points):
-        """The cut touching each face nearest to its point, -1 when none
-        does."""
         candidates = self.per_face[faces]
         valid = candidates >= 0
         if not valid.any():
@@ -261,9 +231,6 @@ class CutCrossings:
 
 
 class ProxyMap:
-    """The proxy's uv map read as geometry: each face's affine map, the face
-    pairs the map is continuous across, and the cuts it is torn along."""
-
     def __init__(self, proxy):
         faces, corner_uvs = proxy["faces"], proxy["corner_uvs"]
         self.maps = AffineMaps(proxy["positions"], faces, corner_uvs)
@@ -274,9 +241,8 @@ class ProxyMap:
         )
 
 
+# faces are laid out one after another
 def following_corners(face_sizes):
-    """Each corner's next corner around its face, faces laid out one after
-    another."""
     sizes = numpy.asarray(face_sizes, dtype=numpy.int64)
     starts = numpy.cumsum(sizes) - sizes
     face_of = numpy.repeat(numpy.arange(len(sizes)), sizes)
@@ -284,11 +250,8 @@ def following_corners(face_sizes):
     return starts[face_of] + (local + 1) % sizes[face_of]
 
 
+# each corner's face, the next corner around it, and the twin across the edge
 class DenseMesh:
-    """The dense mesh as a corner table, positions in the proxy's space, with
-    the topology every pass reads: each corner's face, the next corner
-    around that face, and the twin corner on the face across the edge."""
-
     def __init__(self, corners, face_sizes, positions):
         self.corners = numpy.asarray(corners, dtype=numpy.int64)
         self.sizes = numpy.asarray(face_sizes, dtype=numpy.int64)
@@ -308,13 +271,11 @@ class DenseMesh:
         self._one_corner[self.corners] = numpy.arange(len(self.corners))
 
     def face(self, f):
-        """Face f's corners."""
         start = int(self.starts[f])
         return range(start, start + int(self.sizes[f]))
 
+    # an end vertex has corners that disagree
     def suspect(self, corner_uvs):
-        """Whether each corner's edge can be torn: an end vertex has corners
-        that disagree."""
         split = numpy.zeros(len(self._one_corner), dtype=bool)
         differs = numpy.any(
             corner_uvs != corner_uvs[self._one_corner[self.corners]], axis=1
@@ -323,13 +284,11 @@ class DenseMesh:
         return split[self.corners] | split[self.corners[self.following]]
 
     def corners_of(self, faces):
-        """These faces' corners, face by face."""
         faces = numpy.asarray(faces, dtype=numpy.int64)
         return _ranges(self.starts[faces], self.sizes[faces])
 
+    # for each corner, the position in vertices of the vertex it is of
     def rings(self, vertices):
-        """These vertices' corners, and for each corner the position in
-        vertices of the vertex it is of."""
         vertices = numpy.asarray(vertices, dtype=numpy.int64)
         lo = numpy.searchsorted(self._ring_sorted, vertices)
         sizes = numpy.searchsorted(self._ring_sorted, vertices + 1) - lo
@@ -337,8 +296,8 @@ class DenseMesh:
         return self._ring_order[_ranges(lo, sizes)], of
 
 
+# the ranges starts[i] to starts[i] + sizes[i], one after another
 def _ranges(starts, sizes):
-    """The ranges starts[i] to starts[i] + sizes[i], one after another."""
     offsets = numpy.cumsum(sizes) - sizes
     return numpy.repeat(starts - offsets, sizes) + numpy.arange(int(sizes.sum()))
 
@@ -347,9 +306,8 @@ def _edge_keys(tail, head):
     return (numpy.minimum(tail, head) << 32) | numpy.maximum(tail, head)
 
 
+# -1 on a boundary or non-manifold edge
 def _twins(corners, following):
-    """Each corner's twin, the corner of the one other face on its edge, -1
-    on a boundary or non-manifold edge."""
     keys = _edge_keys(corners, corners[following])
     order = numpy.argsort(keys, kind="stable")
     _, first, counts = numpy.unique(keys[order], return_index=True, return_counts=True)
@@ -361,12 +319,8 @@ def _twins(corners, following):
     return twin
 
 
+# on a ridge the ends land inside both faces of the crease and no plane shows it
 def _torn(crossings, face_of_vertex, positions, tail, head):
-    """Whether the dense edge from tail to head is torn: its ends are drawn
-    by faces either side of one cut, or it crosses a cut seen from either
-    end's face. On a ridge the ends land inside both faces of the crease and
-    no plane shows a crossing, past it one plane can show it when the other
-    does not."""
     faces_tail, faces_head = face_of_vertex[tail], face_of_vertex[head]
     return (
         _linked(crossings.pairs, faces_tail, faces_head)
@@ -375,11 +329,8 @@ def _torn(crossings, face_of_vertex, positions, tail, head):
     )
 
 
+# the corner agreeing with the most others keeps its map
 def _redraw_torn_faces(proxy_map, face_of_vertex, surface, uvs, mesh, torn):
-    """Corner uvs with each torn face drawn through one side's map: the
-    corner agreeing with the most others keeps its map, and every corner
-    disagreeing with it is moved through that map. Also returns the proxy
-    face each corner was drawn through."""
     corners = mesh.corners
     corner_uvs = uvs[corners].copy()
     drawn_by = face_of_vertex[corners].copy()
@@ -416,10 +367,8 @@ def _redraw_torn_faces(proxy_map, face_of_vertex, surface, uvs, mesh, torn):
     return corner_uvs, drawn_by
 
 
+# either side of one uncut edge, or within weld distance, becomes one value
 def _weld_vertices(corner_uvs, drawn_by, proxy_map, mesh, vertices):
-    """Each vertex's corners drawn through proxy faces either side of one
-    uncut edge, or sitting within its weld distance of each other, set to
-    one value."""
     corners, of = mesh.rings(vertices)
     if not len(corners):
         return
@@ -444,9 +393,8 @@ def _weld_vertices(corner_uvs, drawn_by, proxy_map, mesh, vertices):
     corner_uvs[corners] = (sums / numpy.maximum(counts, 1)[:, None])[cluster]
 
 
+# the (a, b) pairs hold both orders of every pair
 def _components(count, a, b):
-    """Each index's lowest index reachable through the (a, b) pairs, which
-    hold both orders of every pair."""
     label = numpy.arange(count)
     while True:
         grown = label.copy()
@@ -456,9 +404,8 @@ def _components(count, a, b):
         label = grown
 
 
+# the rest share their vertex uv already and have no gap to close
 def _weld(corner_uvs, drawn_by, native, proxy_map, mesh):
-    """Every vertex with a moved corner welded. The rest share their vertex
-    uv already and have no gap to close."""
     moved = numpy.flatnonzero(numpy.any(corner_uvs != native[mesh.corners], axis=1))
     _weld_vertices(
         corner_uvs, drawn_by, proxy_map, mesh, numpy.unique(mesh.corners[moved])
@@ -466,10 +413,8 @@ def _weld(corner_uvs, drawn_by, native, proxy_map, mesh):
     return corner_uvs
 
 
+# it carries the uv gradient the mesh has there, a proxy face's can be steeper
 def _face_map(corner_uvs, mesh, g):
-    """The uv map of dense face g as an affine function of position, from
-    its first three corners. It carries the uv gradient the mesh has right
-    there, where a proxy face's map can be far steeper."""
     start = int(mesh.starts[g])
     p = mesh.positions[mesh.corners[start : start + 3]]
     u = corner_uvs[start : start + 3]
@@ -496,9 +441,8 @@ def _cross(a, b):
     ]
 
 
+# g's own uv where they share a vertex, g's map elsewhere
 def _draw_like_neighbour(corner_uvs, drawn_by, mesh, f, g):
-    """Face f's corners set from neighbour g: g's own uv where they share a
-    vertex, g's map elsewhere."""
     at = _face_map(corner_uvs, mesh, g)
     known = {int(mesh.corners[c]): corner_uvs[c] for c in mesh.face(g)}
     for c in mesh.face(f):
@@ -507,14 +451,8 @@ def _draw_like_neighbour(corner_uvs, drawn_by, mesh, f, g):
         drawn_by[c] = drawn_by[int(mesh.starts[g])]
 
 
+# where a cut runs down a triangle strip the sides alternate and the seam zigzags
 def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
-    """A face goes over to the side across some of its seam edges when that
-    leaves less seam, measured along the mesh. Where a cut runs down the
-    middle of a strip of triangles they alternate sides and the seam zigzags
-    along the diagonals, this pulls them onto one edge row, and a face that
-    ended up as an island of its own is taken back. The face's corners take
-    the uvs its new neighbours have there, a corner none of them has is
-    drawn through their map, and the vertices are welded again."""
     corners, following, twin = mesh.corners, mesh.following, mesh.twin
     paired = numpy.flatnonzero((twin >= 0) & mesh.suspect(corner_uvs))
     torn = paired[_torn_at_twin(corner_uvs, mesh, paired)]
@@ -522,17 +460,13 @@ def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
     seam[torn] = True
 
     def across(c):
-        """The twin face's uvs and map for corner c's tail and head."""
         t = twin[c]
         if corners[t] == corners[c]:
             return corner_uvs[t], corner_uvs[following[t]], drawn_by[t]
         return corner_uvs[following[t]], corner_uvs[t], drawn_by[t]
 
+    # an edge joins once it shares a corner with the side and agrees there
     def side_of(anchor, seams):
-        """The corner uvs the face gets on its anchor edge's far side, with
-        the seam edges whose far side is the same, and the map drawn by. An
-        edge joins once it shares a corner with the side and agrees there,
-        so an edge across the face is judged through the ones between."""
         tail_uv, head_uv, face = across(anchor)
         tolerance = WELD_FRACTION * numpy.linalg.norm(tail_uv - head_uv)
         target = {anchor: tail_uv, int(following[anchor]): head_uv}
@@ -607,9 +541,8 @@ SEED_RINGS = 2
 STRAIGHTEN_MIN_EDGES = 3
 
 
+# a seam means the face across the edge gives either end of it another uv
 def _torn_at_twin(corner_uvs, mesh, paired):
-    """Whether each paired corner's edge is a seam: the face across it gives
-    either end of the edge another uv."""
     corners, following, twins = mesh.corners, mesh.following, mesh.twin[paired]
     same_direction = (corners[twins] == corners[paired])[:, None]
     across_tail = numpy.where(
@@ -624,7 +557,6 @@ def _torn_at_twin(corner_uvs, mesh, paired):
 
 
 def _seam_corners(corner_uvs, mesh):
-    """Corners whose edge is a seam, one per edge."""
     twin = mesh.twin
     paired = numpy.flatnonzero(
         (twin >= 0) & (numpy.arange(len(twin)) < twin) & mesh.suspect(corner_uvs)
@@ -632,12 +564,8 @@ def _seam_corners(corner_uvs, mesh):
     return paired[_torn_at_twin(corner_uvs, mesh, paired)]
 
 
+# a short stretch on another cut is the nearest cut flipping at a proxy vertex
 def _seam_runs(seam_corners, cut_of, mesh):
-    """Vertex paths of seam edges that follow one proxy cut, ending at a
-    junction, a loose end or a change of cut. Each with its corners and its
-    cut. A stretch of fewer than STRAIGHTEN_MIN_EDGES edges assigned to
-    another cut mid-run is noise from the nearest cut flipping at a proxy
-    vertex, and takes the cut of the stretch before it."""
     corners, following = mesh.corners, mesh.following
     adjacent = collections.defaultdict(list)
     for i, c in enumerate(seam_corners.tolist()):
@@ -646,8 +574,8 @@ def _seam_runs(seam_corners, cut_of, mesh):
         adjacent[b].append((a, i))
     used = numpy.zeros(len(seam_corners), dtype=bool)
 
+    # vertices past v until a junction, a loose end or a used edge
     def extend(v, i):
-        """Vertices past v until a junction, a loose end or a used edge."""
         path = []
         while len(adjacent[v]) == 2:
             (w, j) = next((w, j) for w, j in adjacent[v] if j != i)
@@ -697,7 +625,6 @@ def _seam_runs(seam_corners, cut_of, mesh):
 
 
 def _band(faces, mesh, rings_out):
-    """Faces within rings_out rings of these faces, sorted."""
     band = frontier = numpy.unique(faces)
     for _ in range(rings_out):
         twin = mesh.twin[mesh.corners_of(frontier)]
@@ -708,7 +635,6 @@ def _band(faces, mesh, rings_out):
 
 
 def _shortest_path(band, start, end, mesh):
-    """Vertex path from start to end along the band's edges, or None."""
     band_corners = mesh.corners_of(band)
     tails = mesh.corners[band_corners].tolist()
     heads = mesh.corners[mesh.following[band_corners]].tolist()
@@ -740,11 +666,8 @@ def _shortest_path(band, start, end, mesh):
     return path[::-1]
 
 
+# -1 when the face across the edge is outside the band
 class _Band:
-    """A sorted set of faces with the edges inside it. Per corner: the local
-    index of its face, of the face across the edge, and of the corner across,
-    -1 when that face is outside the band."""
-
     def __init__(self, faces, mesh):
         self.faces = faces
         self.corners = mesh.corners_of(faces)
@@ -761,10 +684,8 @@ class _Band:
         self.across = numpy.where(inside, local, -1)
         self.twin_at = numpy.where(inside, numpy.searchsorted(self.corners, twin), -1)
 
+    # -1 where no seed reaches, None when both sides reach one face
     def sides(self, seeds, seed_sides, blocked):
-        """Each face's side spread from the seeded faces across edges not
-        blocked at either corner, -1 where no seed reaches, None when both
-        sides reach one face."""
         passable = (self.across >= 0) & ~blocked
         passable[passable] &= ~blocked[self.twin_at[passable]]
         component = _components(
@@ -779,18 +700,12 @@ class _Band:
         return high[component]
 
     def neighbours(self, f):
-        """The local faces across face f's edges, in corner order."""
         start = self.starts[f]
         return self.across[start : start + self.sizes[f]]
 
 
+# the side labelling puts a seam wherever the nearest proxy face changes
 def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
-    """Each seam run redrawn as the shortest path along the mesh between its
-    ends. The side labelling puts a seam wherever the nearest proxy face
-    changes, a staircase along the projected cut, and a shortest path is
-    the straightest line of edges there is. The faces between the old and
-    new path go over to the other side, drawn like a neighbour there, or
-    through that side's rim face when none is drawn yet."""
     corners, following, twin = mesh.corners, mesh.following, mesh.twin
     face_of, positions = mesh.face_of, mesh.positions
     cuts = proxy_map.crossings
@@ -804,8 +719,8 @@ def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
     cut_of = cuts.nearest(drawn_by[seam_corners], midpoints)
     on_run = numpy.zeros(len(corners), dtype=bool)
 
+    # walking the run in order
     def side_faces(vertices, run_corners):
-        """The faces left and right of the run, walking it in order."""
         left, right = [], []
         for v, c in zip(vertices, run_corners):
             t = int(twin[c])
@@ -818,8 +733,8 @@ def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
                 right.append(mine)
         return left, right
 
+    # the owner of the cut on the side those faces are drawn on
     def rim_face(cut, faces):
-        """The owner of the cut on the side those faces are drawn on."""
         drawn = numpy.unique(drawn_by[[int(mesh.starts[f]) for f in faces]])
         owners = cuts.owners[cut]
         matches = [
@@ -903,8 +818,8 @@ def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
     return corner_uvs
 
 
+# edges given as corner rows, the vertex and uv at each end
 def _edge_tears(tail, head, tail_uv, head_uv, tolerance):
-    """uv_tears on edges given as corner rows: the vertex and uv at each end."""
     low_first = (tail < head)[:, None]
     at_low = numpy.where(low_first, tail_uv, head_uv)
     at_high = numpy.where(low_first, head_uv, tail_uv)
@@ -916,9 +831,8 @@ def _edge_tears(tail, head, tail_uv, head_uv, tolerance):
     return {(int(key >> 32), int(key & 0xFFFFFFFF)) for key in torn.tolist()}
 
 
+# vertices renumbered from zero. also returns each new vertex's old index
 def dense_subset(dense, faces):
-    """The dense arrays cut down to these faces, their vertices renumbered
-    from zero. Returns the subset and each new vertex's old index."""
     sizes = numpy.asarray(dense["face_sizes"], dtype=numpy.int64)
     starts = numpy.cumsum(sizes) - sizes
     faces = numpy.asarray(faces, dtype=numpy.int64)
@@ -940,13 +854,8 @@ def dense_subset(dense, faces):
     return subset, used
 
 
+# nearest_faces gives each dense vertex a proxy face and the point on it
 def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=None):
-    """(seams, uvs) for the dense mesh, uvs one row per corner.
-
-    nearest_faces(positions, normals) gives each dense vertex the proxy face
-    it stands over and the point on it, in the proxy's space. cancelled is
-    polled between lookup chunks."""
-
     done = 0.0
 
     def report(fraction):
@@ -971,8 +880,7 @@ def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=Non
         )
         report(LOOKUP_SHARE * min(stop, len(positions)) / max(len(positions), 1))
     finished(LOOKUP_SHARE)
-    # read at the point under the vertex, a map continued off its face
-    # diverges at a crease
+    # a map continued off its face diverges at a crease
     uvs = proxy_map.maps.uv(face_of_vertex, surface)
 
     mesh = DenseMesh(dense["corners"], dense["face_sizes"], positions)

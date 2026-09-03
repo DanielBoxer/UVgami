@@ -4,24 +4,8 @@ import bpy
 import numpy
 
 
+# the built-in exporter rounds to 6 decimals, which flips tiny uv triangles
 def export_obj(obj, path, export_uv, flip_mirrored=False, matrix=None):
-    """Write the mesh as an obj in world space, 9 decimals.
-
-    The built-in exporter rounds to 6 decimals, which can flip tiny uv
-    triangles and make the engine re-cut charts that were fine. It also
-    merges identical uvs into one vt, and optcuts rebuilds a uv-carrying
-    mesh with one vertex per vt, so a uv shared by two 3D vertices welds
-    them and degenerates the rebuilt mesh. Writing one vt per (vertex, uv)
-    pair rules that out.
-
-    Returns the source vertex index per vt, in vt order, when uvs were
-    written, else None. Sidecars for a uv-carrying obj must be keyed by vt
-    (the engine's rebuilt vertices), this is the mapping.
-
-    flip_mirrored is for callers that keep the engine result as the user's
-    mesh. Ones that write the uvs back onto the original leave it off.
-
-    matrix stands in for obj.matrix_world when the object's own is stale."""
     mesh = obj.data
     matrix = numpy.array(obj.matrix_world if matrix is None else matrix)
     co = numpy.empty(len(mesh.vertices) * 3)
@@ -47,8 +31,7 @@ def export_obj(obj, path, export_uv, flip_mirrored=False, matrix=None):
 
     with path.open("w") as f:
         f.write(f"o {obj.name}\n")
-        # a single %-format call over the whole array runs in C, per-line
-        # f-strings are an order of magnitude slower
+        # a single %-format over the whole array runs in C, f-strings are 10x slower
         f.write(("v %.9f %.9f %.9f\n" * len(co)) % tuple(co.ravel().tolist()))
 
         if export_uv:
@@ -57,8 +40,7 @@ def export_obj(obj, path, export_uv, flip_mirrored=False, matrix=None):
             uvs = uvs.reshape(-1, 2)
             if loop_order is not None:
                 uvs = uvs[loop_order]
-            # dedupe at written precision so vt values and indices agree,
-            # grouped by hand since numpy.unique(axis=0) is far slower
+            # optcuts gives each vt its own vertex, so a shared uv would weld two
             scaled = numpy.rint(uvs * 1e9).astype(numpy.int64)
             order = numpy.lexsort((scaled[:, 1], scaled[:, 0], loop_verts))
             sv = loop_verts[order]
@@ -83,7 +65,6 @@ def export_obj(obj, path, export_uv, flip_mirrored=False, matrix=None):
             fmt = "f " + " ".join([token] * size) + "\n"
             f.write((fmt * len(totals)) % tuple(corners.ravel().tolist()))
         else:
-            # mixed polygon sizes, write per face
             flat = corners.ravel().tolist()
             width = corners.shape[1]
             lines = []
@@ -98,12 +79,7 @@ def export_obj(obj, path, export_uv, flip_mirrored=False, matrix=None):
 
 
 def _block(text, prefix):
-    """All '<prefix> ' lines concatenated in file order, newline-terminated.
-
-    Every writer this parses keeps same-type lines contiguous, so the fast
-    path slices from the first to the last such line and verifies with line
-    counts. Merged files interleave blocks and fall back to a regex that
-    matches each contiguous run as one hit."""
+    # every writer here keeps same-type lines contiguous, merged files interleave them
     tag = "\n" + prefix + " "
     if text.startswith(prefix + " "):
         start = 0
@@ -130,7 +106,6 @@ def _numeric_columns(text, prefix, comps):
     if len(tokens) % lines == 0 and len(tokens) // lines >= comps:
         stride = len(tokens) // lines
         return numpy.array(tokens, dtype=numpy.float64).reshape(-1, stride)[:, :comps]
-    # ragged lines, parse one by one
     return numpy.array(
         [ln.split()[1 : comps + 1] for ln in block.splitlines()],
         dtype=numpy.float64,
@@ -158,7 +133,7 @@ def _parse_faces(text):
             loop_vts = numpy.zeros(len(nums), dtype=numpy.int64)
         return totals, loop_verts, loop_vts
 
-    # token forms are mixed (e.g. merged pieces with and without uvs)
+    # mixed token forms, e.g. merged pieces with and without uvs
     totals = []
     loop_verts = []
     loop_vts = []
@@ -179,9 +154,8 @@ def _parse_faces(text):
     )
 
 
+# not bpy.ops.wm.obj_import: that changes selection, the active object and undo
 def import_obj(path, name=""):
-    """Parse an obj straight into a mesh datablock and link the new object
-    to the scene, leaving selection, the active object and undo untouched."""
     text = path.read_text()
 
     if not name:

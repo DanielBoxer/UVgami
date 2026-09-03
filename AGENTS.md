@@ -20,6 +20,7 @@ Blender addon that does automatic UV unwrapping. Three engines: optcuts (C++ bin
 - Engine stdout is a parsed protocol (`start:`/`done:`/`failed:`/`progress:` lines). Don't print extra lines to stdout there, use stderr.
 - Optcuts unwraps many meshes per process. A new global or static in `uvgami.cpp` must be reset in `resetMeshState`.
 - `src/` imports bpy, so only its bpy-free modules are unit-testable. `dev/tests/` shows which ones.
+- See the agent notes for more about `src/seams/` and `src/proxy.py`.
 - The venv's numpy makes int32 arrays on Windows, Blender's makes int64, so pass `dtype=numpy.int64` to anything that feeds a key or a shift.
 - The addon runs one engine job per loose part. The CLI and bench feed the mesh whole, so a multi-part model can fail there but not in Blender.
 - The addon zip contains no engines. Each one downloads from its own GitHub release on first use, driven by `src/engines/binary_engine.py` (optcuts, xatlas) and `src/engines/partuv/install.py`.

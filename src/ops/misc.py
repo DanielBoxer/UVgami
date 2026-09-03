@@ -45,8 +45,7 @@ class UVGAMI_OT_expand(bpy.types.Operator):
         if targets:
             job = targets[0].join_job
             job.is_expanded = not job.is_expanded
-            # without this the arrow only flips on the next dispatch tick, so a
-            # click reads as ignored and the second one toggles it back
+            # the arrow only flips on the next dispatch tick otherwise
             tag_redraw()
         return {"FINISHED"}
 
@@ -70,8 +69,7 @@ class UVGAMI_OT_reset_setting(bpy.types.Operator):
             name, path = path.split(".", 1)
             group = getattr(group, name)
         reset_prop(group, path)
-        # unset skips the notifier a normal click sends, so the symmetry
-        # preview wouldn't repaint
+        # unset skips the notifier a normal click sends
         tag_redraw()
         return {"FINISHED"}
 

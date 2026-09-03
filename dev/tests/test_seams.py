@@ -1468,8 +1468,8 @@ def test_slit_sides_crossing_counts_as_ruined():
     assert island_ruined(group, faces, uvs, edges, seams)
 
 
-def test_crossing_boundary_counts_as_ruined():
-    # collinear overlap included, the branch a naive segment test misses
+def test_crosses_includes_collinear_overlap():
+    # the branch a naive segment test misses
     assert crosses((0, 0), (2, 0), (1, -1), (1, 1))
     assert not crosses((0, 0), (2, 0), (0, 1), (2, 1))
     assert crosses((0, 0), (2, 0), (3, 0), (1, 0))

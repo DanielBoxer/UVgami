@@ -25,9 +25,8 @@ def _text_editor_area():
     return None
 
 
+# the newest block, so the log opens on the run being reported
 def _last_block_line(lines):
-    """Where the newest block starts, so the log opens on the run being
-    reported rather than the top of the history."""
     return max(
         (i for i, line in enumerate(lines) if line.startswith(HEADER_PREFIX)),
         default=0,

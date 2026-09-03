@@ -1,14 +1,3 @@
-"""Unwrap a decimated copy, then read its uv map onto the original.
-
-The engine only ever sees the proxy, which is what makes this fast: every
-cut is decided on a few thousand triangles instead of the whole mesh. The
-original is never unwrapped, each of its vertices takes the uv of the nearest
-proxy face, so the cuts land where the proxy's tears project onto it.
-
-The pipeline is seams.proxy_transfer, plain data only. This module builds the
-proxy and reads the meshes into arrays for it, so the work can run in a
-worker thread."""
-
 import bmesh
 import bpy
 import numpy
@@ -20,16 +9,13 @@ from .seams import proxy_transfer
 from .utils.mesh import corner_uvs, face_vertices, loop_totals, new_bmesh, set_bmesh
 
 
+# every face fans into loop_total - 2 triangles
 def triangle_count(obj):
-    """Every face fans into loop_total - 2 triangles."""
     return len(obj.data.loops) - 2 * len(obj.data.polygons)
 
 
+# evaluating the object bakes every modifier on it, not just the decimate
 def make_proxy(obj, target_faces):
-    """Decimate obj in place to roughly target_faces triangles.
-
-    obj has to be visible in the view layer and carry no other modifiers,
-    since the decimate is baked by evaluating the whole object."""
     triangles = triangle_count(obj)
     if triangles <= target_faces:
         return False
@@ -58,11 +44,8 @@ FOLD_DOT = -0.8
 UNFOLD_ROUNDS = 5
 
 
+# collapsing leaves loose vertices and folded triangles behind
 def clean_proxy(obj):
-    """Collapsing leaves vertices with no face behind, which the engine reads
-    as non-manifold vertices and refuses, and now and then a triangle folded
-    over its neighbour, which the transfer reads as two maps for one patch of
-    surface."""
     bm = new_bmesh(obj)
     loose = [v for v in bm.verts if not v.link_faces]
     if loose:
@@ -71,11 +54,8 @@ def clean_proxy(obj):
     set_bmesh(bm, obj)
 
 
+# a collapse drags a vertex past its opposite edge and inverts the triangle
 def unfold(bm):
-    """Flip the longest edge of every folded triangle. A collapse that drags
-    a vertex across the edge opposite it leaves the triangle inverted on top
-    of the neighbour across that edge, and the flip splits that neighbour
-    through the vertex instead."""
     for _ in range(UNFOLD_ROUNDS):
         bm.normal_update()
         inverted = [face for face in bm.faces if _inverted(face)]
@@ -87,9 +67,8 @@ def unfold(bm):
                 _flip(max(face.edges, key=lambda edge: edge.calc_length()))
 
 
+# bmesh.ops.rotate_edges leaves a folded edge as it is
 def _flip(edge):
-    """The edge's two triangles replaced by the pair across the other
-    diagonal. bmesh.ops.rotate_edges leaves a folded edge as it is."""
     if len(edge.link_faces) != 2:
         return
     apexes = [
@@ -105,9 +84,8 @@ def _flip(edge):
     bmesh.utils.face_split(quad, apexes[0], apexes[1])
 
 
+# the vertex normals come from the properly oriented neighbours around the fold
 def _inverted(face):
-    """A face on a fold that points against its own vertices' normals, which
-    the properly oriented neighbours around it decide."""
     folded = any(
         len(edge.link_faces) == 2
         and edge.link_faces[0].normal.dot(edge.link_faces[1].normal) < FOLD_DOT
@@ -119,9 +97,8 @@ def _inverted(face):
     return face.normal.dot(around) < 0
 
 
+# two copies of a model line up at any placement or size
 def bounds_frame(obj):
-    """The space of the mesh's own bounding box, so two copies of a model
-    line up wherever each one is placed and whatever size it is."""
     corners = [Vector(corner) for corner in obj.bound_box]
     low = Vector([min(corner[axis] for corner in corners) for axis in range(3)])
     high = Vector([max(corner[axis] for corner in corners) for axis in range(3)])
@@ -148,6 +125,7 @@ def _rotation_array(matrix):
     return numpy.array(Matrix(matrix.tolist()).to_3x3().inverted_safe().transposed())
 
 
+# on a thin wall the far side of the wall is the nearest
 def facing_matcher(
     input_positions,
     input_normals,
@@ -156,12 +134,6 @@ def facing_matcher(
     output_normals,
     output_matrix,
 ):
-    """nearest(input_indices, output_indices): each listed output vertex to
-    the nearest listed input vertex facing the same way, matched in world
-    space.
-
-    Thin walls put the far side of the wall nearest, and a cut snapped
-    through the wall would seam both sides at once."""
     matrix = numpy.asarray(input_matrix, dtype=numpy.float64)
     positions = numpy.asarray(input_positions).reshape(-1, 3)
     positions = positions @ matrix[:3, :3].T + matrix[:3, 3]
@@ -197,9 +169,8 @@ def facing_matcher(
     return nearest
 
 
+# in world space unless a frame is given for each
 def vertex_map(input_mesh, output, matrix=None, out_matrix=None):
-    """Every output vertex's nearest facing input vertex, in world space
-    unless a frame is given for each."""
     if matrix is None:
         matrix = input_mesh.matrix_world
     if out_matrix is None:
@@ -217,8 +188,8 @@ def vertex_map(input_mesh, output, matrix=None, out_matrix=None):
     )
 
 
+# another mesh's cut network redrawn along input_mesh's own edges
 def snap_cuts(input_mesh, mapped, cuts):
-    """Another mesh's cut network redrawn along input_mesh's own edges."""
     data = input_mesh.data
     verts = _vertex_array(data, "co").tolist()
     return proxy_transfer.snap_cuts(verts, _edge_array(data), mapped, cuts)
@@ -232,18 +203,8 @@ FACING_SEARCH_EDGES = 2.0
 HIT_OVER_NEAREST = 3.0
 
 
+# a point on a bulge over a crease is nearest the wrong one of the two faces
 def face_locator(positions, faces):
-    """nearest_faces(points, normals): for each point the proxy face it
-    stands over and the point to read that face's map at, in the proxy's
-    own space.
-
-    A ray along the normal, either way, finds the face under a point that
-    sits on a bulge over a crease, where the nearest face is one of the two
-    and its plane continued off the face lands elsewhere than the other's.
-    The map is read at the hit. Where the ray misses, or travels much
-    further than the nearest point is, the nearest facing face is used and
-    the map is read at the point itself: reading it at the nearest point
-    would pinch every bulge onto the crease line."""
     positions = numpy.asarray(positions, dtype=numpy.float64).reshape(-1, 3)
     tree = BVHTree.FromPolygons(positions.tolist(), [list(face) for face in faces])
     first = numpy.array([face[:2] for face in faces], dtype=numpy.int64)
@@ -285,6 +246,7 @@ def face_locator(positions, faces):
                     if facing(other_normal, normal) > 0:
                         index = other
                         break
+            # reading at the nearest point would pinch every bulge onto the crease
             found[i] = index
             surface[i] = point
         return found, surface
@@ -292,8 +254,8 @@ def face_locator(positions, faces):
     return nearest_faces
 
 
+# the (dense, proxy) arrays the transfer pipeline reads
 def transfer_inputs(input_mesh, output):
-    """The (dense, proxy) arrays the transfer pipeline reads."""
     data = input_mesh.data
     corners = numpy.empty(len(data.loops), dtype=numpy.int64)
     data.loops.foreach_get("vertex_index", corners)
