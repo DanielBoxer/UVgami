@@ -113,7 +113,19 @@ def main(test_dir, script):
     enable_addon()
     import pytest
 
-    sys.exit(pytest.main([str(test_dir), "-p", "no:cacheprovider", *script_args()]))
+    # faulthandler prints every access violation tbbmalloc_proxy probes and catches
+    sys.exit(
+        pytest.main(
+            [
+                str(test_dir),
+                "-p",
+                "no:cacheprovider",
+                "-p",
+                "no:faulthandler",
+                *script_args(),
+            ]
+        )
+    )
 
 
 def enable_addon():
