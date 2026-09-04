@@ -1,5 +1,3 @@
-"""Output-layer tests for partuv's connected OBJ writer, no native core needed."""
-
 import numpy as np
 import pytest
 from partuv import output
@@ -37,8 +35,7 @@ def read_obj(path):
     return vertices, uvs, faces
 
 
-# a unit square as two triangle charts split on the diagonal: the engine
-# duplicates the diagonal vertices per chart, provenance maps them back
+# a unit square as two triangle charts split on the diagonal
 SQUARE_V = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]]
 SQUARE_F = [[0, 1, 2], [0, 2, 3]]
 

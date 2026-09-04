@@ -4,7 +4,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-# loaded from file so importing doesn't touch the blender addon package
+# loaded from file, the addon package imports bpy
 spec = importlib.util.spec_from_file_location(
     "addon_batch", Path(__file__).parents[2] / "src" / "batch.py"
 )
@@ -17,8 +17,6 @@ def start(script, sinks=None):
 
 
 class Sink:
-    """Bare stand-in for an Unwrap as an EngineOutput target."""
-
     def __init__(self):
         self.progress_data = deque()
         self.uv_co = deque()

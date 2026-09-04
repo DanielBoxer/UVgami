@@ -4,13 +4,10 @@ project(optcuts)
 option(UVGAMI_USE_MIMALLOC "Use mimalloc on Windows" ON)
 option(UVGAMI_ENABLE_AVX2 "Compile with the AVX2 floor on x86-64" ON)
 
-# some third-party deps (libigl's glad) declare pre-3.5 cmake minimums,
-# which cmake 4 rejects
+# libigl's glad declares a pre-3.5 cmake minimum, which cmake 4 rejects
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-# mimalloc's static override needs the whole tree on the static release crt.
-# cmp0091 must be new or wjakob/tbb (pre-3.15 min) ignores the runtime-library
-# setting and links /md, mixing crts and emitting lnk4098.
+# without cmp0091 new, wjakob/tbb ignores the runtime library and links /md
 if(MSVC AND UVGAMI_USE_MIMALLOC)
   set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -47,11 +44,7 @@ set(UVGAMI_EXTERNAL "${CMAKE_CURRENT_SOURCE_DIR}/ext")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 add_compile_definitions(_USE_MATH_DEFINES)
 
-# avx2 floor: x86-64 only. resolve the effective target arch, honoring mac
-# cross-builds via CMAKE_OSX_ARCHITECTURES so arm64 gets no x86 flags.
-# must be global (before deps): mixing avx2 and non-avx2 tus changes
-# EIGEN_MAX_ALIGN_BYTES per tu, and the linker folds eigen's inline
-# malloc/free instantiations into mismatched pairs (heap corruption).
+# must come before deps, mixing avx2 and non-avx2 tus changes EIGEN_MAX_ALIGN_BYTES
 set(UVGAMI_TARGET_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
 if(APPLE AND CMAKE_OSX_ARCHITECTURES)
   set(UVGAMI_TARGET_ARCH "${CMAKE_OSX_ARCHITECTURES}")
@@ -117,8 +110,7 @@ endif()
 
 add_executable(${PROJECT_NAME} ${SRCFILES})
 
-# argv and the narrow file opens use the process codepage, so a path with a
-# character outside it arrives as question marks. needs windows 10 1903
+# without it a path outside the process codepage arrives as question marks
 if(MSVC)
   target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utf8.manifest)
 endif()

@@ -1,5 +1,3 @@
-"""Which downloaded engine version runs and which one asks for an update."""
-
 import pytest
 from bl_ext.user_default.UVgami.src.engines import binary_engine
 from bl_ext.user_default.UVgami.src.engines.binary_engine import (
@@ -96,8 +94,8 @@ def test_local_build_never_asks_for_an_update(release, install, monkeypatch):
     install("1.20.1")
     engine = BinaryEngine()
     engine.release = release
-    # this checkout has its own build
     monkeypatch.setattr(binary_engine, "get_local_engine_path", lambda name: None)
     assert engine.update_pending()
+    # this checkout has its own build
     monkeypatch.setattr(binary_engine, "get_local_engine_path", lambda name: "engine")
     assert not engine.update_pending()

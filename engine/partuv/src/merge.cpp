@@ -23,9 +23,7 @@ int merge_mesh_B_to_A(const Component &A, const Component &B, Component &merge_r
     // Number of dimensions (e.g., 3 for 3D meshes)
     const int dim = static_cast<int>(A.V.cols());
 
-    // weld shared vertices by source id when provenance is known: same source
-    // vertex means same position, and intentionally coincident source vertices
-    // stay separate. Position hashing remains the fallback without provenance.
+    // welding by source id keeps intentionally coincident vertices separate
     const bool provenance_ok =
         A.source_vid.size() == (size_t)A.V.rows() &&
         B.source_vid.size() == (size_t)B.V.rows();

@@ -1,6 +1,4 @@
-# local test build of the extension zip. stages the same file set as
-# release.yml, then runs blender's extension build so the manifest gets
-# validated. no engine ships in the zip, they download at runtime.
+# stages the same file set as release.yml, then validates the manifest
 param(
     [string]$Blender,
     [string]$Output

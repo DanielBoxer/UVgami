@@ -1,11 +1,3 @@
-"""Write the index.json of a static Blender extension repository.
-
-Blender's own `extension server-generate` only emits a path relative to the
-index, so it can't point at a GitHub release asset.
-
-    python dev/write_extension_index.py UVgami.zip <archive-url> index.json
-"""
-
 import hashlib
 import json
 import pathlib
@@ -27,6 +19,7 @@ def build_entry(zip_path, archive_url):
     with zipfile.ZipFile(zip_path) as package:
         manifest = tomllib.loads(package.read(MANIFEST_NAME).decode())
     entry = {k: v for k, v in manifest.items() if k != GENERATED_SECTION}
+    # extension server-generate can only emit a path relative to the index
     entry["archive_url"] = archive_url
     entry["archive_size"] = len(archive)
     entry["archive_hash"] = f"sha256:{hashlib.sha256(archive).hexdigest()}"

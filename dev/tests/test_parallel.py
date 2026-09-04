@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-# loaded from file so it doesn't need the bpy-only addon package
+# loaded from file, the addon package imports bpy
 PKG = Path(__file__).parents[2] / "src" / "seams"
 spec = importlib.util.spec_from_file_location(
     "seams", PKG / "__init__.py", submodule_search_locations=[str(PKG)]
@@ -35,8 +35,6 @@ def read_obj(path):
 
 
 def parts_mesh():
-    """A beveled cube, a cylinder and a plain cube side by side, three loose
-    parts of different sizes in one vertex list."""
     verts, faces = [], []
     for name, offset in (("cube-bevel2", 0.0), ("cylinder", 5.0), ("cube", 10.0)):
         part_verts, part_faces = read_obj(FIXTURES / f"{name}.obj")

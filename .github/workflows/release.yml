@@ -86,11 +86,9 @@ jobs:
       - name: Zip the addon
         run: zip -r ${ADDON_NAME}.zip $INCLUDED_FILES
 
-      # partuv bundles PartField, whose license allows non-commercial use only.
-      # this stays an artifact, only the zip above is public
+      # partuv bundles PartField, whose license allows non-commercial use only
       - name: Zip the addon without partuv
-        # the trailing * without a slash also drops the directory entry, which
-        # python would otherwise import as an empty namespace package
+        # the trailing * without a slash also drops the directory entry
         run: zip -r ${ADDON_NAME}-no-partuv.zip $INCLUDED_FILES -x 'src/engines/partuv*'
 
       - name: Upload the addon without partuv

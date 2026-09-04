@@ -1,6 +1,3 @@
-"""Integration tests running the native partuv core. Skipped without the
-compiled core and an NVIDIA GPU, so CI without a GPU passes."""
-
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +14,6 @@ pytestmark = pytest.mark.skipif(
 
 
 def read_obj(path):
-    """Vertices and faces as geometry (v) indices, ignoring uv indices."""
     vertices = []
     faces = []
     for line in path.read_text().splitlines():
@@ -59,8 +55,7 @@ def test_output_keeps_processed_mesh_connectivity(tmp_path):
     save_results(tmp_path, final_part, parts, source_V, source_F)
     vertices, faces = read_obj(tmp_path / "final_components.obj")
 
-    # geometry must be the processed mesh: same vertices, same connectivity.
-    # uv seams belong in vt indices, not duplicated v entries.
+    # uv seams belong in vt indices, not duplicated v entries
     assert len(vertices) == len(mesh.vertices)
     assert np.allclose(vertices, mesh.vertices)
     assert len(faces) == len(mesh.faces)

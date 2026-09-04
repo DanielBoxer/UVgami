@@ -23,7 +23,7 @@ def build_args(engine_path, input_path, output_dir, quality, seam_weight, import
         str(engine_path),
         "-i",
         str(input_path),
-        # optcuts appends the mesh name directly, so the separator is required
+        # optcuts appends the mesh name directly
         "-o",
         str(output_dir) + os.sep,
         "-u",
@@ -55,8 +55,7 @@ def run(
 
         work_input = in_dir / input_path.name
         shutil.copyfile(input_path, work_input)
-        # optcuts reads "<stem>_weights" and "<stem>_fixed" next to the input, so
-        # any sidecar sitting beside the source has to come along to the temp dir
+        # optcuts reads "<stem>_weights" and "<stem>_fixed" next to the input
         for sidecar in input_path.parent.glob(f"{input_path.stem}_*"):
             if sidecar.is_file():
                 shutil.copyfile(sidecar, in_dir / sidecar.name)
@@ -72,8 +71,7 @@ def run(
             stdin=subprocess.DEVNULL,
             text=True,
         )
-        # a timer, not wait(timeout=): the stdout loop below would block past
-        # the deadline, and killing the engine is what ends it
+        # the stdout loop below would block past a wait(timeout=) deadline
         killed = threading.Event()
         timer = None
         if timeout is not None:

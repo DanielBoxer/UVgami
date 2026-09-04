@@ -1,6 +1,3 @@
-"""The panel settings, each against the result it changes. Chart and seam
-counts are exact run to run, so they are pinned."""
-
 import bpy
 import pytest
 from blender_fixtures import (
@@ -39,7 +36,6 @@ def select(objects):
 
 
 def two_loose_cubes():
-    """One object holding two identical cubes, so it separates into twins."""
     a, b = add_cube("a"), add_cube("b", location=(5, 0, 0))
     select([a, b])
     bpy.ops.object.join()
@@ -47,7 +43,6 @@ def two_loose_cubes():
 
 
 def uv_area(obj):
-    """Total uv area of the faces, by the shoelace formula."""
     layer = obj.data.uv_layers.active.data
     total = 0
     for face in obj.data.polygons:
@@ -131,8 +126,6 @@ def test_stack_similar_copies_the_twin_instead_of_unwrapping_it(unwrap, outputs)
 
 
 def test_combine_uvs_packs_both_outputs_into_one_square(unwrap, outputs):
-    """Alone, each output fills the square. Combined, the two share it, so
-    each one's islands come out smaller."""
     areas = {}
     for combine in (False, True):
         bpy.ops.wm.read_homefile(use_empty=True)

@@ -29,7 +29,6 @@ CUT_X = 2.5
 
 
 def quad_grid(size, spacing=1.0):
-    """size by size quads on the z=0 plane, verts row major."""
     side = size + 1
     verts = [(x * spacing, y * spacing, 0.0) for y in range(side) for x in range(side)]
     faces = [
@@ -71,10 +70,6 @@ def proxy_arrays(verts, faces, uvs, matrix=IDENTITY):
 
 
 def split_proxy(right_corner_uv=None):
-    """Two proxy panels over the dense grid, torn at CUT_X: the left panel's
-    uvs shifted by SHIFT, split into two triangles along its diagonal.
-    right_corner_uv replaces the uv of the left panel's top left corner, to
-    bend one triangle's map away from the other's."""
     verts = [
         (0.0, 0.0, 0.0),
         (CUT_X, 0.0, 0.0),
@@ -93,8 +88,6 @@ def split_proxy(right_corner_uv=None):
 
 
 def plane_locator(proxy):
-    """nearest_faces for flat proxies: the triangle a point falls in, or the
-    one it is least outside of."""
     positions = numpy.asarray(proxy["positions"], dtype=numpy.float64)[:, :2]
     triangles = positions[numpy.array([face[:3] for face in proxy["faces"]])]
 
@@ -197,7 +190,6 @@ def test_transfer_projected_matches_the_meshes_in_the_proxy_space():
 
 
 def torn_columns(faces, verts):
-    """Face indices by the dense column the proxy cut runs through."""
     xs = numpy.array([[verts[v][0] for v in face] for face in faces])
     left = numpy.flatnonzero(xs.max(axis=1) <= 2)
     straddling = numpy.flatnonzero((xs.min(axis=1) == 2) & (xs.max(axis=1) == 3))
@@ -225,10 +217,6 @@ def test_transfer_projected_tears_the_dense_mesh_along_the_proxy_cut():
 
 
 def test_transfer_projected_never_tears_between_linked_proxy_faces():
-    """The left panel's two triangles share vertices at the same uvs, so
-    however far their maps disagree the dense edges between them are not
-    tears, and the straddling faces above and below the diagonal, drawn
-    through one map each, weld at their shared corners."""
     verts, faces = quad_grid(GRID)
     proxy = split_proxy(right_corner_uv=(SHIFT + 2.0, GRID + 2.0))
     dense = dense_arrays(verts, faces)
@@ -248,9 +236,6 @@ def test_transfer_projected_never_tears_between_linked_proxy_faces():
 
 
 def test_transfer_projected_pulls_a_zigzag_seam_onto_one_edge_row():
-    """A cut through the middle of a triangle strip gives the up and down
-    triangles opposite sides, so the seam would zigzag along every
-    diagonal. It is pulled onto one of the strip's two edge rows."""
     verts, faces = quad_grid(GRID)
     faces = triangulated(faces)
     proxy = split_proxy()
@@ -266,10 +251,6 @@ def test_transfer_projected_pulls_a_zigzag_seam_onto_one_edge_row():
 
 
 def test_transfer_projected_straightens_a_staircase_onto_the_diagonals():
-    """A cut at 45 degrees between two rows of a triangulated grid: the side
-    labelling gives a staircase of horizontal and vertical edges, but the
-    grid's diagonals run parallel to the cut and are shorter, so the seam
-    is redrawn along them."""
     verts, faces = quad_grid(GRID)
     faces = triangulated(faces)
     # two proxy triangles either side of the line y = x + 0.5

@@ -1,6 +1,3 @@
-"""The painted weight map: what Avoid Seams and Reduce Stretching do to the
-unwrap, and what the seed restriction generators write into it."""
-
 import bpy
 import pytest
 from bl_ext.user_default.UVgami.src.ops.guides import SEAM_RESTRICTIONS_GROUP
@@ -14,7 +11,7 @@ from blender_fixtures import needs_engine
 
 pytestmark = [needs_engine, pytest.mark.smoke]
 
-# a sphere cannot flatten without stretch, so a region has something to win
+# a sphere cannot flatten without stretch
 SEGMENTS = 32
 RINGS = 16
 OUTPUT_NAME = "sphere_unwrapped"
@@ -31,15 +28,11 @@ def add_sphere(name="sphere"):
 
 
 def paint_top_half(obj):
-    """The map is a vertex group, so a script paints it the same way the modal
-    brush does."""
     group = obj.vertex_groups.new(name=SEAM_RESTRICTIONS_GROUP)
     group.add([v.index for v in obj.data.vertices if v.co.z > 0], 1.0, "REPLACE")
 
 
 def unwrap_again(sphere, unwrap, outputs):
-    """A second run on the same mesh, with the first output gone so the name
-    is free and the input is back the way the operator found it."""
     bpy.data.objects.remove(outputs()[OUTPUT_NAME])
     sphere.hide_set(False)
     bpy.ops.object.select_all(action="DESELECT")
@@ -50,8 +43,6 @@ def unwrap_again(sphere, unwrap, outputs):
 
 
 def region_distortion(obj):
-    """Symmetric Dirichlet over the top half and over the bottom, 4.0 at
-    isometry. The output is a new mesh, so the halves come back by height."""
     mesh = obj.data
     verts = vertex_positions(mesh)
     faces = face_vertices(mesh)

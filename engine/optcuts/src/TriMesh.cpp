@@ -37,9 +37,7 @@ extern std::atomic<bool> forceQuit;
 
 namespace uvgami {
 
-// stand-in rest area for a flat or needle triangle, a fraction of its own
-// longest edge squared so a local query mesh sees the same shape it does.
-// below it the energy is rounding noise and can come out negative
+// below this share of its longest edge squared the energy is rounding noise
 static const double ZERO_AREA_STAND_IN = 1e-6;
 
 TriMesh::TriMesh(void) : surfaceArea(0), curFracTail(0), initSeamLen(0) {}
@@ -291,7 +289,7 @@ void TriMesh::computeTriangleFeatures(void) {
             (V_rest.row(cohE(cohI, 0)) - V_rest.row(cohE(cohI, 1))).norm();
     }
 
-    // triangle count never changes after construction, so only initialize
+    // the triangle count never changes after construction
     if (faceWeight.size() != F.rows())
         faceWeight = Eigen::VectorXd::Ones(F.rows());
 
@@ -320,8 +318,7 @@ void TriMesh::computeTriangleFeatures(void) {
                         (P3 - P2).squaredNorm()});
         zeroAreaAmt += triArea[triI] == 0.0;
     }
-    // a zero-area rest triangle has no shape to measure distortion against,
-    // and a local query mesh can be nothing but those
+    // a local query mesh can be nothing but zero-area rest triangles
     const double meanArea = zeroAreaAmt < F.rows()
                                 ? triArea.sum() / (F.rows() - zeroAreaAmt)
                                 : longestSq.mean();
@@ -345,7 +342,7 @@ void TriMesh::computeTriangleFeatures(void) {
             ZERO_AREA_STAND_IN *
                 (longestSq[triI] > 0.0 ? longestSq[triI] : meanArea));
         if (triArea[triI] < floorArea) {
-            // air mesh triangle degeneracy prevention, and the stand-in
+            // air mesh triangle degeneracy prevention
             triArea[triI] = floorArea;
             surfaceArea += floorArea;
             triAreaSq[triI] = floorArea * floorArea;
@@ -514,9 +511,7 @@ void TriMesh::buildCohEfromRecord(const Eigen::MatrixXi &cohERecord) {
     computeFeatures();
 }
 
-// a cut whose path runs boundary to boundary splits the chart in two. in
-// pinned mode a piece without a pinned vert floats away from the held
-// border, so such split candidates are vetoed in querySplit
+// in pinned mode a piece without a pinned vert floats away from the held border
 bool TriMesh::cutLeavesPinlessPiece(const std::vector<int> &path) const {
     if (path.size() < 2 || !isBoundaryVert(path.front()) ||
         !isBoundaryVert(path.back()))
@@ -624,8 +619,7 @@ void TriMesh::querySplit(double lambda_t, bool propagate, bool splitInterior,
             }
         }
 
-        // the lists outlive this call, updateLambda_stationaryV queues an
-        // op from them rounds later, so stale positions invert triangles
+        // updateLambda_stationaryV queues an op from these lists rounds later
         if (!splitInterior) {
             if (sortedCandVerts_b.empty()) {
                 paths_bSplit.clear();
@@ -696,8 +690,7 @@ void TriMesh::querySplit(double lambda_t, bool propagate, bool splitInterior,
 
     assert(!bestCandVerts.empty());
 
-    // a split path through a pinned vert would duplicate it, invalidate
-    // those, and in pinned mode also cuts that would strand a pinless piece
+    // a split path through a pinned vert would duplicate it
     auto invalidateFixed = [this](const std::vector<int> &path, double &EwDec,
                                   std::pair<double, double> &energyChange) {
         for (const auto &vI : path) {
@@ -1034,9 +1027,7 @@ bool TriMesh::mergeEdge(double lambda, double EDecThres, bool propagate) {
     }
 }
 
-// after a weld swap-deletes vertex removed into kept and renames the last
-// vertex backI into the freed slot, map an index to its new name. every
-// vertex-indexed structure must go through this after a stitch weld
+// every vertex-indexed structure must go through this after a stitch weld
 static int renameAfterWeld(int vI, int removed, int kept, int backI) {
     if (vI == removed)
         return kept;
@@ -1084,8 +1075,7 @@ bool TriMesh::stitchIsland(void) {
     for (const auto &vI : fixedVert)
         compFixed[vertComp[vI]] = true;
 
-    // rank island pairs by total shared rest length, the strongest link is
-    // the most seam removed per stitch
+    // the strongest link is the most seam removed per stitch
     auto compKey = [&](int cohI) -> std::pair<int, int> {
         return std::minmax(vertComp[cohE(cohI, 0)], vertComp[cohE(cohI, 2)]);
     };
@@ -1129,9 +1119,7 @@ bool TriMesh::stitchIsland(void) {
         if (compFixed[movingComp])
             continue;
 
-        // rigid transform mapping from0 exactly onto to0 and the shared edge
-        // directions together. the two uv edge lengths can differ, the slack
-        // stays at the far endpoint pair for the merge machinery to close
+        // the two uv edge lengths can differ, the slack stays at the far pair
         const Eigen::RowVector2d eF = V.row(from1) - V.row(from0);
         const Eigen::RowVector2d eT = V.row(to1) - V.row(to0);
         const double nF = eF.norm(), nT = eT.norm();
@@ -1144,11 +1132,7 @@ bool TriMesh::stitchIsland(void) {
         const Eigen::RowVector2d pFrom = V.row(from0);
         const Eigen::RowVector2d pTo = V.row(to0);
 
-        // test the placement on a scratch copy with every endpoint pair the
-        // zip will weld already identified, spreading from the stitched edge
-        // through shared endpoints. the whole shared run then reads interior
-        // and only real crossings remain, a run continuation landing exactly
-        // collinear would otherwise read as an overlap
+        // pre-welding the pairs the zip will weld makes the shared run read interior
         Eigen::MatrixXd V_test = V;
         for (int vI = 0; vI < V.rows(); vI++) {
             if (vertComp[vI] == movingComp)
@@ -1196,17 +1180,11 @@ bool TriMesh::stitchIsland(void) {
         if (IglUtils::checkUVBoundaryOverlap(V_test, bnd_all, NULL))
             continue;
 
-        // the pre-welded test reads every open zipper as interior, but a
-        // zipper blocked mid-seam stays open, so also test the raw boundary
-        // for real crossings. the flush run reads as touching, not crossing,
-        // and a candidate whose slack would drag through anything is refused
-        // here rather than jamming the zip later
+        // a zipper blocked mid-seam stays open, so test the raw boundary too
         if (IglUtils::checkUVBoundaryOverlap(V_test, bnd_raw, NULL, true))
             continue;
 
-        // crossing-free placement can still bury one island inside another,
-        // test a representative point of each island against the material of
-        // every other (even-odd over all its loops, so holes stay legal)
+        // a crossing-free placement can still bury one island inside another
         const int mergedComp = vertComp[a0];
         auto compOf = [&](int vI) {
             return (vertComp[vI] == vertComp[b0]) ? mergedComp : vertComp[vI];
@@ -1247,14 +1225,12 @@ bool TriMesh::stitchIsland(void) {
         if (buried)
             continue;
 
-        // apply the placement
         for (int vI = 0; vI < V.rows(); vI++) {
             if (vertComp[vI] == movingComp)
                 V.row(vI) = (V.row(vI) - pFrom) * rotT + pTo;
         }
 
-        // weld b0 into a0, turning this pair into a zipper bottom. same
-        // swap-delete scheme as mergeBoundaryEdges
+        // weld b0 into a0, same swap-delete scheme as mergeBoundaryEdges
         int vBackI = static_cast<int>(V.rows()) - 1;
         const int keepVI = ((a0 == vBackI) && (b0 < vBackI)) ? b0 : a0;
         if (b0 < vBackI) {
@@ -1343,10 +1319,7 @@ bool TriMesh::zipStitchedSeam(void) {
             // the front stays, relaxation may make room for a later attempt
             continue;
 
-        // inversion is only checked locally, but pulling u and w together can
-        // drag the outline across a thin section far away. transversal only,
-        // so the still-coincident runs of open zippers don't read as
-        // crossings while a real drag-through still blocks the weld
+        // pulling u and w together can drag the outline across a thin section far away
         Eigen::MatrixXi F_test = F;
         for (int triI = 0; triI < F_test.rows(); triI++) {
             for (int vI = 0; vI < 3; vI++) {
@@ -1368,8 +1341,7 @@ bool TriMesh::zipStitchedSeam(void) {
             path = {cohE(zipI, 3), cohE(zipI, 2), cohE(zipI, 1)};
         }
         const int vBackI = static_cast<int>(V.rows()) - 1;
-        // path[2] is welded away and the last vertex takes its index, the
-        // merged vertex ends up at path[0] unless that rename moved it
+        // path[2] is welded away and the last vertex takes its index
         const int mergedVI =
             ((path[0] == vBackI) && (path[2] < vBackI)) ? path[2] : path[0];
         mergeBoundaryEdges(std::pair<int, int>(path[0], path[1]),
@@ -2333,8 +2305,7 @@ bool TriMesh::isBoundaryVert(int vI, int vI_neighbor,
     } while (1);
 }
 
-// same loops and vertex order as igl::boundary_loop, Triangle's output
-// depends on the order
+// same loops and vertex order as igl::boundary_loop, Triangle depends on it
 void TriMesh::boundaryLoops(std::vector<std::vector<int>> &loops) const {
     loops.clear();
     // outgoing boundary edges per vertex as (triangle, end vertex)
@@ -2412,7 +2383,7 @@ void TriMesh::compute2DInwardNormal(int vI, Eigen::RowVector2d &normal) const {
 // concave gets the deeper discount, a groove hides a seam best
 static const double CONCAVE_RELIEF = 0.5;
 static const double CONVEX_RELIEF = 0.3;
-// below this a curved surface reads as flat, so a sculpt is left alone
+// below this a curved surface reads as flat
 static const double RELIEF_LOW_ANGLE = 20.0;
 static const double RELIEF_FULL_ANGLE = 45.0;
 
@@ -2467,8 +2438,7 @@ TriMesh::computeLocalLDec(int vI, double lambda_t, std::vector<int> &path_max,
                           const std::vector<int> &incTris,
                           const Eigen::RowVector2d &initMergedPos) const {
     if (forceQuit) {
-        // a stop mid-query drains the remaining candidates as invalid so the
-        // outer loop can save the current map instead of finishing the query
+        // a stop mid-query drains the remaining candidates as invalid
         energyChanges_max.first = DBL_MAX;
         energyChanges_max.second = DBL_MAX;
         return -DBL_MAX;
@@ -2480,8 +2450,7 @@ TriMesh::computeLocalLDec(int vI, double lambda_t, std::vector<int> &path_max,
             assert(isBoundaryVert(pI));
         if (path_max.size() == 3) {
             // zipper merge
-            // the same discount as seInc, so a split and the merge undoing
-            // it net zero
+            // the same discount as seInc, a split and its undo net zero
             double seDec =
                 (V_rest.row(path_max[0]) - V_rest.row(path_max[1])).norm() /
                 virtualRadius *
@@ -2538,8 +2507,7 @@ TriMesh::computeLocalLDec(int vI, double lambda_t, std::vector<int> &path_max,
     }
 
     // split:
-    // a full reversal triples an edge's seam cost
-    const double turnPenalty = 2.0;
+    const double turnPenalty = 2.0; // a full reversal triples an edge's seam cost
     std::vector<int> umbrella;
     std::pair<int, int> boundaryEdge;
     if (isBoundaryVert(vI, *(vNeighbor[vI].begin()), umbrella, boundaryEdge,
@@ -2762,8 +2730,7 @@ double TriMesh::computeLocalEdDec_inSplit(const std::vector<int> &triangles,
         const double eps_sep =
             (V.row(path[1]) - V.row(path[0])).squaredNorm() * 1.0e-4;
         double curSqDist = (splittedV[0] - splittedV[1]).squaredNorm();
-        // the step size can collapse to zero with coincident copies, and the
-        // relative-progress break below is NaN when lastSqDist is zero, so cap
+        // the step size collapses to zero with coincident copies
         int sepIter = 0;
         while (curSqDist < eps_sep && ++sepIter <= 100) {
             for (int i = 0; i < 2; i++) {
@@ -2790,8 +2757,7 @@ double TriMesh::computeLocalEdDec_inSplit(const std::vector<int> &triangles,
             //                    sepDir_oneV[1].transpose();
         }
         if (curSqDist < eps_sep * 1.0e-6) {
-            // the copies would not separate, a degenerate air mesh here
-            // crashes the scaffold, reject the candidate instead
+            // the copies would not separate, a degenerate air mesh crashes the scaffold
             return -DBL_MAX;
         }
 
@@ -3057,8 +3023,7 @@ double TriMesh::computeLocalEdDec_bSplit(const std::vector<int> &triangles,
                 (V.row(splitPath[1]) - V.row(splitPath[0])).squaredNorm() *
                 1.0e-4;
             double curSqDist = (splittedV[0] - splittedV[1]).squaredNorm();
-            // capped for the same zero-step / NaN-break reason as in
-            // computeLocalEdDec_inSplit
+            // capped for the same zero-step reason as computeLocalEdDec_inSplit
             int sepIter = 0;
             while (curSqDist < eps_sep && ++sepIter <= 100) {
                 for (int i = 0; i < 2; i++) {

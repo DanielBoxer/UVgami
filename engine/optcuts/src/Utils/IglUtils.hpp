@@ -51,8 +51,7 @@ class IglUtils {
                                  Eigen::Ref<const Eigen::MatrixXd> block,
                                  Eigen::Ref<const Eigen::VectorXi> index,
                                  int dim);
-    // writes into presized V, I, J starting at tripletInd so callers can
-    // fill disjoint slices in parallel
+    // writes into presized V, I, J at tripletInd so callers can fill disjoint slices
     static void addBlockToMatrix(Eigen::Ref<const Eigen::MatrixXd> block,
                                  Eigen::Ref<const Eigen::VectorXi> index, int dim,
                                  Eigen::VectorXd *V, Eigen::VectorXi *I,
@@ -79,17 +78,13 @@ class IglUtils {
                                      const Eigen::RowVector2d &d,
                                      double eps = 0.0);
 
-    // true if any two non-adjacent UV boundary edges cross, i.e. the input UV
-    // islands self-intersect or overlap each other. spatial-hash broad phase,
-    // Test2DSegmentSegment narrow phase. does not catch full containment.
-    // with crossingVerts, every crossing is reported through it instead of
-    // returning at the first one, so a caller can tell which charts are at
-    // fault. transversalOnly skips touching and collinear overlap, so the
-    // exactly coincident runs of a mid-zip stitch don't count as crossings
+    // true if any two non-adjacent UV boundary edges cross, full containment is missed
     static bool checkUVBoundaryOverlap(
         const Eigen::MatrixXd &UV,
         const std::vector<std::vector<int>> &bnd_all,
-        std::set<int> *crossingVerts = nullptr, bool transversalOnly = false);
+        std::set<int> *crossingVerts = nullptr,
+        // a mid-zip stitch's coincident runs must not read as crossings
+        bool transversalOnly = false);
 
     static void smoothVertField(const TriMesh &mesh, Eigen::VectorXd &field);
 };

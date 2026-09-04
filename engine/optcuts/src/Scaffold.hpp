@@ -33,7 +33,6 @@ class Scaffold {
 
     // augment mesh proxy matrix with air mesh proxy matrix with parameter
     // w_scaf
-    // remaps the triplets from airStart on in place
     void augmentProxyMatrix(Eigen::VectorXi &I, Eigen::VectorXi &J,
                             Eigen::VectorXd &V, Eigen::Index airStart,
                             double w_scaf) const;

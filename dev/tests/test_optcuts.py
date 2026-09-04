@@ -14,8 +14,6 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class FakeProcess:
-    """Stands in for the OptCuts subprocess and writes the expected output OBJ."""
-
     def __init__(
         self, argv, returncode=0, output_text="v 0 0 0\nvt 0 0\nf 1/1 1/1 1/1\n"
     ):
@@ -102,9 +100,6 @@ def test_run_copies_weights_sidecar(triangle, tmp_path, fake_engine, monkeypatch
 def test_run_copies_sidecars_next_to_the_input(
     triangle, tmp_path, fake_engine, monkeypatch
 ):
-    """A bench mesh keeps its sidecars beside the obj, and run() copies the obj
-    to a workdir. Losing the sidecar there is silent: the engine just unwraps
-    unguided."""
     seen = []
 
     def fake_popen(argv, **kwargs):
@@ -130,8 +125,6 @@ def test_run_engine_failure(triangle, tmp_path, fake_engine, monkeypatch):
 
 def test_run_timeout_kills_the_engine(triangle, tmp_path, fake_engine, monkeypatch):
     class HangingProcess:
-        """Blocks in the stdout loop until something kills it, like a stuck engine."""
-
         def __init__(self, argv, **kwargs):
             self.returncode = 1
             self.killed = threading.Event()
@@ -191,8 +184,6 @@ def test_optcuts_smoke(cube, tmp_path):
 @pytest.mark.smoke
 @pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled OptCuts binary not present")
 def test_optcuts_shared_process_matches_solo(tmp_path):
-    """Two meshes sent over stdin to one process must come out byte for byte as
-    each run alone: the process resets its search state between meshes."""
     input_dir = tmp_path / "input"
     solo_dir = tmp_path / "solo"
     shared_dir = tmp_path / "shared"
@@ -238,9 +229,6 @@ def test_optcuts_shared_process_matches_solo(tmp_path):
 
 
 def _write_bump_patch(path, n=12, height=0.3, width=0.05):
-    """A grid patch with a gaussian bump and its flat grid as the uv map, so
-    the interior is stretched but the border uvs are exact. vt indices mirror
-    v indices, the layout the fix area export writes."""
     verts = []
     border = []
     for j in range(n + 1):
@@ -270,8 +258,6 @@ def _write_bump_patch(path, n=12, height=0.3, width=0.05):
 @pytest.mark.smoke
 @pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled OptCuts binary not present")
 def test_optcuts_pinned_border(tmp_path):
-    """A _fixed sidecar must hold the listed verts: after undoing the output
-    normalization, the border uvs come back unchanged."""
     input_dir = tmp_path / "input"
     out_dir = tmp_path / "output"
     input_dir.mkdir()
@@ -321,9 +307,6 @@ def test_optcuts_pinned_border(tmp_path):
 @pytest.mark.smoke
 @pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled OptCuts binary not present")
 def test_optcuts_nocut_relaxes_without_cutting(tmp_path):
-    """A nocut line in the _fixed sidecar must keep the topology exactly:
-    no new uv verts, pins held, and the stretched interior still moves. The
-    bump is steep enough that the default pinned run does cut it."""
     input_dir = tmp_path / "input"
     out_dir = tmp_path / "output"
     input_dir.mkdir()
@@ -386,9 +369,6 @@ def test_optcuts_nocut_relaxes_without_cutting(tmp_path):
 @pytest.mark.smoke
 @pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled OptCuts binary not present")
 def test_optcuts_nocut_without_pins(tmp_path):
-    """An empty pin line with nocut (the relax island export) must relax the
-    whole map with a free boundary: same topology, and the interior moves
-    even though nothing is held."""
     input_dir = tmp_path / "input"
     out_dir = tmp_path / "output"
     input_dir.mkdir()
@@ -418,8 +398,7 @@ def test_optcuts_nocut_without_pins(tmp_path):
     # a cut duplicates the uv verts along it
     assert len(uvs_out) == len(verts)
 
-    # the input map is the unit grid and the output is normalized into the
-    # unit box, so an unmoved map would come back identical
+    # input is the unit grid and the output is normalized into the unit box
     vt_map = {}
     for face_in, face_out in zip(faces, faces_out):
         for ti, to in zip(face_in, face_out):
@@ -437,9 +416,6 @@ def test_optcuts_nocut_without_pins(tmp_path):
 @pytest.mark.smoke
 @pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled OptCuts binary not present")
 def test_optcuts_nocut_keeps_hole_chart(tmp_path):
-    """Nocut must keep an annulus chart: relax island runs on islands that
-    ring a hole, which the disk keep-check would otherwise send to the
-    cut-to-disk relayout."""
     n = 8
     input_dir = tmp_path / "input"
     out_dir = tmp_path / "output"
@@ -494,8 +470,6 @@ def test_optcuts_nocut_keeps_hole_chart(tmp_path):
 @pytest.mark.smoke
 @pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled OptCuts binary not present")
 def test_optcuts_nocut_rejects_broken_map(tmp_path):
-    """Nocut without pins on a map the engine cannot keep must exit 114
-    instead of falling through to the cut-to-disk relayout."""
     input_dir = tmp_path / "input"
     (tmp_path / "output").mkdir()
     input_dir.mkdir()
@@ -519,8 +493,6 @@ def test_optcuts_nocut_rejects_broken_map(tmp_path):
 @pytest.mark.smoke
 @pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled OptCuts binary not present")
 def test_optcuts_pinned_rejects_broken_map(tmp_path):
-    """Pins on a map the engine cannot keep must exit 110, never fall through
-    to the cut-to-disk relayout that would move the pinned border."""
     input_dir = tmp_path / "input"
     (tmp_path / "output").mkdir()
     input_dir.mkdir()

@@ -18,8 +18,7 @@ def _load(relpath, name):
     return module
 
 
-# install.py imports bpy so it can't load under pytest, but the download helper is
-# bpy-free and loaded directly from its file
+# install.py imports bpy, download.py does not
 download = _load("src/utils/download.py", "uvgami_download")
 
 CONTENT = bytes(range(256)) * 40  # 10240 bytes
@@ -54,8 +53,7 @@ class RangeHandler(BaseHTTPRequestHandler):
             )
         else:
             self.send_response(200)
-        # declare the full remaining length, then truncate the body to simulate
-        # a mid-transfer drop for the first `drop_requests` responses
+        # a full Content-Length with a truncated body is a mid-transfer drop
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if len(server.requests) <= server.drop_requests:
@@ -147,8 +145,7 @@ def test_progress_reports_cumulative_bytes_with_resume(server, tmp_path):
     )
 
     assert dest.read_bytes() == CONTENT
-    # the resumed attempt starts partway in, so done must count from the file
-    # start (offset included), not restart at zero
+    # done counts from the file start, offset included
     resume_offset = len(CONTENT) // 2
     assert any(done > resume_offset for done, _ in calls)
     assert calls[-1] == (len(CONTENT), len(CONTENT))

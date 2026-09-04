@@ -1,6 +1,3 @@
-"""The uv editor operators: each on a face selection in edit mode, each with
-the proxy option, and the refusals that leave edit mode intact."""
-
 import bpy
 import mathutils
 import pytest
@@ -16,7 +13,6 @@ DISTORTION = (0.03, 0.02)
 
 
 def add_grid():
-    """A subdivided plane with blender's own uv map, one island."""
     bpy.ops.mesh.primitive_grid_add(x_subdivisions=GRID, y_subdivisions=GRID)
     return bpy.context.active_object
 
@@ -30,8 +26,6 @@ def faces_around(obj, vertex):
 
 
 def block_edge_vertex(obj, block):
-    """A vertex on the border of the block: pinned by the block alone, free
-    once the area grows by a ring."""
     counts = {}
     for index in block:
         for vertex in obj.data.polygons[index].vertices:
@@ -40,8 +34,6 @@ def block_edge_vertex(obj, block):
 
 
 def vertex_uvs(obj, vertex):
-    """The uv(s) on a vertex's corners. Read through the loops, which a face
-    split elsewhere leaves alone."""
     bpy.ops.object.mode_set(mode="OBJECT")
     layer = obj.data.uv_layers.active.data
     uvs = {
@@ -61,15 +53,11 @@ def distort(obj, vertex):
 
 
 def select_faces(obj, indices):
-    """Select faces in object mode, then enter edit mode as the operators'
-    poll wants. Sync selection on, so the mesh flags are what count."""
     bpy.context.scene.tool_settings.use_uv_select_sync = True
-    # in vertex mode, entering edit mode selects any face whose vertices are
-    # all selected
+    # in vertex mode edit mode selects any face whose vertices are all selected
     bpy.context.scene.tool_settings.mesh_select_mode = (False, False, True)
     mesh = obj.data
-    # a primitive comes with every vertex selected, and edit mode flushes
-    # that up to the faces
+    # a primitive comes with every vertex selected
     for element in (*mesh.vertices, *mesh.edges, *mesh.polygons):
         element.select = False
     for index in indices:
@@ -179,9 +167,6 @@ def test_no_uv_map_is_refused():
 
 
 def grid_islands(make_mesh, island_of, lifted=0.0):
-    """A 3x3 grid of unit quads, each island's faces laid out at their own
-    uv offset. island_of maps a (column, row) cell to its island number, and
-    the centre face's corners rise by lifted so the grid isn't flat."""
     centre = {(1, 1), (2, 1), (2, 2), (1, 2)}
     verts = [
         (x, y, lifted if (x, y) in centre else 0.0) for y in range(4) for x in range(4)
@@ -205,7 +190,6 @@ def grid_islands(make_mesh, island_of, lifted=0.0):
 
 
 def uv_island_count(obj, uvs):
-    """Faces joined wherever a shared vertex has one uv on both."""
     parent = list(range(len(uvs)))
 
     def find(i):
@@ -222,8 +206,6 @@ def uv_island_count(obj, uvs):
 
 
 def test_combine_keeps_a_cube_corner_as_one_island(session, make_mesh, face_uvs):
-    """Three quads meeting at a corner can't lie flat, so a fresh unwrap
-    would cut them again. Combining keeps them one island."""
     obj = make_mesh(
         "corner",
         [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1)],
@@ -244,9 +226,6 @@ def test_combine_keeps_a_cube_corner_as_one_island(session, make_mesh, face_uvs)
 
 
 def test_combine_keeps_the_islands_other_seams(session, make_mesh, face_uvs):
-    """The ring around the centre is one island cut open between its two
-    bottom left faces. Combining it with the centre welds the ring's inner
-    edges and leaves that cut alone."""
     island_of = {(column, row): 0 for column in range(3) for row in range(3)}
     island_of[1, 1] = 1
     obj = grid_islands(make_mesh, island_of, lifted=1.0)
@@ -265,8 +244,6 @@ def test_combine_keeps_the_islands_other_seams(session, make_mesh, face_uvs):
 
 
 def test_combine_refuses_islands_touching_along_two_seams(make_mesh):
-    """The top row and the U under it touch at both ends with the centre
-    face between, so welded they ring a hole."""
     island_of = {(column, row): 0 for column in range(3) for row in range(3)}
     island_of[1, 1] = 1
     for column in range(3):

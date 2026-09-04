@@ -99,9 +99,7 @@ def test_triangulated_quad_assigns_all_corners():
 
 
 def test_seam_through_quad_welds_the_cut_off():
-    # two quads side by side, a uv cut runs across the first one's diagonal.
-    # the far piece is redrawn from its 3d shape in the anchor's frame, so the
-    # quad keeps its four loops
+    # two quads side by side, a uv cut runs across the first one's diagonal
     in_pos = [
         (0, 0, 0),
         (1, 0, 0),
@@ -135,14 +133,12 @@ def test_seam_through_quad_welds_the_cut_off():
             7: (1.0, 1.0),
         }
     )
-    # the welded diagonal is no input edge, so the cut leaves no seam
+    # the welded diagonal is no input edge
     assert plan.seam_edges == set()
 
 
 def test_far_chart_scale_is_ignored():
-    # the far piece's own chart sits at half the anchor's scale. its uvs are
-    # not reused: the piece is redrawn from its 3d shape at the anchor's
-    # density, so the quad welds with no density jump
+    # the far piece's own chart sits at half the anchor's scale
     in_pos = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
     in_faces = [[0, 1, 2, 3]]
     out_faces = [[0, 1, 2], [0, 2, 3]]
@@ -167,8 +163,7 @@ def test_far_chart_scale_is_ignored():
 
 
 def test_mirrored_anchor_reflects_the_flap():
-    # the anchor chart is mirrored, its uv winding is clockwise, so the flap
-    # is redrawn on the reflected side to keep the patch consistent
+    # the anchor chart is mirrored, its uv winding is clockwise
     in_pos = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
     in_faces = [[0, 1, 2, 3]]
     out_faces = [[0, 1, 2], [0, 2, 3]]
@@ -192,11 +187,7 @@ def test_mirrored_anchor_reflects_the_flap():
 
 
 def test_stretched_anchor_does_not_square_its_stretch():
-    # the anchor chart is stretched 2x along u, so the shared diagonal is
-    # longer in uv than in 3d. drawing the flap through the anchor's own map
-    # keeps the whole quad at the anchor's density: uv area 2, 3d area 1.
-    # scaling it by the diagonal instead would put the flap at (0.5, 1.5),
-    # a density of 2.5
+    # the anchor chart is stretched 2x along u
     in_pos = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
     in_faces = [[0, 1, 2, 3]]
     out_faces = [[0, 1, 2], [0, 2, 3]]
@@ -220,9 +211,7 @@ def test_stretched_anchor_does_not_square_its_stretch():
 
 
 def test_bent_quad_flap_keeps_its_3d_shape():
-    # the quad is folded along the cut diagonal and the flap triangle is
-    # equilateral in 3d, so it unfolds to an equilateral apex left of the
-    # uv diagonal instead of reusing its own chart's shape
+    # the quad is folded along the cut diagonal and the flap is equilateral in 3d
     in_pos = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 1)]
     in_faces = [[0, 1, 2, 3]]
     out_faces = [[0, 1, 2], [0, 2, 3]]
@@ -246,8 +235,7 @@ def test_bent_quad_flap_keeps_its_3d_shape():
 
 
 def test_ngon_chain_welds_part_by_part():
-    # pentagon fan, the two far pieces sit in a translated frame. the second
-    # one only chains through the first one's welded uvs
+    # pentagon fan, the two far pieces sit in a translated frame
     in_pos = [(0, 0, 0), (4, 0, 0), (4, 4, 0), (2, 5, 0), (0, 4, 0)]
     in_faces = [[0, 1, 2, 3, 4]]
     out_faces = [[0, 1, 2], [0, 2, 3], [0, 3, 4]]
@@ -273,16 +261,14 @@ def test_ngon_chain_welds_part_by_part():
 
 
 def test_weld_landing_on_its_island_splits():
-    # the far piece would land where a face of the same island already sits,
-    # as across a slit, so the weld backs off and the face splits
+    # the far piece would land where a face of the same island already sits
     in_pos = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0.5, 1.5, 0)]
     in_faces = [[0, 1, 2, 3], [2, 3, 4]]
     out_faces = [[0, 1, 2], [0, 2, 3], [2, 3, 4]]
     out_uvs = [
         [(0, 0), (1, 0), (1, 1)],
         [(5, 5), (6, 6), (5, 6)],
-        # shares vertex 2 at (1, 1) with the anchor, so it is the same island,
-        # and its long edge crosses the glued piece's top edge
+        # same island as the anchor, its long edge crosses the glued piece
         [(1, 1), (0.3, 0.7), (0.9, 1.5)],
     ]
 
@@ -300,16 +286,12 @@ def test_weld_landing_on_its_island_splits():
             ([0, 2, 3], [(5.0, 5.0), (6.0, 6.0), (5.0, 6.0)]),
         ]
     }
-    # the split diagonal, plus edge 2-3, where the far piece's island meets
-    # the neighbouring triangle's
+    # edge 2-3 is where the far piece's island meets the neighbouring triangle
     assert plan.seam_edges == {(0, 2), (2, 3)}
 
 
 def test_weld_moves_the_cut_to_the_faces_outer_edge():
-    # the same blocking face, but in its own island, which the pack pulls
-    # clear of the glued piece, so the weld stands. welding undoes the cut
-    # across the diagonal but not the cut itself: it lands on edge 2-3, where
-    # the redrawn piece now meets the neighbouring triangle
+    # the same blocking face, in its own island, which the pack pulls clear
     in_pos = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0.5, 1.5, 0)]
     in_faces = [[0, 1, 2, 3], [2, 3, 4]]
     out_faces = [[0, 1, 2], [0, 2, 3], [2, 3, 4]]
@@ -338,9 +320,7 @@ def test_weld_moves_the_cut_to_the_faces_outer_edge():
 
 
 def test_without_a_pack_another_islands_overlap_splits():
-    # the same layout the weld stands on when a pack follows. with no pack
-    # nothing pulls the blocking island clear, so the overlap counts and the
-    # face splits instead
+    # the layout the weld stands on, but with no pack to pull the island clear
     in_pos = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0.5, 1.5, 0)]
     in_faces = [[0, 1, 2, 3], [2, 3, 4]]
     out_faces = [[0, 1, 2], [0, 2, 3], [2, 3, 4]]
@@ -368,8 +348,7 @@ def test_without_a_pack_another_islands_overlap_splits():
 
 
 def test_vertex_only_cut_splits_in_input_winding():
-    # the pieces share only vertex 2, so no weld edge exists and the face
-    # splits, each piece reordered to the input corner order
+    # the pieces share only vertex 2, no weld edge exists
     in_pos = [(0, 0, 0), (2, 0, 0), (2, 2, 0), (1, 3, 0), (0, 2, 0)]
     in_faces = [[0, 1, 2, 3, 4]]
     # rotated corner orders prove the reorder
@@ -409,8 +388,7 @@ def test_conflicting_triangle_cannot_be_split():
 
 def test_coincident_input_faces_each_take_their_own_output():
     a, b, c = (0, 0, 0), (1, 0, 0), (0, 1, 0)
-    # stacked input triangles, the engine returns one output face per input face
-    # at the input's own vertex indices
+    # stacked input triangles, one output face per input face
     in_pos = [a, b, c, a, b, c]
     in_faces = [[0, 1, 2], [3, 4, 5]]
     out_faces = [[0, 1, 2], [3, 4, 5]]
@@ -431,8 +409,7 @@ def test_coincident_input_faces_each_take_their_own_output():
 
 def test_cut_copy_near_a_second_vertex_is_ambiguous():
     a, b, c = (0, 0, 0), (1, 0, 0), (0, 1, 0)
-    # vertex 3 is a needle away from vertex 0, so the cut copy at index 4 sits on
-    # both and nothing tells them apart
+    # vertex 3 is a needle away from vertex 0
     in_pos = [a, b, c, (0, 0, 1e-6)]
     in_faces = [[0, 1, 2], [3, 1, 0]]
     out_pos = [a, b, c, (0, 0, 1e-6), a]
@@ -447,8 +424,7 @@ def test_cut_copy_near_a_second_vertex_is_ambiguous():
 
 def test_merged_output_still_matches_by_position():
     a, b, c, d = (0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0)
-    # two input triangles with their shared edge doubled, the engine merged
-    # the doubles so its indices no longer line up with the input
+    # two input triangles with their shared edge doubled, merged by the engine
     in_pos = [a, b, c, b, c, d]
     in_faces = [[0, 1, 2], [3, 4, 5]]
     out_pos = [a, b, c, d]
@@ -469,8 +445,7 @@ def test_merged_output_still_matches_by_position():
 
 
 def test_small_piece_far_from_the_origin_matches():
-    # a 0.1 wide triangle 138 units out, the engine's 7 digits move it further
-    # than the old piece-sized tolerance allowed
+    # a 0.1 wide triangle 138 units out, at the engine's 7 digits
     in_pos = [(138.0, 0, 0), (138.1, 0, 0), (138.0, 0.1, 0)]
     out_pos = [tuple(float("%.6e" % (x + 3e-5)) for x in p) for p in in_pos]
     out_faces = [[0, 1, 2]]

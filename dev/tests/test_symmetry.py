@@ -2,7 +2,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-# loaded from file so it doesn't need the bpy-only addon package
+# loaded from file, the addon package imports bpy
 PKG = Path(__file__).parents[2] / "src" / "seams"
 spec = importlib.util.spec_from_file_location(
     "seams", PKG / "__init__.py", submodule_search_locations=[str(PKG)]
@@ -45,8 +45,7 @@ def test_mirror_seams_closes_across_two_maps():
 
 
 def mirrored_quads():
-    # two separate quads, the second the first reflected across the plane,
-    # with uvs from independent flattens that do not match
+    # two quads mirrored across the plane, with uvs that do not match
     faces = [(0, 1, 2, 3), (4, 5, 6, 7)]
     uvs = [
         [(0.0, 0.0), (0.1, 0.0), (0.1, 0.1), (0.0, 0.1)],
@@ -71,8 +70,7 @@ def test_stack_mirrored_copies_the_first_islands_uvs():
 
 
 def test_stack_mirrored_leaves_a_straddling_island_alone():
-    # two quads welded along the plane edge (0, 1) into one island, which
-    # the map sends onto itself
+    # two quads welded along the plane edge (0, 1) into one island
     faces = [(0, 1, 2, 3), (0, 1, 4, 5)]
     uvs = [
         [(0.0, 0.0), (0.1, 0.0), (0.1, 0.1), (0.0, 0.1)],
@@ -135,9 +133,6 @@ def test_half_faces_keeps_one_quadrant_under_two_maps():
 
 
 def grid_plate(hole):
-    """A 3x3 quad plate as triangles, verts on a 4x4 grid, optionally with
-    the center quad missing. Returns (verts, faces, dropped) with the right
-    quad column kept and everything else dropped."""
     verts = [(c, r, 0) for r in range(4) for c in range(4)]
     faces = []
     dropped = set()

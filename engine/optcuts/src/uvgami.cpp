@@ -244,8 +244,7 @@ void proceedOptimization(int proceedNum) {
     }
 }
 
-// per-iteration reporting: emits the progress line the addon parses and serves
-// the snapshot command
+// emits the progress line the addon parses and serves the snapshot command
 void reportProgress(void) {
     Eigen::VectorXd distortionPerElem;
     energyTerms[0]->getEnergyValPerElem(*triSoup[channel_result],
@@ -338,8 +337,7 @@ int computeBestCand(const std::vector<std::pair<double, double>> &energyChanges,
     return id_minEChange;
 }
 
-// with a pinned border there may be no boundary-split candidates at all, and
-// the lambda loops below would compare against DBL_MAX sentinels forever
+// with a pinned border there may be no boundary-split candidates at all
 bool hasValidCand(const std::vector<std::pair<double, double>> &energyChanges) {
     for (const auto &candI : energyChanges) {
         if ((candI.first != DBL_MAX) && (candI.second != DBL_MAX))
@@ -491,10 +489,7 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
             }
             return false;
         } else if (oscillate) {
-            // no feasible config yet, so there is nothing to roll back to,
-            // but revisiting the same stationary state means the split/merge
-            // pair is cycling and spinning further cannot reach the bound.
-            // give it a few chances to escape, then keep the current map
+            // revisiting the same stationary state means the split/merge pair is cycling
             if (++oscillated_infeasible >= 3)
                 return false;
         } else {
@@ -537,10 +532,7 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
                 hasValidCand(energyChanges_bSplit) &&
                 (computeOptPicked(energyChanges_bSplit, energyChanges_merge,
                                   1.0 - energyParams[0]) == 1)) {
-                // still picking merge. the dual update saturates in double
-                // precision (x/(1+x) sticks at 1), and with a pinned border
-                // the pick can stay merge at every lambda, so break at the
-                // fixed point instead of spinning
+                // still picking merge, the dual update saturates and x/(1+x) sticks at 1
                 double lambda_last = -1.0;
                 do {
                     energyParams[0] = updateLambda(measure_bound);
@@ -567,8 +559,7 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
                     energyChanges_bSplit, 1.0 - energyParams[0], eDec_b);
                 int id_pickingISplit = computeBestCand(
                     energyChanges_iSplit, 1.0 - energyParams[0], eDec_i);
-                // break at the dual update's fixed point, pins can leave no
-                // split profitable at any lambda
+                // pins can leave no split profitable at any lambda
                 double lambda_last = -1.0;
                 while ((eDec_b > 0.0) && (eDec_i > 0.0)) {
                     if (energyParams[0] == lambda_last)
@@ -623,7 +614,6 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
                 computeOptPicked(energyChanges_bSplit, energyChanges_merge,
                                  1.0 - energyParams[0]) == 0) {
                 // still picking split, break at the dual update's fixed point
-                // (see the merge loop above)
                 double lambda_last = -1.0;
                 do {
                     energyParams[0] = updateLambda(measure_bound);
@@ -642,8 +632,7 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
             assert(!energyChanges_merge.empty());
             int id_pickingMerge = computeBestCand(
                 energyChanges_merge, 1.0 - energyParams[0], eDec_m);
-            // break at the dual update's fixed point (see the merge loop in
-            // the increase branch)
+            // break at the dual update's fixed point
             double lambda_last = -1.0;
             while (eDec_m > 0.0) {
                 if (energyParams[0] == lambda_last)
@@ -654,8 +643,7 @@ bool updateLambda_stationaryV(bool cancelMomentum = true,
                     energyChanges_merge, 1.0 - energyParams[0], eDec_m);
             }
             if (id_pickingMerge < 0) {
-                // a merge can be listed but unpickable (partial DBL_MAX
-                // sentinel), treat it like the noOp case above
+                // a merge can be listed but unpickable, a partial DBL_MAX sentinel
                 energyParams[0] = 1.0 - eps_lambda;
                 optimizer->updateEnergyData(true, false, false);
                 if (iterNum_bestFeasible != iterNum)
@@ -692,17 +680,11 @@ void converge_preDrawFunc(void) {
     outerLoopFinished = true;
 }
 
-// solve() only reports convergence on the gradient tolerance or a line
-// search stall at a healthy step size. degenerate geometry can decrease the
-// energy by denormal amounts at tiny steps forever, hitting neither, so a
-// long flat run counts as stationary
-// measured: a dead solve decreases by exactly zero for thousands of
-// iterations, a healthy one never below ~4e-8, so 1e-12 clears both
+// a dead solve decreases by exactly zero, a healthy one never below ~4e-8
 const int SOLVE_STALL_ITERATION_CAP = 100;
 const double SOLVE_STALL_RELATIVE_TOLERANCE = 1.0e-12;
 
-// rounds spent revisiting one of the last REVISIT_WINDOW seam sets before the
-// search stops. a window of 1 misses a split alternating with its own merge
+// a window of 1 misses a split alternating with its own merge
 const int NO_PROGRESS_ROUNDS = 50;
 const size_t REVISIT_WINDOW = 8;
 
@@ -710,8 +692,7 @@ bool preDrawFunc(void) {
     if (optimization_on) {
         while (!converged) {
             proceedOptimization(1);
-            // check per iteration, not per phase: a stop or viewer request
-            // during a long solve must not wait for convergence
+            // a stop during a long solve must not wait for convergence
             if (forceQuit)
                 // postDrawFunc saves the current map and exits
                 return false;
@@ -744,17 +725,13 @@ bool preDrawFunc(void) {
         if (!optimizer->isScaffolding() && rand1PInitCut)
             optimizer->setScaffolding(true);
 
-        // everything past this point queries cuts, a nocut run is done at the
-        // first stationary point of the kept map
+        // everything past this point queries cuts
         if (noCutMode) {
             converge_preDrawFunc();
             return false;
         }
 
-        // a stitch run merges two islands at a time, re-converging in between
-        // so the zip and relaxation settle before the next placement. no
-        // cuts are ever queried, done when nothing fits and no blocked
-        // front loosened up
+        // re-converge between placements so the zip and relaxation settle
         if (stitchMode) {
             bool changed = optimizer->zipStitched();
             if (optimizer->stitchIslands())
@@ -766,10 +743,7 @@ bool preDrawFunc(void) {
             return false;
         }
 
-        // a pinned run is done at the first feasible stationary state. the
-        // full search only tightens distortion up to the bound by merging
-        // cuts back, and a pinned border leaves no productive merge, so it
-        // spins on an unchanged map until the no-progress cap
+        // a pinned border leaves no productive merge for the full search to make
         if (pinnedMode && measure_bound <= upperBound) {
             converge_preDrawFunc();
             return false;
@@ -784,13 +758,7 @@ bool preDrawFunc(void) {
             return false;
         }
 
-        // a seam set seen a few rounds ago is no progress: the queued op is
-        // rejected every round, or a split's local estimate keeps winning
-        // and its merge keeps undoing it. lambda creeps one dual step per
-        // round, so oscillation detection, which matches lambda to within
-        // one step, never sees either. seam energy and vertex count identify
-        // the seam set, distortion stays out because the lambda
-        // renormalization wobbles it ~1e-6 relative on a frozen map
+        // distortion stays out, the lambda renormalization wobbles it on a frozen map
         const Eigen::Index V_now = triSoup[channel_result]->V_rest.rows();
         bool revisited = false;
         for (const auto &seamSet : recentSeamSets) {
@@ -802,8 +770,7 @@ bool preDrawFunc(void) {
             }
         }
         if (revisited) {
-            // lambda creep is ~1e-6 per frozen round, far too small to flip
-            // a pick the pins already blocked, so pinned runs get 3 rounds
+            // lambda creep per frozen round is too small to flip a pick pins blocked
             if (++noProgressCount >= (pinnedMode ? 3 : NO_PROGRESS_ROUNDS)) {
                 converge_preDrawFunc();
                 return false;
@@ -842,9 +809,7 @@ bool preDrawFunc(void) {
                         if (reQuery) {
                             bool found = false;
                             do {
-                                // log(0) and log(1) would make this step 0 or
-                                // inf, a tiny pinned patch has 0 or 1 interior
-                                // candidates, so saturate outright
+                                // log(0) and log(1) would make this step 0 or inf
                                 if (inSplitTotalAmt >= 2) {
                                     filterExp_in +=
                                         std::log(2.0) /
@@ -860,8 +825,7 @@ bool preDrawFunc(void) {
                             reQuery = false;
                             // TODO: set filtering param back?
                             if (!found) {
-                                // a pinned border can leave nothing left to
-                                // split, stop at the best map found
+                                // a pinned border can leave nothing left to split
                                 converge_preDrawFunc();
                                 return false;
                             }
@@ -895,8 +859,7 @@ static std::vector<float> split(const std::string &str, char sep) {
     return tokens;
 }
 
-// reads a one-line "index,weight,..." sidecar into out, skipping out-of-range
-// indices. returns false when the file doesn't exist
+// reads a one-line "index,weight,..." sidecar, false when the file doesn't exist
 static bool loadWeightSidecar(const std::string &filePath,
                               Eigen::VectorXd &out) {
     std::ifstream file(filePath);
@@ -913,8 +876,7 @@ static bool loadWeightSidecar(const std::string &filePath,
     return true;
 }
 
-// a chart is disk-topology when its euler characteristic is 1. imported UV
-// charts that aren't disks have to be cut before they can be flattened
+// a chart is disk-topology when its euler characteristic is 1
 static std::vector<bool> chartDiskFlags(const Eigen::MatrixXi &F,
                                         int n_components,
                                         const Eigen::VectorXi &C) {
@@ -939,10 +901,7 @@ static std::vector<bool> chartDiskFlags(const Eigen::MatrixXi &F,
     return isDisk;
 }
 
-// scale-free symmetric Dirichlet of an imported map, face weights included.
-// the input arrives packed, so its uniform scale is arbitrary and the raw
-// energy there is meaningless: E(s) = s^2*grow + shrink/s^2 has a closed
-// form minimum, measure at it
+// the input arrives packed, so measure at the minimum of s^2*grow + shrink/s^2
 static double importedMapMeasure(const uvgami::TriMesh &mesh) {
     double grow = 0.0, shrink = 0.0, total = 0.0;
     for (int triI = 0; triI < mesh.F.rows(); ++triI) {
@@ -978,13 +937,7 @@ static double importedMapMeasure(const uvgami::TriMesh &mesh) {
     return 2 * std::sqrt(grow * shrink) / total;
 }
 
-// a bowtie vertex joins two face fans at a point. split it into one vertex
-// per fan, the position is unchanged and the fans were only touching anyway.
-// an edge with three or more faces joins no fans either, so a fin comes off
-// along it and the edge keeps the pair still connected around either end.
-// with triComponent given, a vertex whose fans span two components is left
-// alone and every split component is flagged. partedFacePairs, low index
-// first, are never joined
+// partedFacePairs are never joined, a vertex whose fans span two components is left alone
 static int splitBowtieVertices(
     Eigen::MatrixXd &V, Eigen::MatrixXi &F, const Eigen::VectorXi &triComponent,
     std::vector<bool> &bowtieComponent,
@@ -1002,8 +955,7 @@ static int splitBowtieVertices(
         if (tris.size() < 2) {
             continue;
         }
-        // fans are the connected groups of incident triangles, joined when
-        // two share an edge through vI
+        // fans join when two incident triangles share an edge through vI
         std::map<int, std::vector<int>> edgeTris;
         for (const auto triI : tris) {
             for (int i = 0; i < 3; ++i) {
@@ -1091,9 +1043,7 @@ sameDirectionFacePairs(const Eigen::MatrixXi &F) {
 // one cut round has cleared every twisted piece seen so far
 static const int WINDING_CUT_ROUNDS = 3;
 
-// wind each component alike, keeping the side most of its faces had. each
-// face is decided once: igl::bfs_orient re-flips visited faces and leaves a
-// twisted component with twice the contradicting edges
+// keeps the side most of a component's faces had, igl::bfs_orient re-flips visited ones
 static int orientComponents(Eigen::MatrixXi &F) {
     std::map<std::pair<int, int>, std::vector<int>> edgeTris;
     for (int triI = 0; triI < F.rows(); ++triI) {
@@ -1162,9 +1112,7 @@ static int orientComponents(Eigen::MatrixXi &F) {
     return reorientedAmt;
 }
 
-// the path from a piece's boundary to its deepest vertex, empty when the
-// piece has no boundary. hop count is the distance because that is what a
-// tutte map rounds away, one ring of a long tube per step
+// hop count is the distance because that is what a tutte map rounds away
 static std::vector<int> deepestPath(const Eigen::MatrixXi &F_component) {
     std::map<std::pair<int, int>, int> edgeUse;
     std::map<int, std::vector<int>> adjacency;
@@ -1203,10 +1151,7 @@ static std::vector<int> deepestPath(const Eigen::MatrixXi &F_component) {
     return path;
 }
 
-// cutPath opens an interior path only while its middle stays clear of the
-// boundary, and cut_to_disk returns seams that touch earlier passes' cuts.
-// this splits such a seam at its boundary vertices, rotating a closed one to
-// start at the first. a seam clear of the boundary comes back whole
+// cutPath opens an interior path only while its middle stays clear of the boundary
 static std::vector<std::vector<int>> seamSegments(const uvgami::TriMesh &mesh,
                                                   std::vector<int> seam) {
     if (seam.size() < 2)
@@ -1240,8 +1185,7 @@ static std::vector<std::vector<int>> seamSegments(const uvgami::TriMesh &mesh,
     return segments;
 }
 
-// cut_to_disk can return only boundary edges, which cutPath skips, so an
-// annulus makes no cut. this joins two of its boundary loops instead
+// cut_to_disk can return only boundary edges, which cutPath skips
 static std::vector<int> boundaryLoopConnector(const uvgami::TriMesh &mesh,
                                               const Eigen::MatrixXi &F_component) {
     std::vector<std::vector<int>> loops;
@@ -1287,8 +1231,7 @@ static std::vector<int> boundaryLoopConnector(const uvgami::TriMesh &mesh,
     return {};
 }
 
-// an escaped exception fast-fails with no message otherwise, name it on
-// stderr so a field crash is diagnosable from the addon's log
+// an escaped exception fast-fails with no message otherwise
 static void reportTerminate() {
     if (auto e = std::current_exception()) {
         try {
@@ -1332,8 +1275,7 @@ static int prepareOutputFolder(const std::string &meshFilePath) {
 
 static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV);
 
-// a piece degenerate enough that a rest mesh collapses to a point throws
-// from TriMesh construction, possibly mid-solve on a local query mesh
+// a rest mesh collapsing to a point throws from TriMesh construction
 static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
     try {
         return unwrapMeshOrThrow(meshFilePath, ignoreUV);
@@ -1344,9 +1286,7 @@ static int unwrapMesh(const std::string &meshFilePath, bool ignoreUV) {
 
 int main(int argc, char *argv[]) {
     std::set_terminate(reportTerminate);
-    // igl::parallel_for spawns a thread per core on every call and the
-    // scaffold rebuild calls it every solve iteration, so the spawn cost
-    // outweighs the loops on any mesh: one thread halves a many-piece run
+    // igl::parallel_for spawns a thread per core on every call
     igl::default_num_threads(1);
     std::string meshFileName;
     lambda_init = 0.999;
@@ -1488,8 +1428,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         std::cerr << "failed to load mesh" << std::endl;
         return UVGAMI_RC_FAILED_TO_LOAD_MESH;
     }
-    // nan or absurd coordinates reach the overlap grid and the solver as
-    // hangs with no exit code, reject them at load
+    // nan or absurd coordinates hang the overlap grid and the solver
     if (V.rows() != 0 &&
         (!V.allFinite() || V.cwiseAbs().maxCoeff() > 1e15 ||
          (UV.rows() != 0 &&
@@ -1531,8 +1470,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             std::cerr << "flipped " << reorientedAmt
                       << " faces to match their component" << std::endl;
         }
-        // a sheet sewn to itself with a twist has no consistent winding, cut
-        // the edges where the twist shows and the pieces orient
+        // a sheet sewn to itself with a twist has no consistent winding
         std::set<std::pair<int, int>> partedFacePairs;
         auto twisted = sameDirectionFacePairs(F);
         for (int round = 0; round < WINDING_CUT_ROUNDS && !twisted.empty();
@@ -1546,8 +1484,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             orientComponents(F);
             twisted = sameDirectionFacePairs(F);
         }
-        // igl's manifold checks ignore winding, and a repeated directed
-        // edge corrupts the edge2Tri adjacency built on unique directions
+        // a repeated directed edge corrupts the edge2Tri adjacency
         if (!twisted.empty()) {
             std::cerr << "input mesh has inconsistently oriented faces"
                       << std::endl;
@@ -1555,8 +1492,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         }
     }
 
-    // a repeated uv corner puts a diagonal entry in igl's adjacency
-    // matrix, and igl::edges then returns rows it never wrote
+    // a repeated uv corner puts a diagonal entry in igl's adjacency matrix
     if (hasUV) {
         int splitCorners = 0;
         for (int triI = 0; triI < FUV.rows(); ++triI) {
@@ -1578,15 +1514,12 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
                       << std::endl;
     }
 
-    // with input UV the components are the UV charts, so the cutting below
-    // works on either
+    // with input UV the components are the UV charts
     Eigen::VectorXi C;
     igl::facet_components(hasUV ? FUV : F, C);
     int n_components = C.maxCoeff() + 1;
 
-    // a chart pinched at a uv vertex reads as one short of a disk and no
-    // interior edge can cut it open. the two copies land on top of each
-    // other, so a split chart is never kept
+    // a chart pinched at a uv vertex reads as one short of a disk
     std::vector<bool> bowtieChart(n_components, false);
     if (hasUV) {
         const int bowtieAmt = splitBowtieVertices(UV, FUV, C, bowtieChart);
@@ -1608,20 +1541,12 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
     Eigen::VectorXd seamAvoidance = Eigen::VectorXd::Zero(temp.V.rows());
     loadWeightSidecar(weightsFileName, seamAvoidance);
 
-    // stitch mode: a <mesh>_stitch sidecar asks for greedy island merging on
-    // the kept map, a redone layout has no island placement worth stitching.
-    // detected before the keep decision because stitch runs relax the disk
-    // requirement below
+    // read before the keep decision, stitch runs relax the disk requirement below
     std::string stitchFileName = std::string(inputFolderPath.u8string()) +
                                  pathSeparator() + meshName + "_stitch";
     stitchMode = std::ifstream(stitchFileName).is_open();
 
-    // pinned uvs: <mesh>_fixed lists comma-separated 0-based uv vertex
-    // indices to hold in place while the rest reshapes and cuts. only valid
-    // when the input map is kept, a redone layout has nothing to pin to,
-    // and the check comes before the cut-to-disk fallback so pinned runs
-    // fail with this reason instead of a cutting error. read before the keep
-    // decision because nocut relaxes the disk requirement like stitch does
+    // read before the cut-to-disk fallback so a pinned run fails with this reason
     std::set<int> fixedVerts;
     std::string fixedFileName = std::string(inputFolderPath.u8string()) +
                                 pathSeparator() + meshName + "_fixed";
@@ -1631,8 +1556,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         getline(fixedFile, line);
         for (float token : split(line, ','))
             fixedVerts.insert((int)token);
-        // optional second line "nocut" keeps the map's topology untouched.
-        // an empty pin line is valid: a whole-island relax holds nothing
+        // an empty pin line is valid, a whole-island relax holds nothing
         if (getline(fixedFile, line)) {
             while (!line.empty() &&
                    (line.back() == '\r' || line.back() == '\n'))
@@ -1642,11 +1566,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         fixedFile.close();
     }
 
-    // an input UV chart is kept when it is already a valid flattening: no
-    // flipped or overlapping triangles, and disk topology. the rest are cut to
-    // disks below and re-laid out, which keeps the input seams and adds only
-    // what the topology needs. the test is per chart, so one bad chart no
-    // longer costs every other chart its layout
+    // a chart is kept when it has no flipped or overlapping triangles and is a disk
     std::vector<bool> keepChart(n_components, false);
     int keptCharts = 0;
     bool keepInputUV = false;
@@ -1663,8 +1583,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         std::set<int> crossingVerts;
         uvgami::IglUtils::checkUVBoundaryOverlap(temp.V, bnd_all,
                                                  &crossingVerts);
-        // a crossing condemns both charts it touches, so two islands laid on
-        // top of each other are both re-cut
+        // a crossing condemns both charts it touches
         std::vector<bool> overlaps(n_components, false);
         for (int triI = 0; triI < temp.F.rows(); ++triI) {
             for (int i = 0; i < 3; ++i) {
@@ -1674,10 +1593,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             }
         }
 
-        // a pinched vertex belongs to two charts at once (the fans meet at a
-        // point, so nothing joins them into one component). pinning it for one
-        // chart while re-cutting the other would pull it two ways, so when the
-        // map is not kept whole, neither of those charts is kept
+        // a pinched vertex belongs to two charts at once, pinning it pulls two ways
         std::vector<int> vertChart(temp.V.rows(), -1);
         std::vector<bool> pinched(n_components, false);
         for (int triI = 0; triI < temp.F.rows(); ++triI) {
@@ -1697,8 +1613,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             inverted[c] = !temp.checkInversion(true, chartTris[c]);
         }
 
-        // a point boundary evades the crossing test, but a collapsed chart
-        // cannot seed the solve
+        // a point boundary evades the crossing test
         std::vector<bool> degenerate(n_components, false);
         for (int triI = 0; triI < temp.F.rows(); ++triI) {
             const Eigen::RowVector3i &tri = temp.F.row(triI);
@@ -1714,11 +1629,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             allDisks = allDisks && isDisk[c];
             anyDegenerate = anyDegenerate || degenerate[c];
         }
-        // a stitch run can keep charts with holes: an interior split the
-        // engine never merged back leaves a slit, and the machinery is
-        // hole-safe. a pinched boundary is not, the scaffold's corner air
-        // loop cannot represent it, so those still re-cut. a nocut run never
-        // queries topology either, so it rides the same exception
+        // stitch is hole-safe, a pinched boundary is not, the corner air loop cannot represent it
         bool stitchKeepable = stitchMode || noCutMode;
         if (stitchKeepable && !allDisks) {
             std::map<std::pair<int, int>, int> edgeCount;
@@ -1746,8 +1657,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
                 stitchKeepable = stitchKeepable && pinchFree[c];
         }
 
-        // whole-map decision first, so a map that was kept before is still
-        // kept byte for byte
+        // whole-map decision first, a map kept before is still kept byte for byte
         bool anyBowtie = false;
         for (int c = 0; c < n_components; ++c) {
             anyBowtie = anyBowtie || bowtieChart[c];
@@ -1807,11 +1717,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         return UVGAMI_RC_NOCUT_UV_NOT_KEPT;
     }
     if (!fixedVerts.empty()) {
-        // the distortion energy is scale-sensitive and pins block the global
-        // rescale the solver would otherwise start with, it would inflate the
-        // interior against the held border instead. match the uv scale to the
-        // rest shape up front, the output is normalized and realigned through
-        // the pins so this scale never leaks out
+        // pins block the global rescale the solver would otherwise start with
         double uvArea = 0.0, restArea = 0.0;
         for (int triI = 0; triI < temp.F.rows(); ++triI) {
             const Eigen::RowVector3i &tri = temp.F.row(triI);
@@ -1832,11 +1738,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         keptInputMesh = new uvgami::TriMesh(temp);
         triSoup.emplace_back(keptInputMesh);
     } else {
-        // in each pass, make one cut on each piece if needed, until all
-        // becoming disk-topology. pieces are recomputed every pass instead
-        // of taken from the chart ids: one chart of a broken map can be
-        // several pieces, and an euler characteristic summed over them
-        // reads an annulus beside a disk as done
+        // in each pass, make one cut on each piece if needed, until all disk-topology
         Eigen::VectorXi pieceOf;
         int n_pieces = 0;
         std::vector<Eigen::MatrixXi> F_component;
@@ -1909,8 +1811,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
                         // inconsistency
                         int cuts_made = 0;
                         for (auto &seamI : cuts) {
-                            // a cut renumbers one side of its end vertex, so
-                            // a later segment would start off the surface
+                            // a cut renumbers one side of its end vertex
                             for (auto &segment : seamSegments(temp, seamI)) {
                                 if (segment.front() == segment.back() &&
                                     !temp.isBoundaryVert(segment.front())) {
@@ -1984,7 +1885,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             }
         }
 
-        // the layout and pinning below work per piece, so hand them pieces
+        // the layout and pinning below work per piece
         std::vector<bool> keepPiece(n_pieces, false);
         for (int triI = 0; triI < temp.F.rows(); ++triI) {
             if (keepChart[C[triI]]) {
@@ -1999,11 +1900,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         C = pieceOf;
         n_components = n_pieces;
 
-        // a vertex shared by two pieces (a bowtie) pinned for one piece drags
-        // the other's triangles across the layout grid, so every piece past
-        // the first gets its own copy. temp's adjacency goes stale here, like
-        // the orphan drop below, and the mesh that continues is rebuilt from
-        // the arrays
+        // a bowtie vertex pinned for one piece drags the other across the layout grid
         {
             std::vector<int> owner(temp.V.rows(), -1);
             std::map<std::pair<int, int>, int> copyOf;
@@ -2031,11 +1928,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             }
         }
 
-        // cutting through a boundary vertex can orphan the original row,
-        // every face reassigned to its duplicate. an orphan poisons what
-        // follows: its zero laplacian row makes the tutte solve singular,
-        // and the scaffold seeds a triangle hole at its position, so drop
-        // orphan rows and remap before flattening
+        // an orphan row's zero laplacian makes the tutte solve singular
         auto dropOrphanVertices = [&]() {
             std::vector<int> vMap(temp.V.rows(), -1);
             for (int triI = 0; triI < temp.F.rows(); ++triI) {
@@ -2085,11 +1978,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             ++UVGridDim;
         } while (UVGridDim * UVGridDim < n_components);
 
-        // a re-cut chart starts as a unit circle, which beside charts kept
-        // from a packed input map is far bigger than its own rest shape, and
-        // the optimizer would spend its iterations shrinking it. match the
-        // kept charts' uv-to-3D scale instead, and keep the unit circle when
-        // nothing is kept so that layout is untouched
+        // a unit circle beside charts kept from a packed map is far too big
         std::vector<double> chartRadius(n_components, 1.0);
         double gridCell = 2.1, gridOriginX = 0.0;
         if (keptCharts) {
@@ -2097,8 +1986,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             std::vector<double> area3D(n_components, 0.0);
             for (int triI = 0; triI < temp.F.rows(); ++triI) {
                 const Eigen::RowVector3i &tri = temp.F.row(triI);
-                // triArea, not the raw cross product: a chart of only
-                // zero-area triangles gets radius 0
+                // the raw cross product gives a zero-area chart radius 0
                 double a3 = temp.triArea[triI];
                 area3D[C[triI]] += a3;
                 if (keepChart[C[triI]]) {
@@ -2119,9 +2007,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
                     gridCell = (std::max)(gridCell, 2.1 * chartRadius[c]);
                 }
             }
-            // and place them past the kept charts, since the output layout is
-            // only normalized, never packed, so a circle landing on a kept
-            // chart would stay on top of it
+            // the output layout is only normalized, never packed
             for (int componentI = 0; componentI < n_components; ++componentI) {
                 if (!keepChart[componentI]) {
                     continue;
@@ -2141,8 +2027,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             Eigen::MatrixXd bnd_uv_stacked;
             for (int componentI = 0; componentI < n_components; ++componentI) {
                 if (keepChart[componentI]) {
-                    // pin every vertex of a kept chart, so the harmonic solve
-                    // reproduces its input UV exactly and only fills in the rest
+                    // pinning every vertex reproduces the chart's input UV exactly
                     const std::set<int> &chartV = V_ind_component[componentI];
                     int base = bnd_stacked.size();
                     bnd_stacked.conservativeResize(base + chartV.size());
@@ -2208,8 +2093,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             for (int triI = 0; triI < init.F.rows(); ++triI) {
                 if (keepChart[C[triI]])
                     continue;
-                // an area too small for the energy's 1 / area^2 is as dead as
-                // an inverted one
+                // an area too small for the energy's 1 / area^2 is as dead as an inversion
                 const Eigen::RowVector2d e1 =
                     init.V.row(init.F(triI, 1)) - init.V.row(init.F(triI, 0));
                 const Eigen::RowVector2d e2 =
@@ -2222,8 +2106,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             return flagged;
         };
 
-        // temp's adjacency is stale by now, so the cut runs on a rebuild
-        // from its arrays
+        // temp's adjacency is stale by now, the cut runs on a rebuild
         for (int round = 0; round < MAX_DEEPEN_ROUNDS; ++round) {
             const std::set<int> inverted = nearZeroInitCharts();
             if (inverted.empty())
@@ -2235,8 +2118,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
                     deepestPath(F_component[componentI]);
                 if (path.size() < 2)
                     continue;
-                // glued charts leave a chart boundary mesh-interior,
-                // where cutPath throws mid-cut
+                // glued charts leave a chart boundary mesh-interior, cutPath throws there
                 if (!deeper.isBoundaryVert(path.front()) &&
                     !deeper.isBoundaryVert(path.back()))
                     continue;
@@ -2263,8 +2145,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
             triSoup.back() =
                 new uvgami::TriMesh(V, F, solveTutte(), temp.F, false);
         }
-        // a near-zero area the rounds never cleared passes the strict
-        // inversion check below but inflates the scaffold without bound
+        // a near-zero area passes the strict inversion check below
         if (!nearZeroInitCharts().empty()) {
             std::cerr << "UV init stuck at near-zero area after deepening"
                       << std::endl;
@@ -2281,9 +2162,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         pinnedMode = true;
     }
 
-    // per-face importance: sidecar vertex weights averaged onto faces scale
-    // the distortion energy. loaded before the optimizer copies the mesh so
-    // the initial energy is already weighted
+    // loaded before the optimizer copies the mesh, so the initial energy is weighted
     if (maxFaceWeight > 1) {
         const Eigen::MatrixXi &F_in = hasUV ? FUV : F;
         const int nVW = hasUV ? (int)UV.rows() : (int)V.rows();
@@ -2291,8 +2170,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         if (loadWeightSidecar(std::string(inputFolderPath.u8string()) +
                                   pathSeparator() + meshName + "_importance",
                               vW)) {
-            // the initial mesh is heap-allocated above, triSoup only stores
-            // it as const
+            // the initial mesh is heap-allocated above, triSoup stores it as const
             uvgami::TriMesh &mesh0 = *const_cast<uvgami::TriMesh *>(triSoup[0]);
             if (F_in.rows() == mesh0.F.rows()) {
                 for (int triI = 0; triI < F_in.rows(); triI++) {
@@ -2335,10 +2213,7 @@ static int unwrapMeshOrThrow(const std::string &meshFilePath, bool ignoreUV) {
         uvgami::IglUtils::smoothVertField(result, result.vertWeight);
     }
 
-    // an imported map that already meets the bound ships untouched. the
-    // search treats the bound as an allowance and spends the slack on
-    // shorter seams, drifting seams a preseed placed deliberately. modes
-    // that exist to move the map (pins, stitch, nocut) still run
+    // the search spends slack under the bound on shorter seams, drifting a preseed
     if (keepInputUV && !pinnedMode && !stitchMode && !noCutMode &&
         importedMapMeasure(optimizer->getResult()) <= upperBound) {
         canSaveMesh = true;

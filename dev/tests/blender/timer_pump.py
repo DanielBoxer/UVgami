@@ -1,17 +1,8 @@
-"""Run the addon's timer work in a background Blender.
-
-Blender never ticks `bpy.app.timers` with `-b`, so every callback the unwrap
-queue registers is scheduled and then never called. This swaps the three timer
-functions the addon uses for a schedule this module owns, and `run_until` calls
-what is due until the run is over.
-"""
-
 import contextlib
 import time
 
 import bpy
 
-# how long to wait between passes over the schedule
 POLL_SECONDS = 0.01
 
 
@@ -29,7 +20,6 @@ class TimerPump:
         self._pending = [entry for entry in self._pending if entry[1] is not function]
 
     def run_until(self, condition, timeout):
-        """Call due callbacks until condition() is true."""
         deadline = time.monotonic() + timeout
         while not condition():
             if time.monotonic() > deadline:
@@ -60,6 +50,7 @@ def pump_timers():
         for name in ("register", "is_registered", "unregister")
     }
     pump = TimerPump()
+    # blender never ticks bpy.app.timers with -b
     for name in originals:
         setattr(bpy.app.timers, name, getattr(pump, name))
     try:

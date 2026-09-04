@@ -1,11 +1,3 @@
-"""Result export helpers, kept free of torch imports for the [ai]-less install.
-
-The engine reports per-vertex provenance (source_vid) into the processed input
-mesh. The OBJ written here keeps the processed geometry connected: v lines are
-the processed vertices, vt lines are per chart vertex, and faces use split
-f v/vt indices so uv seams never duplicate geometry. Provenance is validated
-completely before anything is written."""
-
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +10,6 @@ def _reject(reason):
 
 
 def _canonical_faces(faces):
-    """Rotate each face so its smallest index is first, preserving winding."""
     order = (faces.argmin(axis=1)[:, None] + np.arange(3)) % 3
     return np.take_along_axis(faces, order, axis=1)
 
@@ -37,8 +28,7 @@ def validate_provenance(V, F, UV, source_vid, source_V, source_F):
     if not np.array_equal(V, source_V[source_vid]):
         _reject("vertex positions disagree with provenance")
 
-    # the mapped faces must be exactly the source faces (as oriented cycles):
-    # this rejects missing, duplicated, and conflicting corner assignments
+    # the mapped faces must be exactly the source faces as oriented cycles
     mapped = _canonical_faces(source_vid[F])
     source = _canonical_faces(np.asarray(source_F))
     mapped = mapped[np.lexsort(mapped.T[::-1])]

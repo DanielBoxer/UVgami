@@ -116,9 +116,7 @@ Scaffold::Scaffold(const TriMesh &mesh, Eigen::MatrixXd UV_bnds,
                 maxY - segI * stepY;
         }
 
-        // a marker on the boundary lets Triangle keep the air instead of
-        // the chart, so it has to be strictly inside however small the
-        // chart is
+        // a marker on the boundary makes Triangle keep the air instead of the chart
         Eigen::VectorXi compI_V;
         igl::vertex_components(mesh.F, compI_V);
         const int compAmt = compI_V.maxCoeff() + 1;
@@ -161,7 +159,7 @@ Scaffold::Scaffold(const TriMesh &mesh, Eigen::MatrixXd UV_bnds,
     // "Q" for quiet mode (no output)
     // "S" caps the Steiner points quality refinement may add
 
-    // degenerate boundaries can leave no triangles, crashing computeFeatures
+    // degenerate boundaries can leave no triangles
     if (airMesh.F.rows() == 0)
         throw std::runtime_error("air mesh triangulation came back empty");
 
@@ -422,8 +420,7 @@ bool Scaffold::getCornerAirLoop(const std::vector<int> &corner_mesh,
         fI++;
     }
 
-    // the fan wraps the whole mesh when its boundary is only a few vertices
-    // long, so the corners can land on an inner loop or on none
+    // the fan wraps the whole mesh when its boundary is only a few vertices long
     std::vector<std::vector<int>> loops;
     igl::boundary_loop(F_inc, loops);
     std::vector<int> loop;
@@ -451,7 +448,7 @@ bool Scaffold::getCornerAirLoop(const std::vector<int> &corner_mesh,
             airMesh.V.row(loop[(vI + 1) % loop.size()]);
         loopArea2 += p[0] * q[1] - q[0] * p[1];
     }
-    // a negative area is a hole loop, the mesh interior side of a wrapped fan
+    // a negative area is a hole loop
     if (loopArea2 <= 0.0)
         return false;
 

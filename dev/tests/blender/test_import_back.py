@@ -1,5 +1,3 @@
-"""What the unwrapped copy keeps of the input: slots, shading, transform."""
-
 import bpy
 import pytest
 from blender_fixtures import manager, needs_engine
@@ -18,7 +16,6 @@ def add_cube(name, **kwargs):
 
 
 def world_positions(obj):
-    """Every vertex in world space. A set because a seam duplicates a vertex."""
     return {
         tuple(round(c, DIGITS) for c in obj.matrix_world @ v.co)
         for v in obj.data.vertices
@@ -31,8 +28,6 @@ def world_normal_key(obj, face):
 
 
 def by_world_normal(obj, attribute):
-    """A face attribute keyed by world-space normal, which survives
-    triangulation and a reorder of the faces."""
     return {
         world_normal_key(obj, face): getattr(face, attribute)
         for face in obj.data.polygons

@@ -21,8 +21,7 @@ template <typename vectorTypeI, typename vectorTypeS> class LinSysSolver {
     // 0-based CSR of the upper triangle, columns sorted within each row
     Eigen::VectorXi ia, ja;
     Eigen::VectorXd a;
-    // destination in a of each assembly triplet (-1 for lower-triangle
-    // entries), valid until the next set_pattern
+    // destination in a of each assembly triplet, -1 for a lower-triangle entry
     std::vector<int> tripletDest;
 
     int find_a_index(int rowI, int colI) const {
@@ -53,8 +52,7 @@ template <typename vectorTypeI, typename vectorTypeS> class LinSysSolver {
             isFixed[fixedVI] = 1;
         }
 
-        // count nnz per row first so ia and ja are allocated exactly once;
-        // only the upper-right part is stored since the matrix is symmetric
+        // count nnz per row first so ia and ja are allocated exactly once
         ia.resize(numRows + 1);
         ia[0] = 0;
         for (int vI = 0; vI < nV; vI++) {
@@ -81,9 +79,7 @@ template <typename vectorTypeI, typename vectorTypeS> class LinSysSolver {
             if (!isFixed[vI]) {
                 for (int d = 0; d < DIM; d++) {
                     int dst = ia[vI * DIM + d];
-                    // diagonal band of the vertex block, then the free
-                    // neighbors with larger index (vNeighbor sets are
-                    // sorted, so each row's columns come out sorted)
+                    // vNeighbor sets are sorted, so each row's columns come out sorted
                     for (int dj = d; dj < DIM; dj++) {
                         ja[dst++] = vI * DIM + dj;
                     }
@@ -112,9 +108,7 @@ template <typename vectorTypeI, typename vectorTypeS> class LinSysSolver {
         assert(II.size() == JJ.size());
         assert(II.size() == SS.size());
 
-        // the triplet layout only changes with topology, which always goes
-        // through set_pattern, so destinations are reused between calls
-        // under the same pattern
+        // the triplet layout only changes with topology, which goes through set_pattern
         if (tripletDest.size() != static_cast<size_t>(II.size())) {
             tripletDest.resize(II.size());
             for (int tripletI = 0; tripletI < II.size(); tripletI++) {

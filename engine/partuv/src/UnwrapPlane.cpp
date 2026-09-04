@@ -420,8 +420,7 @@ int process_submesh(std::vector<int> faces, const Eigen::MatrixXd &V, const Eige
     comp.V_original = Vc;
     comp.F_original = Fc;
     comp.source_vid_original = local2global;
-    // pamo may have replaced V with a simplified mesh; provenance only holds
-    // for the extracted vertices and is restored by ComputeOriginalUV
+    // pamo may have replaced V with a simplified mesh
     if (comp.V.rows() == (Eigen::Index)local2global.size())
         comp.source_vid = local2global;
     comp.UV = UVc;

@@ -104,6 +104,7 @@ class Preserve:
                 # every face point is added, so the index is new each time
                 uv_i.append(uv_count)
                 uv_count += 1
+                # store the original mesh vertex so it can be accessed using the uvs
                 mesh_verts.append(loop.vert)
             uv_idcs.append(uv_i)
 

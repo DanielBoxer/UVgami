@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 
-# loaded from file so importing doesn't touch the blender addon package
+# loaded from file, the addon package imports bpy
 spec = importlib.util.spec_from_file_location(
     "addon_objfile", Path(__file__).parents[2] / "src" / "objfile.py"
 )

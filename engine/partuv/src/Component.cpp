@@ -886,9 +886,7 @@ Component Component::operator+(const Component &other) const
         // component's original mesh).
         result.original_vertex_count = original_vertex_count + other.original_vertex_count;
 
-        // provenance concatenates like V; a mismatch on either side poisons
-        // the result so the output validation rejects it instead of writing
-        // wrong indices
+        // a mismatch on either side would put wrong indices in the result
         if (source_vid.size() == (size_t)V.rows() &&
             other.source_vid.size() == (size_t)other.V.rows())
         {

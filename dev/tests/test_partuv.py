@@ -140,10 +140,8 @@ class FakeMesh:
 
 @pytest.fixture
 def fake_partuv_runtime(monkeypatch, tmp_path):
-    """Install fake torch and partuv submodules so run() orchestration is exercised."""
     monkeypatch.setattr(cli.platform, "system", lambda: "Linux")
-    # default to a machine with a gpu so geometric tests keep the config as-is,
-    # cpu-fallback tests override this
+    # a machine with a gpu, the cpu-fallback tests override this
     monkeypatch.setattr(cli, "_cuda_available", lambda: True)
 
     torch = types.ModuleType("torch")

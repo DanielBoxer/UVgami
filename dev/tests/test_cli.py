@@ -290,8 +290,6 @@ def test_batch_missing_input_fails_per_mesh(triangle, tmp_path, fake_optcuts, ca
 
 
 def test_input_deleted_mid_batch_is_skipped(triangle, cube, tmp_path, capsys):
-    """Cancelling a mesh in the add-on deletes its input file while the batch
-    runs; the mesh must fail fast without aborting the rest."""
     from uvgami_cli.common import unwrap_all
 
     unwrapped = []
@@ -341,8 +339,7 @@ def test_partuv_dispatch(triangle, tmp_path, fake_partuv):
 
 
 def test_partuv_ai_resolves_checkpoint(triangle, tmp_path, monkeypatch, fake_partuv):
-    # env var set so the CLI's repo-checkpoint fallback doesn't kick in here,
-    # keeping this test independent of whether the real checkpoint is present
+    # the env var keeps the CLI's repo-checkpoint fallback out of this test
     monkeypatch.setenv("UVGAMI_PARTUV_CHECKPOINT", str(tmp_path / "env.ckpt"))
     config = tmp_path / "config.yaml"
     config.write_text("pamo: true\n")

@@ -1,6 +1,3 @@
-"""The settings that change what the result lands on: transfer uvs writes
-onto the input, proxy unwraps a decimated copy, import uvs feeds the map in."""
-
 import bpy
 import pytest
 from blender_fixtures import manager, needs_engine
@@ -45,7 +42,6 @@ def test_transfer_writes_uvs_onto_the_input_and_keeps_its_quads(unwrap, outputs)
     assert outputs() == {}
     assert not cube.hide_get()
     assert has_uvs(cube)
-    # the seams follow cube edges
     assert [len(face.vertices) for face in cube.data.polygons] == [4] * 6
     assert any(edge.use_seam for edge in cube.data.edges)
 
@@ -64,8 +60,6 @@ def test_transfer_on_an_organic_mesh(unwrap, outputs):
 
 
 def test_transfer_that_cannot_apply_keeps_the_output(unwrap, outputs):
-    """Suzanne has two quads sharing three vertices, so an output triangle
-    there fits either."""
     suzanne = add_primitive("suzanne", bpy.ops.mesh.primitive_monkey_add)
     bpy.context.scene.uvgami.transfer_uvs = True
 

@@ -54,10 +54,7 @@ struct Component
     MatrixX3I F_original;
     MatrixX3R V_original;
 
-    // per-row provenance: source_vid[i] is the vertex index in the processed
-    // input mesh that V.row(i) came from. Empty means unknown; the python
-    // output layer rejects results without complete provenance.
-    // source_vid_original is aligned with V_original the same way.
+    // source_vid[i] is the processed-input vertex index V.row(i) came from
     std::vector<int> source_vid;
     std::vector<int> source_vid_original;
 

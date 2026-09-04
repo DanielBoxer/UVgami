@@ -285,9 +285,7 @@ bool load_mesh_with_validation(std::string mesh_path, Eigen::MatrixXi &F,Eigen::
 }
 
 
-// components report provenance local to the V they were built from; each
-// extraction level lifts it one space up through its local2global map.
-// out-of-range entries become -1 so the output validation rejects them.
+// each extraction level lifts source_vid one space up through its local2global
 static void remap_source_vids(Component &comp, const std::vector<int> &l2g)
 {
     auto remap = [&l2g](std::vector<int> &vids) {

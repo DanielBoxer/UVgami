@@ -9,8 +9,6 @@ BUNDLED = REPO_ROOT / "engine-builds" / "windows" / "xatlas.exe"
 
 
 class FakeProcess:
-    """Stands in for the xatlas subprocess and writes the expected output OBJ."""
-
     def __init__(
         self, argv, returncode=0, output_text="v 0 0 0\nvt 0 0\nf 1/1 1/1 1/1\n"
     ):
@@ -115,8 +113,7 @@ def test_xatlas_smoke(cube, tmp_path):
     positions = [line for line in lines if line.startswith("v ")]
     faces = [line for line in lines if line.startswith("f ")]
     uvs = [line for line in lines if line.startswith("vt ")]
-    # the mesh stays welded, only the uvs are split, otherwise blender's
-    # seams-from-islands finds no seams on the imported result
+    # blender's seams-from-islands finds nothing unless the mesh stays welded
     assert len(positions) == 8
     assert len(faces) == 12
     assert uvs

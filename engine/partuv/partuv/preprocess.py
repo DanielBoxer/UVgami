@@ -1,8 +1,6 @@
 import os, time
 
-# cublas reductions under cuda >= 10.2 vary between runs, and the fp16 noise that
-# leaks out flips near-tie merges in clustering, changing the whole chart layout.
-# must be set before cublas initializes
+# cublas reductions vary between runs, must be set before cublas initializes
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import torch

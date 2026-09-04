@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy
 
-# loaded from file so importing doesn't touch the blender addon package
+# loaded from file, the addon package imports bpy
 spec = importlib.util.spec_from_file_location(
     "addon_similar", Path(__file__).parents[2] / "src" / "similar.py"
 )
@@ -310,8 +310,7 @@ def test_mirror_permutations_rejects_asymmetric_triangulation():
 
 
 def test_mirror_matches_snaps_drift_and_drops_the_asymmetric_vertex():
-    # one wing tip drifted within tolerance still matches, the lone
-    # vertex with no counterpart is absent
+    # one wing tip drifted within tolerance, plus a vertex with no counterpart
     coords = [co for co in WING_COORDS] + [(0.5, 2.0, 0.0)]
     coords[4] = (-2.002, 0, 0)
     mesh = FakeMesh(coords, WING_FACES)

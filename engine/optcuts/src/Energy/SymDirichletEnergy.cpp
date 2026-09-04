@@ -33,8 +33,7 @@ void SymDirichletEnergy::getEnergyValPerElem(const TriMesh &data,
 
         const double area_U = 0.5 * (U2m1[0] * U3m1[1] - U2m1[1] * U3m1[0]);
 
-        // a flat rest triangle with a flat uv one gives 0 * inf, and the
-        // line search accepts a nan step
+        // a flat rest triangle with a flat uv one gives 0 * inf
         if (area_U <= 0.0) {
             energyValPerElem[triI] = DBL_MAX;
             return;
@@ -307,7 +306,7 @@ void SymDirichletEnergy::computeGradient(const TriMesh &data,
         triGrad.segment(4, 2) = w * (dLeft3 * rightTerm + dRight3 * leftTerm);
     });
 
-    // serial scatter keeps fp accumulation order identical to the serial version
+    // serial scatter keeps the fp accumulation order fixed
     for (int triI = 0; triI < data.F.rows(); triI++) {
         const Eigen::Vector3i &triVInd = data.F.row(triI);
         gradient.block(triVInd[0] * 2, 0, 2, 1) += triGrads[triI].segment(0, 2);
@@ -391,11 +390,7 @@ static Eigen::Vector4d solveShifted(const Eigen::Matrix4d &P, double shift,
     return x;
 }
 
-// nearest positive semidefinite matrix in the translation-free complement.
-// P plus one negative rank-1 term beta t t^T has exactly one negative
-// eigenvalue there, the root of f(mu) = 1 + beta t^T (P - mu I)^-1 t,
-// decreasing and concave on [beta |t|^2, 0), with (P - mu I)^-1 t its
-// eigenvector. modes are scaled by their eigenvalues, the last one negative
+// the one negative eigenvalue is the root of f(mu) = 1 + beta t^T (P - mu I)^-1 t
 static void clampNegativeEigenvalue(Eigen::Matrix<double, 6, 6> &hessian,
                                     const Eigen::Matrix<double, 6, 1> modes[4],
                                     const double scaledEigenvalues[4]) {
@@ -409,15 +404,14 @@ static void clampNegativeEigenvalue(Eigen::Matrix<double, 6, 6> &hessian,
     }
     const Eigen::Vector4d t = Q.transpose() * modes[3];
     const double beta = scaledEigenvalues[3];
-    // a rayleigh quotient is above the eigenvalue, the side newton never
-    // overshoots from, and the null direction of P always gives a negative one
+    // a rayleigh quotient is always above the eigenvalue
     const Eigen::Vector4d nullDirection = fourDimensionalCross(
         reducedModes[0], reducedModes[1], reducedModes[2]).normalized();
     const double nullQuotient = beta * std::pow(t.dot(nullDirection), 2);
     const double twistQuotient =
         (t.dot(P * t) + beta * std::pow(t.squaredNorm(), 2)) / t.squaredNorm();
     double low = beta * t.squaredNorm(), high = 0.0;
-    // a twist term below rounding is noise, not a projection
+    // a twist term below rounding is noise
     if (-low <= NEGLIGIBLE_EIGENVALUE * P.norm())
         return;
     double mu = (std::min)(nullQuotient, twistQuotient);
@@ -457,10 +451,7 @@ static void clampNegativeEigenvalue(Eigen::Matrix<double, 6, 6> &hessian,
     hessian = QV * clamped.asDiagonal() * QV.transpose();
 }
 
-// analytic eigensystem of the symmetric dirichlet triangle hessian (Smith,
-// De Goes, Kim 2019, "Analytic Eigensystems for Isotropic Distortion
-// Energies", eq. 31): from the 2x2 SVD of the deformation gradient, two
-// scaling modes, the flip and the twist, only the twist eigenvalue negative
+// analytic eigensystem from Smith, De Goes, Kim 2019, eq. 31
 static void projectedTriangleHessian(const TriMesh &data, int triI,
                                      bool uniformWeight,
                                      Eigen::Matrix<double, 6, 6> &hessian) {
@@ -592,7 +583,6 @@ void SymDirichletEnergy::computeHessian(const TriMesh &data, Eigen::VectorXd *V,
             }
         }
     }
-    // size the triplet arrays once and fill disjoint slices in parallel;
     // the per-triangle offsets keep the exact order of serial appends
     std::vector<int> triTripletStart(data.F.rows() + 1);
     triTripletStart[0] = static_cast<int>(V->size());

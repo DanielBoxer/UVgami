@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-# loaded from file so it doesn't need the bpy-only addon package
+# loaded from file, the addon package imports bpy
 PKG = Path(__file__).parents[2] / "src" / "seams"
 spec = importlib.util.spec_from_file_location(
     "seams", PKG / "__init__.py", submodule_search_locations=[str(PKG)]
@@ -43,10 +43,6 @@ CUBE_FACES = [
 
 
 class GridEngine:
-    """Fake flatten: every face becomes its own unit quad on a grid, and the
-    first face comes back flipped, so a ruined island is available to assert
-    it ships untouched for the engine to recut."""
-
     def __init__(self):
         self.flatten_calls = []
 
@@ -101,8 +97,7 @@ def test_preseed_marked_only_uses_given_seams():
     )
     assert marked <= seams
     assert all(uv is not None for uv in uvs)
-    # the ruined grid layout ships as-is, one flatten and no repair: the
-    # engine rejects the bad island and recuts it itself
+    # the ruined layout ships as-is, the engine recuts the bad island itself
     assert len(engine.flatten_calls) == 1
     first = engine.flatten_calls[0]
     assert first[0] == len(CUBE_FACES)
@@ -113,8 +108,7 @@ def test_preseed_marked_only_uses_given_seams():
 
 
 def test_preseed_only_leaves_other_faces_alone():
-    # two loose quads, only covers the first: like auto mode, only holds
-    # whole loose parts, never a slice of one island
+    # two loose quads, a preseed holds whole loose parts, never a slice
     verts = CUBE_VERTS[:4] + [(x + 5.0, y, z) for x, y, z in CUBE_VERTS[:4]]
     faces = [(0, 1, 2, 3), (4, 5, 6, 7)]
     engine = GridEngine()
@@ -131,8 +125,7 @@ def test_preseed_cube_with_real_engine(tmp_path):
     assert all(uv is not None and len(uv) == 4 for uv in uvs)
     flat = [p for face in uvs for p in face]
     assert all(0.0 <= u <= 1.0 and 0.0 <= v <= 1.0 for u, v in flat)
-    # a seamed cube flattens without repair only if the layout held up, and
-    # either way every corner has finite uvs and the seams cut it open
+    # a seamed cube flattens without repair only if the layout held up
     assert seams
 
 

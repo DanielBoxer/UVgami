@@ -18,9 +18,9 @@ from .common import (
 @dataclass
 class EngineSpec:
     name: str
-    add_args: Callable  # populate an argparse argument group with the engine's flags
-    flags: dict  # flag -> args dest, so other engines can reject it
-    validate: Callable  # apply this engine's defaults and validation to args
+    add_args: Callable
+    flags: dict  # flag -> args dest
+    validate: Callable
     run: Callable  # (args, pairs) -> exit code
 
 
@@ -51,7 +51,6 @@ def _add_optcuts_args(group):
     )
 
 
-# flags that only apply to optcuts, so the other engine can reject them
 OPTCUTS_FLAGS = {
     "--quality": "quality",
     "--import-uvs": "import_uvs",
@@ -136,7 +135,6 @@ def _add_partuv_args(group):
     group.add_argument("--config", type=Path, help="default: packaged config.yaml")
 
 
-# flags that only apply to partuv, so the other engine can reject them
 PARTUV_FLAGS = {
     "--threshold": "threshold",
     "--segmentation": "segmentation",
@@ -164,15 +162,13 @@ def run_partuv(args, pairs):
             f"the PartUV engine is not installed ({error});"
             " install it with: uv sync --extra partuv",
         ) from error
-    # partuv raises its own UnwrapError class, re-raise as ours so main's
-    # handler and the --json error path keep working (exit codes match)
+    # partuv raises its own UnwrapError class
     try:
         checkpoint = None
         if args.segmentation == "ai":
             checkpoint = args.checkpoint
             if checkpoint is None and "UVGAMI_PARTUV_CHECKPOINT" not in os.environ:
-                # the editable install serves partuv from site-packages, so its
-                # package-relative default checkpoint misses the source tree
+                # the editable install serves partuv from site-packages
                 repo_checkpoint = (
                     Path(__file__).parents[2]
                     / "engine"
@@ -257,8 +253,7 @@ def build_parser():
 
 def validate(args):
     for input_path in args.input:
-        # in a batch a missing input fails per mesh instead, so a cancelled
-        # mesh (its input file is deleted) doesn't abort the rest
+        # a cancelled mesh in a batch has its input file deleted
         if len(args.input) == 1 and not input_path.is_file():
             raise UnwrapError(EXIT_INVALID_INPUT, f"input not found: {input_path}")
         if input_path.suffix.lower() != ".obj":
@@ -287,7 +282,7 @@ def validate(args):
                 EXIT_INVALID_INPUT, f"output exists (use --overwrite): {output_path}"
             )
 
-    # reject the other engines' flags when explicitly passed, before defaults
+    # checked before defaults, which would make an unset flag look passed
     for name, spec in ENGINE_SPECS.items():
         if name == args.engine:
             continue

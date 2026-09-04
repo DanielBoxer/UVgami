@@ -19,8 +19,7 @@ add_executable(xatlas main.cpp xatlas.cpp)
 
 if(MSVC)
   target_compile_options(xatlas PRIVATE $<$<CONFIG:Release>:/O2>)
-  # argv and the file opens use the process codepage, so a path with a
-  # character outside it arrives as question marks. needs windows 10 1903
+  # without it a path outside the process codepage arrives as question marks
   target_sources(xatlas PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/utf8.manifest)
 else()
   target_compile_options(xatlas PRIVATE $<$<CONFIG:Release>:-O3>)

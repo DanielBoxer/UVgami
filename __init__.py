@@ -124,7 +124,6 @@ classes = (
 
 @bpy.app.handlers.persistent
 def _on_load_pre(*args):
-    # blender passes a different number of args by version, and none are needed.
     # load_pre, not post, so cleanup can still touch the objects it made
     manager.shutdown()
 

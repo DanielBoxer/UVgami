@@ -19,7 +19,6 @@ class UnwrapError(Exception):
         self.exit_code = exit_code
 
 
-# ansi codes keyed by role, applied only on a color-capable stderr tty
 _STYLES = {"error": "31", "success": "32", "step": "2", "header": "36"}
 
 
@@ -27,17 +26,21 @@ def _color_enabled():
     if os.environ.get("NO_COLOR") is not None or not sys.stderr.isatty():
         return False
     if platform.system() == "Windows":
-        # on failure fall back to plain text
         import ctypes
 
         kernel32 = ctypes.windll.kernel32
         kernel32.GetStdHandle.restype = ctypes.c_void_p
-        handle = ctypes.c_void_p(kernel32.GetStdHandle(-12))  # STD_ERROR_HANDLE
+        standard_error_handle = -12
+        handle = ctypes.c_void_p(kernel32.GetStdHandle(standard_error_handle))
         mode = ctypes.c_uint32()
         if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             return False
-        enable_vt = 0x0004  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
-        return bool(kernel32.SetConsoleMode(handle, mode.value | enable_vt))
+        enable_virtual_terminal_processing = 0x0004
+        return bool(
+            kernel32.SetConsoleMode(
+                handle, mode.value | enable_virtual_terminal_processing
+            )
+        )
     return True
 
 
@@ -52,15 +55,11 @@ def log(message, style=None):
 
 
 def emit(message):
-    """Machine-readable stdout marker consumed by the Blender add-on."""
     print(message, flush=True)
 
 
+# int so a caller can use the return value as an exit code
 class BatchResult(int):
-    """The first failing exit code, carrying ok/failed tallies for the summary.
-    Subclasses int so callers that use the return value as an exit code, and
-    the == comparisons in the tests, keep working unchanged."""
-
     def __new__(cls, exit_code, ok, failed):
         result = super().__new__(cls, exit_code)
         result.ok = ok
@@ -68,14 +67,8 @@ class BatchResult(int):
         return result
 
 
+# a thread reading a stdin pipe stalls native module imports for minutes on windows
 def unwrap_all(pairs, unwrap_one):
-    """Unwrap each (input, output) pair and return a BatchResult.
-
-    With multiple pairs, failures are isolated per mesh and start/done/failed
-    markers are emitted so a caller can track progress per mesh. Deleting an
-    input file mid-batch cancels that mesh: it fails fast with no compute.
-    No stdin watcher for this on purpose: a thread blocked reading a stdin
-    pipe stalls native module imports for minutes on windows."""
     batch = len(pairs) > 1
     first_code = 0
     ok = 0
@@ -109,7 +102,6 @@ def unwrap_all(pairs, unwrap_one):
 
 
 def find_engine(name, label, explicit_path):
-    """Locate an engine binary: the explicit path if given, else the local build."""
     if explicit_path is not None:
         path = Path(explicit_path)
         if not path.is_file():
@@ -153,7 +145,6 @@ def validate_uv_obj(path):
 
 
 def deliver(result_path, output_path):
-    """Validate the engine result and move it to the requested output."""
     validate_uv_obj(result_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(result_path), str(output_path))

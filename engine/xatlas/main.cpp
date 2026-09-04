@@ -156,9 +156,7 @@ bool read_obj(const std::string &path, std::vector<Vec3> &positions,
     return true;
 }
 
-// one v per input position, one vt per atlas vertex. writing a v per atlas
-// vertex instead would split every chart into disconnected geometry, and then
-// blender's seams-from-islands finds no interior edge to mark.
+// a v per atlas vertex would split every chart into disconnected geometry
 bool write_obj(const std::string &path, const std::vector<Vec3> &positions,
                const xatlas::Mesh &mesh, float width, float height) {
     std::filesystem::path out_path(path);
@@ -190,10 +188,7 @@ bool write_obj(const std::string &path, const std::vector<Vec3> &positions,
     return static_cast<bool>(file);
 }
 
-// xatlas drops faces under an absolute area of FLT_EPSILON (kAreaEpsilon), so a
-// mesh in millimetres loses every face. growing the longest side to 1 fixes
-// that. never shrink: a large mesh scaled down loses its thinnest triangles the
-// same way, and their uvs collapse to points in the output.
+// xatlas drops faces under kAreaEpsilon, so shrinking loses the thinnest triangles
 std::vector<Vec3> grown_positions(const std::vector<Vec3> &positions) {
     Vec3 low = positions[0];
     Vec3 high = positions[0];
@@ -293,8 +288,7 @@ int main(int argc, char **argv) {
         return CODE_INVALID_GEOMETRY;
     }
 
-    // without this the parameterization leaves whole charts mirrored. the
-    // packer mirrored them too until xatlas.cpp's chart rotation was fixed
+    // the parameterization leaves whole charts mirrored without this
     chart_options.fixWinding = true;
     xatlas::Generate(atlas, chart_options);
 

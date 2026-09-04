@@ -1,8 +1,3 @@
-// this code is self-contained, the vendored libigl
-// surface is touched only for the slim solve. input faces may be polygons,
-// the solve fan-triangulates internally and output corners match input
-// corners one to one.
-
 #include "Flatten.hpp"
 
 #include <algorithm>
@@ -28,8 +23,7 @@
 
 #include "uvgami.h"
 
-// slim_solve's internals, in igl::core, so slimSolve can run the iteration
-// itself and keep one factorization pattern
+// igl::slim internals, redeclared so slimSolve can run the iteration itself
 namespace igl {
 namespace slim {
 void update_weights_and_closest_rotations(igl::SLIMData &s,
@@ -64,8 +58,7 @@ struct UnionFind {
     void unite(int a, int b) { parent[find(a)] = find(b); }
 };
 
-// one vertex index and optional vt index from an f-token: "v", "v/vt",
-// "v//vn", "v/vt/vn". negative indices are relative.
+// f-token forms "v", "v/vt", "v//vn", "v/vt/vn", negative indices are relative
 bool parseFaceToken(const std::string &token, int vertCount, int uvCount,
                     int &vertOut, int &uvOut) {
     size_t slash = token.find('/');
@@ -101,8 +94,7 @@ bool parseFaceToken(const std::string &token, int vertCount, int uvCount,
     return true;
 }
 
-// v, vt and f only. hasUV comes back true only when every corner carries a
-// vt index.
+// hasUV comes back true only when every corner carries a vt index
 bool readObj(const std::string &path, PolyMesh &mesh, bool &hasUV) {
     std::ifstream file(path);
     if (!file) return false;
@@ -166,8 +158,7 @@ bool readSeams(const std::string &path, int vertCount,
     return file.eof();
 }
 
-// corners weld across interior edges that are neither seams nor non-manifold,
-// which is exactly where blender keeps the uv map continuous.
+// corners weld across interior edges that are neither seams nor non-manifold
 void weldCorners(PolyMesh &mesh, const std::set<std::pair<int, int>> &seams) {
     std::vector<int> offset(mesh.faces.size() + 1, 0);
     for (size_t f = 0; f < mesh.faces.size(); ++f)
@@ -191,7 +182,7 @@ void weldCorners(PolyMesh &mesh, const std::set<std::pair<int, int>> &seams) {
         const std::vector<int> &faceB = mesh.faces[static_cast<size_t>(fB)];
         int kA2 = (kA + 1) % static_cast<int>(faceA.size());
         int kB2 = (kB + 1) % static_cast<int>(faceB.size());
-        // match corners by source vertex, so winding doesn't matter
+        // winding can differ between the two faces
         int cornerA[2] = {offset[static_cast<size_t>(fA)] + kA,
                           offset[static_cast<size_t>(fA)] + kA2};
         int vertA[2] = {faceA[static_cast<size_t>(kA)],
@@ -249,8 +240,7 @@ struct Island {
     double area3d = 0.0;
 };
 
-// fills localOf (global uv id -> local) for this island's uv-verts. the
-// caller resets those entries to -1 when done with the island.
+// fills localOf (global uv id -> local), the caller resets those entries to -1
 Island buildIsland(const PolyMesh &mesh, std::vector<int> faces,
                    std::vector<int> &localOf) {
     Island island;
@@ -306,10 +296,7 @@ Island buildIsland(const PolyMesh &mesh, std::vector<int> faces,
     return island;
 }
 
-// boundary loops from polygon uv-edges (edges owned by one face), walked
-// along face winding so the loop runs counterclockwise around the island and
-// the tutte map comes out positively oriented. returns the loop with the
-// greatest 3d length, empty when the island is closed.
+// walked along face winding so the tutte map comes out positively oriented
 std::vector<int> outerBoundaryLoop(const Island &island, const PolyMesh &mesh,
                                    const std::vector<int> &localOf) {
     std::map<std::pair<int, int>, int> count;
@@ -365,8 +352,7 @@ std::vector<int> outerBoundaryLoop(const Island &island, const PolyMesh &mesh,
     return best;
 }
 
-// closed islands have nothing to map to a circle. project to the dominant
-// plane instead, the repair loop cuts whatever overlaps.
+// closed islands have nothing to map to a circle
 void projectToPlane(Island &island) {
     Eigen::RowVector3d normal = Eigen::RowVector3d::Zero();
     for (Eigen::Index t = 0; t < island.T.rows(); ++t) {
@@ -387,8 +373,7 @@ void projectToPlane(Island &island) {
     }
 }
 
-// tutte: boundary on a circle by 3d arc length, interior the uniform-laplacian
-// average of its neighbors. injective for disks, best effort otherwise.
+// tutte, injective for disks and best effort otherwise
 bool tutteInit(Island &island, const std::vector<int> &loop) {
     Eigen::Index n = island.V.rows();
     island.UV = Eigen::MatrixXd::Zero(n, 2);
@@ -457,22 +442,18 @@ bool tutteInit(Island &island, const std::vector<int> &loop) {
     return true;
 }
 
-// symmetric dirichlet per unit area, 4 is isometric. the solve stops when the
-// excess is under SLIM_SETTLED or a step removes less than SLIM_STOP_SHARE of it
+// symmetric dirichlet per unit area, 4 is isometric
 const double SLIM_ISOMETRIC = 4.0;
 const double SLIM_SETTLED = 1e-3;
 const double SLIM_STOP_SHARE = 0.1;
 
-// damping after a zero pivot: this share of the largest diagonal entry first,
-// then tenfold steps up to the entry itself
+// damping starts at this share of the largest diagonal entry, tenfold steps up
 const double DAMPING_FIRST_SHARE = 1e-12;
 const double DAMPING_STEP = 10.0;
 
 using SparseSolver = Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>>;
 
-// returns the diagonal shift that made the factorization hold, negative when
-// none did. a zero pivot comes from an init with collapsed triangles (energy
-// 1e25 and up), whose weights swamp slim's proximal term
+// a zero pivot comes from an init with collapsed triangles, energy 1e25 and up
 double factorizeDamped(SparseSolver &solver, const Eigen::SparseMatrix<double> &L) {
     solver.factorize(L);
     if (solver.info() == Eigen::Success) return 0.0;
@@ -487,9 +468,7 @@ double factorizeDamped(SparseSolver &solver, const Eigen::SparseMatrix<double> &
     return shift <= largest ? shift : -1.0;
 }
 
-// igl::slim_solve's iteration with the symbolic factorization done once. a
-// damped step adds the shift to the rhs too, so it pulls toward the current
-// map instead of toward zero
+// igl::slim_solve's iteration with the symbolic factorization done once
 void slimSolve(Island &island, int maxIterations) {
     igl::SLIMData data;
     Eigen::VectorXi b;
@@ -528,7 +507,7 @@ void slimSolve(Island &island, int maxIterations) {
         island.UV = data.V_o;
 }
 
-// biggest island first, so it is not the one left running alone at the end
+// the biggest island must not be the one left running alone at the end
 void solveIslands(std::vector<Island> &islands,
                   const std::vector<std::vector<int>> &loops,
                   int maxIterations) {
@@ -559,7 +538,7 @@ void solveIslands(std::vector<Island> &islands,
     });
 }
 
-// absolute, not signed: a closed island projected to a plane cancels to zero
+// a closed island projected to a plane cancels to zero when signed
 double absUvArea(const Island &island) {
     double area = 0.0;
     for (Eigen::Index t = 0; t < island.T.rows(); ++t) {
@@ -571,8 +550,7 @@ double absUvArea(const Island &island) {
     return area;
 }
 
-// signed by face winding: a mostly negative sum means the island came out
-// mirrored
+// a mostly negative sum means the island came out mirrored
 double signedUvArea(const Island &island) {
     double area = 0.0;
     for (Eigen::Index t = 0; t < island.T.rows(); ++t) {
@@ -584,9 +562,7 @@ double signedUvArea(const Island &island) {
     return area;
 }
 
-// every island to uv area == 3d area, so texel density is uniform before the
-// pack (average_islands_scale equivalent), bbox moved to the origin. mirrored
-// islands flip back so their triangles keep the mesh's orientation.
+// uv area == 3d area per island, blender's average_islands_scale equivalent
 void normalizeIsland(Island &island) {
     double signedArea = signedUvArea(island);
     if (signedArea < 0.0) island.UV.col(0) *= -1.0;
@@ -597,9 +573,7 @@ void normalizeIsland(Island &island) {
     island.UV.rowwise() -= minCorner;
 }
 
-// shelf pack by bbox, tallest first, then a uniform fit into the unit square.
-// coarser than blender's pack but overlap-free, which is what the engine's
-// keep-map check needs.
+// coarser than blender's pack but overlap-free, which the keep-map check needs
 void packIslands(std::vector<Island> &islands) {
     if (islands.empty()) return;
     std::vector<int> order(islands.size());
@@ -678,8 +652,7 @@ int runFlatten(const std::string &inputPath, const std::string &outputDir,
         emitFailed(stem, UVGAMI_RC_FAILED_TO_LOAD_MESH);
         return UVGAMI_RC_FAILED_TO_LOAD_MESH;
     }
-    // a nan vertex flows through tutte init and the pack sort into a nan
-    // uv written under a success done:, reject it at load
+    // a nan vertex flows through tutte init and the pack sort into a nan uv
     for (const Eigen::Vector3d &v : mesh.verts) {
         if (!v.allFinite() || v.cwiseAbs().maxCoeff() > 1e15) {
             std::fprintf(stderr, "input has non-finite coordinates\n");
@@ -740,15 +713,13 @@ int runFlatten(const std::string &inputPath, const std::string &outputDir,
 
     double solvedUvArea = 0.0, restArea = 0.0;
     for (Island &island : islands) {
-        // before the normalize, which rescales even a noise-area island to
-        // its full 3d area
+        // before the normalize, which rescales even a noise-area island
         solvedUvArea += absUvArea(island);
         restArea += island.area3d;
         normalizeIsland(island);
     }
 
-    // the solve can crush every island to a point and still reach here.
-    // pack-only skips the floor, its uvs are unit-square scale not mesh scale
+    // pack-only uvs are unit-square scale, not mesh scale
     if (!packOnly && restArea > 0.0 && solvedUvArea <= restArea * 1e-9) {
         std::fprintf(stderr, "flatten came back collapsed\n");
         emitFailed(stem, UVGAMI_RC_FLATTEN_FAILED);

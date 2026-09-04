@@ -240,6 +240,7 @@ def _draw_unwrap_groups(box, groups, active_groups):
     for group_id, group in groups.items():
         display_box = box.box()
         row = display_box.row()
+        # if the key isn't an int, it's part of a group, and can be expanded
         expand_layout = not isinstance(group_id, int)
 
         if expand_layout:

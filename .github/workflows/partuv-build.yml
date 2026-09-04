@@ -110,8 +110,7 @@ jobs:
       - name: Build wheel
         run: uv build -p ${{ matrix.python }} --wheel engine/partuv -o dist
 
-      # cudart stays bundled, the geometric tier has no torch to supply it. the
-      # excluded math and dnn libs come from torch on the ai tier
+      # cudart stays bundled, the geometric tier has no torch to supply it
       - name: Repair Linux wheel
         if: runner.os == 'Linux'
         run: |
@@ -127,10 +126,7 @@ jobs:
           rm dist/*.whl
           mv wheelhouse/*.whl dist/
 
-      # msvc's /openmp:llvm links against libomp140.x86_64.dll, which visual
-      # studio installs but the vc++ redistributable does not ship. upstream
-      # llvm's libomp exports the same symbols, apache-2.0 with llvm exception
-      # __init__.py puts .libs on the dll search path
+      # the vc++ redistributable does not ship the libomp140.x86_64.dll /openmp:llvm needs
       - name: Cache libomp
         if: runner.os == 'Windows'
         id: libomp-cache
@@ -161,8 +157,7 @@ jobs:
           rm dist/*.whl
           uvx wheel pack "$wheel_dir" -d dist
 
-      # visual studio puts libomp140 in system32 on the runner, which would
-      # hide a missing bundled copy from the import test
+      # visual studio puts libomp140 in system32, hiding a missing bundled copy
       - name: Remove system libomp
         if: runner.os == 'Windows'
         shell: pwsh
@@ -205,8 +200,7 @@ jobs:
           merge-multiple: true
           path: dist
 
-      # the addon install operator finds these by python tag and platform, and
-      # pins this tag
+      # the addon install operator finds these by python tag and platform
       - name: Publish wheels
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

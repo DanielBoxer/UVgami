@@ -14,8 +14,7 @@
 
 namespace uvgami {
 
-// fraction of its area at triangulation below which an air triangle
-// retriangulates the air mesh
+// share of its triangulation area below which an air triangle forces a rebuild
 static const double AIR_SQUASH_RATIO = 0.25;
 
 Optimizer::Optimizer(const TriMesh &p_data0,
@@ -94,7 +93,7 @@ void Optimizer::rebuildScaffold(void) {
     scaffold.mergeFixedV(result.fixedVert, fixedV_withScaf);
 }
 
-// retriangulating the air mesh every iteration was most of a local solve
+// retriangulating the air mesh every iteration is most of a local solve
 void Optimizer::refreshScaffold(void) {
     if (airClampedStep || scaffold.squashed(AIR_SQUASH_RATIO)) {
         rebuildScaffold();
@@ -245,8 +244,7 @@ void Optimizer::updateEnergyData(bool updateEVal, bool updateGradient,
 bool Optimizer::createFracture(int opType, const std::vector<int> &path,
                                const Eigen::MatrixXd &newVertPos,
                                bool allowPropagate) {
-    // the op was queried one round back, so an op applied since can have
-    // moved its vertices onto the boundary or renumbered them
+    // the op was queried one round back
     if (!result.queriedOpFits(opType, path, newVertPos))
         return false;
     topoIter++;
@@ -413,7 +411,7 @@ bool Optimizer::lineSearch(void) {
     stepForward(resultV0, scaffoldV0, result, scaffold, stepSize);
     double testingE;
     computeEnergyVal(result, scaffold, testingE);
-    // written this way so a nan energy counts as an increase
+    // a nan energy has to count as an increase
     while (!(testingE <= lastEnergyVal)) // ensure energy decrease
     {
         stepSize /= 2.0;

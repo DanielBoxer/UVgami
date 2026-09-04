@@ -1,6 +1,3 @@
-"""The log file under the extension dir, which the Log button renders. One
-block per .blend, so a run can be traced to the file it was on."""
-
 import bpy
 import pytest
 from bl_ext.user_default.UVgami.src import logger as log_module
@@ -22,7 +19,6 @@ OLD_BLOCK = (
 
 @pytest.fixture(autouse=True)
 def log_file(empty_scene, tmp_path, monkeypatch):
-    """Keep the tests off the log the installed addon writes."""
     path = tmp_path / "log.txt"
     monkeypatch.setattr(log_module, "get_log_path", lambda: path)
     logger.reset()

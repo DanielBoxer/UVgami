@@ -32,8 +32,7 @@ if(NOT TARGET TBB::tbb)
   add_library(TBB::tbb ALIAS tbb_static)
 endif()
 
-# mimalloc (windows-only static malloc override; link the object so its
-# malloc/free take precedence over the crt)
+# link the object so mimalloc's malloc/free take precedence over the crt
 if(WIN32 AND UVGAMI_USE_MIMALLOC AND NOT TARGET mimalloc-obj)
   download_mimalloc()
   set(MI_BUILD_SHARED OFF CACHE BOOL " " FORCE)

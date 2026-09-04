@@ -21,8 +21,7 @@ def test_unwrap_runs_to_completion(load_obj, unwrap, outputs):
     assert layer is not None
     assert any(any(datum.uv) for datum in layer.data)
 
-    # a finished piece holding its three pipes open runs a many-part model
-    # out of file descriptors partway through
+    # a many-part model runs out of file descriptors partway through
     assert manager.results
     for piece, _ in manager.results:
         if piece.process is None:
@@ -33,8 +32,6 @@ def test_unwrap_runs_to_completion(load_obj, unwrap, outputs):
 
 
 def test_flipped_face_is_rewound_instead_of_refused(load_obj, unwrap, outputs):
-    """One face wound backwards used to come back as the engine's 115
-    inconsistent-orientation refusal, the export rewinds it now."""
     load_obj("flipped-face")
     unwrap()
 

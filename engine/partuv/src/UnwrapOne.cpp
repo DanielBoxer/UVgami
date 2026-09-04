@@ -55,8 +55,7 @@ std::vector<Component> unwrap_aligning_one(const Eigen::MatrixXd &V,   const  Ei
     Component comp;
     comp.V = V;
     comp.F = F;
-    // provenance is identity: V is used as-is, local to the caller's mesh.
-    // V_original stays empty, so no source_vid_original either.
+    // V is used as-is, so provenance is the identity
     comp.source_vid.resize(V.rows());
     std::iota(comp.source_vid.begin(), comp.source_vid.end(), 0);
 

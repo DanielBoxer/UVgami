@@ -1,7 +1,3 @@
-"""Several objects or pieces in one session: the per-part queue, a refusal
-next to a good mesh, and stopping, cancelling or watching pieces while they
-run."""
-
 import bpy
 import pytest
 from bl_ext.user_default.UVgami.src import manager as manager_module
@@ -24,8 +20,6 @@ def add_cube(name, location=(0, 0, 0)):
 
 
 def add_sphere(name, location=(0, 0, 0)):
-    """Enough faces that a cube queued behind it is still queued when the
-    test looks, and that the solve is still going when a stop arrives."""
     bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, location=location)
     obj = bpy.context.active_object
     obj.name = name
@@ -40,14 +34,10 @@ def select(objects):
 
 
 def solving():
-    """The piece the engine is working on, once it has reported progress, so
-    a stop reaches a real solve instead of a mesh that may already be done."""
     return next((u for u in manager.active if u.is_solving and u.has_reported), None)
 
 
 def running_and_queued():
-    """The piece the engine is on and the one waiting behind it, once both
-    exist, else None."""
     running = [u for u in manager.active if u.process is not None]
     queued = [u for u in manager.active if u.process is None and u.is_exported]
     if running and queued:
@@ -87,8 +77,7 @@ def test_loose_parts_unwrap_as_pieces_and_join_back(unwrap, outputs):
 def test_refused_mesh_fails_next_to_a_good_cube(
     make_mesh, unwrap, outputs, invalid_objects
 ):
-    # 1e30 is the one refusal the engine still makes on a mesh blender
-    # accepts, exit 113
+    # 1e30 is the one refusal the engine makes on a mesh blender accepts
     huge = make_mesh(
         "huge",
         [(1e30, 0, 0), (1, 0, 0), (0, 1, 0)],

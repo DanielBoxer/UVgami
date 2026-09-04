@@ -1,7 +1,6 @@
 import importlib.util
 
-# nothing here can be collected without a live bpy, so the dev venv's pytest
-# walks past this folder and only run.py's blender session picks it up
+# nothing here can be collected without a live bpy
 if importlib.util.find_spec("bpy") is None:
     collect_ignore_glob = ["test_*.py"]
 else:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-# loaded from file so importing doesn't touch the blender addon package
+# loaded from file, the addon package imports bpy
 spec = importlib.util.spec_from_file_location(
     "addon_task", Path(__file__).parents[2] / "src" / "utils" / "task.py"
 )
@@ -83,8 +83,6 @@ def test_the_work_sees_the_cancel():
 
 
 def test_work_that_never_checks_still_finishes():
-    """A cancel is only a flag, so work that ignores it runs to the end and
-    its result is still collectable."""
     background = task.BackgroundTask(lambda cancelled: "ignored it")
     background.cancel()
     wait(background)

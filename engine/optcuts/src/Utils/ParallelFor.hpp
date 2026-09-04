@@ -6,9 +6,7 @@
 
 namespace uvgami {
 
-// a local query solve loops over a dozen triangles inside the already
-// parallel candidate loop, and a tbb task per triangle cost more than the
-// triangle. those stay serial, the main mesh loops spread over the cores
+// a tbb task per triangle costs more than the triangle in a local query solve
 const int PARALLEL_LOOP_MIN_ITEMS = 64;
 const int PARALLEL_LOOP_GRAIN = 16;
 

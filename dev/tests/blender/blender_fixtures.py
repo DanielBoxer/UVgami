@@ -1,6 +1,3 @@
-"""Fixtures for tests that run inside Blender, imported by the conftest of
-every folder run.py launches."""
-
 import importlib
 import pathlib
 
@@ -15,7 +12,7 @@ manager = addon.src.manager.manager
 logger = addon.src.logger.logger
 get_preferences = addon.src.utils.paths.get_preferences
 
-# the machine is often busy with a bench run, so this is nowhere near a timing
+# the machine is often busy with a bench run
 UNWRAP_SECONDS = 600
 OUTPUT_SUFFIX = "_unwrapped"
 INVALID_COLLECTION = "UVgami Not Unwrapped"
@@ -31,8 +28,6 @@ needs_xatlas = pytest.mark.skipif(
 
 
 def _partuv_installed():
-    """The engine offers its dev route whenever dev/uvgami_cli, .venv and uv are
-    all present, which is true in CI, where the wheel itself is not."""
     engine = addon.src.engines.get_engine("PARTUV")
     ctx, error = engine.validate(get_preferences())
     if error is not None:
@@ -50,7 +45,6 @@ needs_partuv = pytest.mark.skipif(
 
 
 def island_count(obj):
-    """How many uv islands the addon's own grouping finds on a mesh."""
     mesh = obj.data
     faces = addon.src.utils.mesh.face_vertices(mesh)
     uvs = addon.src.utils.mesh.face_uvs(mesh)
@@ -64,16 +58,11 @@ def seam_count(obj):
 
 @pytest.fixture(autouse=True)
 def empty_scene():
-    """A blank file per test. Scene properties come back at their defaults
-    with it, so one test's margin can't reach the next."""
     bpy.ops.wm.read_homefile(use_empty=True)
 
 
 @pytest.fixture
 def load_obj():
-    """Import an obj by its stem from dev/tests/fixtures and leave it the only
-    selection."""
-
     def load(stem):
         path = FIXTURES / f"{stem}.obj"
         before = set(bpy.data.objects)
@@ -90,13 +79,9 @@ def load_obj():
 
 @pytest.fixture
 def session():
-    """Call an operator that starts a queue, then pump until the session is
-    over. until() stops the pump early, and the returned pump keeps working
-    until the test ends."""
     prefs = get_preferences()
     prefs.autosave = False
-    # the progress bar needs a gpu context and a popup crashes a background
-    # blender
+    # the progress bar needs a gpu context, a popup crashes a background blender
     prefs.show_progress_bar = False
     prefs.show_popup = False
     with timer_pump.pump_timers() as pump:
@@ -112,8 +97,6 @@ def session():
 
 @pytest.fixture
 def unwrap(session):
-    """Start the unwrap operator on the selection and run it to the end."""
-
     def run(engine="OPTCUTS", until=None):
         bpy.context.scene.uvgami.engine = engine
         return session(bpy.ops.uvgami.start, until)
@@ -123,8 +106,6 @@ def unwrap(session):
 
 @pytest.fixture
 def outputs():
-    """The objects an unwrap produced, by name."""
-
     def read():
         return {
             obj.name: obj
@@ -137,8 +118,6 @@ def outputs():
 
 @pytest.fixture
 def invalid_objects():
-    """What was moved to the not unwrapped collection, by name."""
-
     def read():
         collection = bpy.data.collections.get(INVALID_COLLECTION)
         if collection is None:
@@ -150,9 +129,6 @@ def invalid_objects():
 
 @pytest.fixture
 def make_mesh():
-    """Build an object from verts, faces and one uv per face corner, then
-    make it the active selection the operators expect."""
-
     def build(name, verts, faces, uvs):
         mesh = bpy.data.meshes.new(name)
         mesh.from_pydata(verts, [], faces)
@@ -172,9 +148,6 @@ def make_mesh():
 
 @pytest.fixture
 def face_uvs():
-    """Per face, its corner uvs as rounded tuples, so two islands can be
-    compared for the exact equality a stack needs."""
-
     def read(obj, digits=6):
         layer = obj.data.uv_layers.active.data
         return [
@@ -190,8 +163,6 @@ def face_uvs():
 
 @pytest.fixture
 def seam_edges():
-    """The vertex index pairs blender has marked as seams."""
-
     def read(obj):
         return {frozenset(edge.vertices) for edge in obj.data.edges if edge.use_seam}
 

@@ -93,12 +93,9 @@ class TriMesh {
                     std::vector<int> &path_max, Eigen::MatrixXd &newVertPos_max,
                     std::pair<double, double> &energyChanges_max);
     bool mergeEdge(double lambda, double EDecThres, bool propagate);
-    // rigid-align two separate islands along a shared cohesive edge and weld
-    // one endpoint pair, then zip the seam from there
+    // rigid-align two islands on a shared cohesive edge and weld one endpoint pair
     bool stitchIsland(void);
-    // weld the zipper bottoms at the stitch fronts while inversion free. the
-    // standard merge machinery cannot run here, its corner air loop has no
-    // representation for the pinched vertex a fresh stitch makes
+    // the corner air loop cannot represent the pinched vertex a fresh stitch makes
     bool zipStitchedSeam(void);
     bool splitOrMerge(double lambda_t, double EDecThres, bool propagate,
                       bool splitInterior, bool &isMerge);
@@ -155,8 +152,7 @@ class TriMesh {
     void boundaryLoops(std::vector<std::vector<int>> &loops) const;
 
     bool cutLeavesPinlessPiece(const std::vector<int> &path) const;
-    // whether a split or merge queried on an earlier mesh still fits the
-    // current topology: 0 boundary split, 1 interior split, 2 merge
+    // opType 0 boundary split, 1 interior split, 2 merge
     bool queriedOpFits(int opType, const std::vector<int> &path,
                        const Eigen::MatrixXd &newVertPos) const;
 

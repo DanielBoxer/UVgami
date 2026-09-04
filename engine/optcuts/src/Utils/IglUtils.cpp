@@ -216,8 +216,7 @@ void IglUtils::map_vertices_to_circle(const Eigen::MatrixXd &V,
     }
 }
 
-// the addon parses this line for its progress bar: the fraction of elements in
-// the low, medium and high distortion bands
+// the addon parses this line for its progress bar
 void IglUtils::reportDistortion(const Eigen::VectorXd &scalar,
                                 double lowerBound, double upperBound) {
     const double rangeDelta = upperBound - lowerBound;
@@ -532,7 +531,7 @@ bool IglUtils::checkUVBoundaryOverlap(
         return false;
     }
 
-    // collisions only add narrow-phase tests, they never miss an overlap
+    // hash collisions only add narrow-phase tests
     auto cellKey = [](int cx, int cy) -> int64_t {
         return ((int64_t)cx * 73856093) ^ ((int64_t)cy * 19349663);
     };
@@ -574,7 +573,7 @@ bool IglUtils::checkUVBoundaryOverlap(
             }
         }
         for (int ej : candidates) {
-            // adjacent boundary edges share a vertex, skip them
+            // adjacent boundary edges share a vertex
             if (edges[ei].first == edges[ej].first ||
                 edges[ei].first == edges[ej].second ||
                 edges[ei].second == edges[ej].first ||
