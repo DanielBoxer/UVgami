@@ -842,6 +842,7 @@ class UVGAMI_OT_start(bpy.types.Operator):
         input_for = {}
         input_sizes = []
         skipped = set()
+        seen_mesh_data = set()
         applied_modifiers = False
         proxied_objects = set()
         warn = get_preferences().show_warnings
@@ -853,6 +854,11 @@ class UVGAMI_OT_start(bpy.types.Operator):
             if len(obj.data.polygons) == 0:
                 skipped.add("objects with zero polygons")
                 continue
+            # the transfer writes into obj.data
+            if props.transfer_uvs and obj.data in seen_mesh_data:
+                skipped.add("duplicates sharing a mesh")
+                continue
+            seen_mesh_data.add(obj.data)
 
             # unlinked duplicate, so the original is never touched
             copy_object = obj.copy()
@@ -865,8 +871,9 @@ class UVGAMI_OT_start(bpy.types.Operator):
             evaluated = obj.evaluated_get(depsgraph)
             triangles = triangle_count(evaluated)
             input_sizes.append((obj.name, triangles))
+            # the budget reads the mesh make_proxy will decimate
             proxied = self.engine.uses_proxy(props) and needs_proxy(
-                evaluated, props.proxy_faces
+                copy_object, props.proxy_faces
             )
             # the engine has to see the input mesh itself, not a modifier bake of it
             if input_job(props, proxied) is not None:
