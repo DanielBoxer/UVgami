@@ -15,6 +15,7 @@ spec.loader.exec_module(sys.modules["seams"])
 from seams import Cancelled, face_edges  # noqa: E402
 from seams.proxy_transfer import (  # noqa: E402
     AffineMaps,
+    connected_labels,
     dense_subset,
     snap_cuts,
     transfer_projected,
@@ -339,3 +340,18 @@ def test_transfer_projected_tears_between_faces_split_at_a_shared_vertex():
     face_u = uvs[:, 0].reshape(len(faces), 4)
     assert numpy.all(face_u.max(axis=1) - face_u.min(axis=1) < 2.0)
     assert seams == {(2 * columns + x, 2 * columns + x + 1) for x in range(columns - 1)}
+
+
+def test_connected_labels_separates_loose_parts():
+    edges = numpy.array(
+        [[0, 1], [1, 2], [3, 4], [5, 6], [6, 7], [5, 7]], dtype=numpy.int64
+    )
+    labels = connected_labels(9, edges)
+    assert labels.tolist() == [0, 0, 0, 3, 3, 5, 5, 5, 8]
+
+
+def test_connected_labels_joins_a_long_chain():
+    count = 1000
+    ends = numpy.arange(count - 1, dtype=numpy.int64)
+    edges = numpy.stack([ends, ends + 1], axis=1)
+    assert connected_labels(count, edges).tolist() == [0] * count

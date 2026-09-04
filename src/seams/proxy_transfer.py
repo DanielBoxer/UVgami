@@ -407,6 +407,40 @@ def _weld_vertices(corner_uvs, drawn_by, proxy_map, mesh, vertices):
     corner_uvs[corners] = (sums / numpy.maximum(counts, 1)[:, None])[cluster]
 
 
+# a part's label is its lowest vertex index, never a dense range
+def connected_labels(count, edges):
+    label = numpy.arange(count)
+    a = edges[:, 0]
+    b = edges[:, 1]
+    while a.size:
+        # minimum.at is far slower than sorting for the reduceat
+        targets = numpy.concatenate([a, b])
+        sources = numpy.concatenate([b, a])
+        order = numpy.argsort(targets, kind="stable")
+        targets = targets[order]
+        sources = sources[order]
+        starts = numpy.flatnonzero(numpy.diff(targets, prepend=-1))
+        grouped = targets[starts]
+        low = label.copy()
+        low[grouped] = numpy.minimum(
+            low[grouped], numpy.minimum.reduceat(label[sources], starts)
+        )
+        # low[low] shortcuts label chains
+        while True:
+            jumped = low[low]
+            if numpy.array_equal(jumped, low):
+                break
+            low = jumped
+        label = low
+        # edges inside a merged part drop out
+        a = label[a]
+        b = label[b]
+        keep = a != b
+        a = a[keep]
+        b = b[keep]
+    return label
+
+
 # the (a, b) pairs hold both orders of every pair
 def _components(count, a, b):
     label = numpy.arange(count)

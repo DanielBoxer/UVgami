@@ -102,6 +102,37 @@ def test_proxy_with_transfer_lands_on_the_input(unwrap, outputs):
     assert has_uvs(sphere)
 
 
+def test_proxy_on_a_multi_part_mesh_decimates_only_the_part_over_the_budget(
+    unwrap, outputs
+):
+    sphere = add_sphere()
+    bpy.ops.mesh.primitive_cube_add(location=(5, 0, 0))
+    sphere.select_set(True)
+    bpy.context.view_layer.objects.active = sphere
+    bpy.ops.object.join()
+    joined = bpy.context.active_object
+    props = bpy.context.scene.uvgami
+    props.use_proxy = True
+    props.proxy_faces = PROXY_FACES
+    props.transfer_uvs = True
+
+    unwrap()
+
+    assert manager.summary[0] == "UV unwrap complete!"
+    assert manager.transfer_uv_failed is False
+    assert outputs() == {}
+    assert has_uvs(joined)
+    cube_faces = [
+        face
+        for face in joined.data.polygons
+        if all(joined.data.vertices[v].co.x > 2.5 for v in face.vertices)
+    ]
+    assert len(cube_faces) == 6
+    layer = joined.data.uv_layers.active
+    for face in cube_faces:
+        assert any(any(layer.data[i].uv) for i in face.loop_indices)
+
+
 def test_proxy_without_transfer_replaces_the_output_with_a_full_copy(unwrap, outputs):
     sphere = add_sphere()
     props = bpy.context.scene.uvgami

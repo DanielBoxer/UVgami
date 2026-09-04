@@ -21,7 +21,7 @@ from ..job import (
 )
 from ..logger import logger
 from ..manager import Preparing, manager
-from ..proxy import make_proxy, triangle_count
+from ..proxy import make_proxy, needs_proxy, triangle_count
 from ..seams import (
     face_edges,
     island_layout,
@@ -862,9 +862,12 @@ class UVGAMI_OT_start(bpy.types.Operator):
             obj.users_collection[0].objects.link(copy_object)
 
             # the count is the modifier bake, what a plain run would unwrap
-            triangles = triangle_count(obj.evaluated_get(depsgraph))
+            evaluated = obj.evaluated_get(depsgraph)
+            triangles = triangle_count(evaluated)
             input_sizes.append((obj.name, triangles))
-            proxied = self.engine.uses_proxy(props) and triangles > props.proxy_faces
+            proxied = self.engine.uses_proxy(props) and needs_proxy(
+                evaluated, props.proxy_faces
+            )
             # the engine has to see the input mesh itself, not a modifier bake of it
             if input_job(props, proxied) is not None:
                 copy_object.modifiers.clear()

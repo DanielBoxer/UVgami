@@ -14,20 +14,63 @@ def triangle_count(obj):
     return len(obj.data.loops) - 2 * len(obj.data.polygons)
 
 
+def part_triangles(data):
+    labels = proxy_transfer.connected_labels(len(data.vertices), _edge_array(data))
+    totals = numpy.empty(len(data.polygons), dtype=numpy.int64)
+    data.polygons.foreach_get("loop_total", totals)
+    starts = numpy.concatenate(([0], numpy.cumsum(totals)[:-1]))
+    corners = numpy.empty(len(data.loops), dtype=numpy.int64)
+    data.loops.foreach_get("vertex_index", corners)
+    part_labels, face_part = numpy.unique(labels[corners[starts]], return_inverse=True)
+    counts = numpy.bincount(face_part, weights=totals - 2).astype(numpy.int64)
+    return labels, part_labels, counts
+
+
+# the budget is per loose part
+def needs_proxy(obj, target_faces):
+    if triangle_count(obj) <= target_faces:
+        return False
+    _, _, counts = part_triangles(obj.data)
+    return int(counts.max()) > target_faces
+
+
 # evaluating the object bakes every modifier on it, not just the decimate
 def make_proxy(obj, target_faces):
     triangles = triangle_count(obj)
     if triangles <= target_faces:
         return False
-    modifier = obj.modifiers.new("UVgami Proxy", "DECIMATE")
-    modifier.ratio = target_faces / triangles
+    labels, part_labels, counts = part_triangles(obj.data)
+    over = numpy.flatnonzero(counts > target_faces).tolist()
+    if not over:
+        return False
+
+    modifiers = []
+    groups = []
+    # a ratio is a fraction of the previous modifier's output
+    remaining = triangles
+    for part in over:
+        target = remaining - (int(counts[part]) - target_faces)
+        modifier = obj.modifiers.new("UVgami Proxy", "DECIMATE")
+        modifier.ratio = target / remaining
+        remaining = target
+        modifiers.append(modifier)
+        if len(part_labels) > 1:
+            group = obj.vertex_groups.new(name="UVgami Proxy")
+            part_verts = numpy.flatnonzero(labels == part_labels[part])
+            group.add(part_verts.tolist(), 1.0, "REPLACE")
+            modifier.vertex_group = group.name
+            groups.append(group)
     depsgraph = bpy.context.evaluated_depsgraph_get()
     # preserve_all_data_layers would run the decimate a second time
     baked = bpy.data.meshes.new_from_object(obj.evaluated_get(depsgraph))
 
+    for modifier in modifiers:
+        obj.modifiers.remove(modifier)
+    # swapping in the baked mesh drops the object's group list
+    for group in groups:
+        obj.vertex_groups.remove(group)
     stale = obj.data
     obj.data = baked
-    obj.modifiers.remove(modifier)
     bpy.data.meshes.remove(stale)
 
     if triangle_count(obj) == triangles:
