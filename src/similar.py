@@ -201,6 +201,17 @@ def _twin_matrix(rep, piece):
     return None
 
 
+# a reordered twin ships the representative's face and vertex data
+def _copyable_data(rep, obj):
+    if list(rep.data.materials) != list(obj.data.materials):
+        return False
+    slots = {p.material_index for p in rep.data.polygons}
+    if len(slots) > 1 or slots != {p.material_index for p in obj.data.polygons}:
+        return False
+    smooth = {p.use_smooth for p in rep.data.polygons}
+    return len(smooth) == 1 and smooth == {p.use_smooth for p in obj.data.polygons}
+
+
 # only pieces made by duplication qualify
 def find_twins(objects):
     representatives = {}
@@ -210,10 +221,13 @@ def find_twins(objects):
         candidates = representatives.setdefault(piece.signature, [])
         for rep in candidates:
             match = _twin_matrix(rep, piece)
-            if match is not None:
-                matrix, exact = match
-                twins[obj] = (rep.obj, matrix, exact)
-                break
+            if match is None:
+                continue
+            matrix, exact = match
+            if not exact and not _copyable_data(rep.obj, obj):
+                continue
+            twins[obj] = (rep.obj, matrix, exact)
+            break
         else:
             candidates.append(piece)
     return twins

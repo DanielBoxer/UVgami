@@ -27,19 +27,36 @@ class Elements:
         array[:] = self.values[attr]
 
 
+class FakePolygon:
+    def __init__(self, material_index):
+        self.material_index = material_index
+        self.use_smooth = True
+
+
+class Polygons(Elements):
+    def __init__(self, count, values, material_index):
+        super().__init__(count, values)
+        self.material_index = material_index
+
+    def __iter__(self):
+        for _ in range(self.count):
+            yield FakePolygon(self.material_index)
+
+
 class FakeMesh:
-    def __init__(self, coords, faces):
+    def __init__(self, coords, faces, materials=(), material_index=0):
         corners = [v for face in faces for v in face]
         self.vertices = Elements(len(coords), {"co": [c for co in coords for c in co]})
         self.loops = Elements(len(corners), {"vertex_index": corners})
-        self.polygons = Elements(
-            len(faces), {"loop_total": [len(face) for face in faces]}
+        self.polygons = Polygons(
+            len(faces), {"loop_total": [len(face) for face in faces]}, material_index
         )
+        self.materials = list(materials)
 
 
 class FakeObject:
-    def __init__(self, coords, faces):
-        self.data = FakeMesh(coords, faces)
+    def __init__(self, coords, faces, materials=(), material_index=0):
+        self.data = FakeMesh(coords, faces, list(materials), material_index)
         self.matrix_world = IDENTITY
 
 
@@ -123,6 +140,16 @@ def test_find_twins_matches_reordered_copy():
     assert sorted(map(tuple, numpy.round(moved, 6))) == sorted(
         map(tuple, numpy.round(twin_coords, 6))
     )
+
+
+def test_find_twins_refuses_reordered_copy_with_other_material():
+    rep = FakeObject(TETRA_COORDS, TETRA_FACES, materials=["red"])
+    coords, faces = reordered(
+        moved_coords(ROTATE_Z, numpy.array([4.0, 0, 0])), TETRA_FACES, [2, 0, 3, 1]
+    )
+    twin = FakeObject(coords, faces[::-1], materials=["blue"])
+
+    assert similar.find_twins([rep, twin]) == {}
 
 
 def test_find_twins_matches_mirrored_reordered_copy():

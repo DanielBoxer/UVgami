@@ -182,6 +182,32 @@ def submesh(verts, faces, subset, seams):
     return sub_verts, sub_faces, sub_seams
 
 
+# a closed part no seam touches folds onto itself in the flatten
+def _flattenable(subset, edges, seams):
+    parent = {f: f for f in subset}
+
+    def find(f):
+        root = f
+        while parent[root] != root:
+            root = parent[root]
+        while parent[f] != root:
+            parent[f], f = root, parent[f]
+        return root
+
+    keeps = set()
+    for key, owners in edges.items():
+        inside = [f for f in owners if f in parent]
+        if not inside:
+            continue
+        root = find(inside[0])
+        for f in inside[1:]:
+            parent[find(f)] = root
+        if len(inside) == 1 or key in seams:
+            keeps.add(inside[0])
+    kept_roots = {find(f) for f in keeps}
+    return [f for f in subset if find(f) in kept_roots]
+
+
 # a ruined island ships as-is, the engine's own cut search benches better
 def preseed_uvs(
     engine,
@@ -197,7 +223,6 @@ def preseed_uvs(
     python=None,
 ):
     subset = list(range(len(faces))) if only is None else sorted(only)
-    in_subset = set(subset)
     edges = face_edges(faces)
     if marked == "ONLY":
         seams = set(marked_seams)
@@ -215,9 +240,8 @@ def preseed_uvs(
     if mirrors:
         allowed = edges if only is None else face_edges([faces[i] for i in subset])
         seams = mirror_seams(seams, mirrors, allowed)
-    if not seams and all(
-        len(owners) != 1 for owners in edges.values() if owners[0] in in_subset
-    ):
+    subset = _flattenable(subset, edges, seams)
+    if not subset:
         return None
 
     check_cancelled(cancelled)
@@ -226,4 +250,4 @@ def preseed_uvs(
     flattened = engine.flatten(sub_verts, sub_faces, sub_seams, cancelled)
     for f, face_uv in zip(subset, flattened):
         all_uvs[f] = face_uv
-    return seams, all_uvs
+    return seams, all_uvs, subset

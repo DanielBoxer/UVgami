@@ -92,7 +92,7 @@ def test_check_manifold_rejects_three_owner_edge():
 def test_preseed_marked_only_uses_given_seams():
     engine = GridEngine()
     marked = {(0, 4), (1, 5), (2, 6), (3, 7), (4, 5), (5, 6), (6, 7)}
-    seams, uvs = preseed_uvs(
+    seams, uvs, _ = preseed_uvs(
         engine, CUBE_VERTS, CUBE_FACES, marked="ONLY", marked_seams=marked
     )
     assert marked <= seams
@@ -112,16 +112,39 @@ def test_preseed_only_leaves_other_faces_alone():
     verts = CUBE_VERTS[:4] + [(x + 5.0, y, z) for x, y, z in CUBE_VERTS[:4]]
     faces = [(0, 1, 2, 3), (4, 5, 6, 7)]
     engine = GridEngine()
-    seams, uvs = preseed_uvs(engine, verts, faces, marked="ONLY", only={0})
+    seams, uvs, flattened = preseed_uvs(engine, verts, faces, marked="ONLY", only={0})
     assert uvs[0] is not None
     assert uvs[1] is None
+    assert flattened == [0]
+
+
+def test_preseed_drops_seamless_closed_part():
+    # a seamed cube joined with a second cube no seam touches
+    verts = CUBE_VERTS + [(x + 5.0, y, z) for x, y, z in CUBE_VERTS]
+    faces = list(CUBE_FACES) + [tuple(v + 8 for v in face) for face in CUBE_FACES]
+    marked = {(0, 4), (1, 5), (2, 6), (3, 7), (4, 5), (5, 6), (6, 7)}
+    engine = GridEngine()
+    seams, uvs, flattened = preseed_uvs(
+        engine, verts, faces, marked="ONLY", marked_seams=marked
+    )
+    assert flattened == list(range(len(CUBE_FACES)))
+    assert all(uvs[f] is not None for f in range(len(CUBE_FACES)))
+    assert all(uvs[f] is None for f in range(len(CUBE_FACES), len(faces)))
+    # the seamless cube never reaches the flatten
+    assert engine.flatten_calls[0][0] == len(CUBE_FACES)
+
+
+def test_preseed_all_parts_seamless_returns_none():
+    engine = GridEngine()
+    assert preseed_uvs(engine, CUBE_VERTS, CUBE_FACES, marked="ONLY") is None
+    assert not engine.flatten_calls
 
 
 @pytest.mark.smoke
 @pytest.mark.skipif(not BUNDLED.is_file(), reason="bundled engine missing")
 def test_preseed_cube_with_real_engine(tmp_path):
     engine = FlattenEngine(BUNDLED, tmp_path)
-    seams, uvs = preseed_uvs(engine, CUBE_VERTS, CUBE_FACES)
+    seams, uvs, _ = preseed_uvs(engine, CUBE_VERTS, CUBE_FACES)
     assert all(uv is not None and len(uv) == 4 for uv in uvs)
     flat = [p for face in uvs for p in face]
     assert all(0.0 <= u <= 1.0 and 0.0 <= v <= 1.0 for u, v in flat)
@@ -147,7 +170,7 @@ def test_preseed_mirrors_close_the_seam_set():
     # the unit cube is symmetric across x = 0.5
     mirror = dict(enumerate([1, 0, 3, 2, 5, 4, 7, 6]))
 
-    seams, _ = preseed_uvs(engine, CUBE_VERTS, CUBE_FACES, mirrors=[mirror])
+    seams, _, _ = preseed_uvs(engine, CUBE_VERTS, CUBE_FACES, mirrors=[mirror])
 
     assert seams
     mirrored = {

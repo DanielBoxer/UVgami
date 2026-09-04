@@ -160,7 +160,7 @@ def preseed_work(obj, angle, marked="NONE", weights=None, auto=False, mirrors=No
                 return None
             if len(only) == len(faces):
                 only = None
-        result = preseed_uvs(
+        return preseed_uvs(
             engine,
             verts,
             faces,
@@ -173,19 +173,15 @@ def preseed_work(obj, angle, marked="NONE", weights=None, auto=False, mirrors=No
             cancelled,
             python,
         )
-        if result is None:
-            return None
-        seams, uvs = result
-        return seams, uvs, only
 
     def apply(result):
         if result is None:
             return False
-        seams, uvs, only = result
+        seams, uvs, flattened = result
         apply_seams(mesh, seams)
         if not mesh.uv_layers:
             mesh.uv_layers.new()
-        apply_face_uvs(mesh, uvs, sorted(only) if only is not None else None)
+        apply_face_uvs(mesh, uvs, None if len(flattened) == len(uvs) else flattened)
         return True
 
     return compute, apply
@@ -208,9 +204,9 @@ def build_seam_uvs(obj, angle=CREASE_ANGLE, marked="NONE", weights=None, only=No
     )
     if result is None:
         return False
-    seams, uvs = result
+    seams, uvs, flattened = result
     apply_seams(mesh, seams)
     if not mesh.uv_layers:
         mesh.uv_layers.new()
-    apply_face_uvs(mesh, uvs, sorted(only) if only is not None else None)
+    apply_face_uvs(mesh, uvs, None if len(flattened) == len(uvs) else flattened)
     return True
