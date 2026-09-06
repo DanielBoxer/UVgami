@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.1.0
+
+**Improvements:**
+
+- Proxy mode rework (faster and better transfer)
+- Preview proxy button
+- Combine island stitches islands together when it can
+- OptCuts speed improvements
+- Better engine updating
+- Better logs
+
+**Bug Fixes:**
+- Fix some OptCuts crashes and refusals
+- Fix weights mode not always working for some seams
+- Auto smooth and weighted normals are kept after unwrap
+- Fix proxy mode on multi part objects
+
 ## 2.0.0
 
 **New Features (see docs for more info)**
