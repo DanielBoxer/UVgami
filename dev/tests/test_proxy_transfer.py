@@ -103,7 +103,7 @@ def plane_locator(proxy):
         for point in numpy.asarray(points)[:, :2]:
             lowest = [barycentric(point, tri).min() for tri in triangles]
             found.append(int(numpy.argmax(lowest)))
-        return numpy.array(found), numpy.asarray(points, dtype=numpy.float64)
+        return numpy.array(found)
 
     return nearest_faces
 
@@ -330,16 +330,80 @@ def test_transfer_projected_tears_between_faces_split_at_a_shared_vertex():
     # the bottom two vertex rows read the panel, the rest the folded face
     def nearest_faces(points, normals):
         points = numpy.asarray(points, dtype=numpy.float64)
-        on_top = points[:, 1] > 0.6
-        surface = points.copy()
-        surface[:, 2] = numpy.where(on_top, 0.5 - points[:, 0] / 16, 0.0)
-        return numpy.where(on_top, 2, 0), surface
+        return numpy.where(points[:, 1] > 0.6, 2, 0)
 
     seams, uvs = transfer_projected(dense, proxy, nearest_faces)
 
     face_u = uvs[:, 0].reshape(len(faces), 4)
     assert numpy.all(face_u.max(axis=1) - face_u.min(axis=1) < 2.0)
     assert seams == {(2 * columns + x, 2 * columns + x + 1) for x in range(columns - 1)}
+
+
+def grid_mesh(mirrored):
+    from seams.proxy_transfer import DenseMesh
+
+    verts, quads = quad_grid(8)
+    faces = triangulated(quads)
+    corners = numpy.array([v for face in faces for v in face], dtype=numpy.int64)
+    sizes = numpy.array([len(face) for face in faces], dtype=numpy.int64)
+    positions = numpy.array(verts, dtype=numpy.float64)
+    mesh = DenseMesh(corners, sizes, positions)
+    corner_uvs = positions[corners][:, :2].copy()
+    if mirrored:
+        corner_uvs[:, 0] *= -1
+        mesh.orientation[:] = -1
+    return mesh, corner_uvs
+
+
+@pytest.mark.parametrize("mirrored", [False, True])
+def test_relax_flips_repairs_an_inverted_interior_vertex(mirrored):
+    from seams.proxy_transfer import _face_areas, _relax_flips
+
+    mesh, corner_uvs = grid_mesh(mirrored)
+    # vertex (4, 4) dragged past its ring inverts part of its fan
+    middle = 4 * 9 + 4
+    corner_uvs[mesh.corners == middle] = (-5.5 if mirrored else 5.5, 5.5)
+    every = numpy.arange(len(mesh.sizes))
+    assert numpy.any(_face_areas(corner_uvs, mesh, every) < 0)
+
+    _relax_flips(corner_uvs, mesh)
+
+    assert not numpy.any(_face_areas(corner_uvs, mesh, every) < 0)
+    assert corner_uvs[mesh.corners == 0].tolist() == [[0.0, 0.0]] * 2
+
+
+def test_relax_flips_leaves_a_mirrored_island_alone():
+    from seams.proxy_transfer import _relax_flips
+
+    mesh, corner_uvs = grid_mesh(mirrored=True)
+    before = corner_uvs.copy()
+
+    _relax_flips(corner_uvs, mesh)
+
+    assert numpy.array_equal(corner_uvs, before)
+
+
+# (2, 0) sits on a ring edge, so one fan face has zero area beside the flipped one
+@pytest.mark.parametrize("start", [(2.0, 2.0), (2.0, 0.0)])
+def test_place_in_kernels_moves_a_vertex_averaging_leaves_outside(start):
+    from seams.proxy_transfer import DenseMesh, _face_areas, _place_in_kernels
+
+    # an L shaped ring: the neighbour average sits in the notch, outside the kernel
+    ring = [(0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4)]
+    positions = numpy.array([(*start, 0.0)] + [(x, y, 0.0) for x, y in ring])
+    faces = [[0, i, i % 6 + 1] for i in range(1, 7)]
+    corners = numpy.array([v for face in faces for v in face], dtype=numpy.int64)
+    sizes = numpy.array([3] * 6, dtype=numpy.int64)
+    mesh = DenseMesh(corners, sizes, positions)
+    corner_uvs = positions[corners][:, :2].copy()
+    every = numpy.arange(len(sizes))
+    assert numpy.any(_face_areas(corner_uvs, mesh, every) < 0)
+
+    _place_in_kernels(corner_uvs, mesh)
+
+    assert numpy.all(_face_areas(corner_uvs, mesh, every) > 0)
+    centre = corner_uvs[corners == 0][0]
+    assert 0 < centre[0] < 1 and 0 < centre[1] < 1
 
 
 def test_connected_labels_separates_loose_parts():

@@ -264,7 +264,6 @@ def face_locator(positions, faces):
 
     def nearest_faces(points, normals):
         found = numpy.empty(len(points), dtype=numpy.int64)
-        surface = numpy.empty((len(points), 3))
         for i, (point, normal) in enumerate(zip(points.tolist(), normals.tolist())):
             _, face_normal, index, nearest_distance = tree.find_nearest(point)
             backward = tuple(-c for c in normal)
@@ -276,10 +275,9 @@ def face_locator(positions, faces):
                 hit for hit in hits if hit[2] is not None and facing(hit[1], normal) > 0
             ]
             if hits:
-                location, _, hit_index, distance = min(hits, key=lambda hit: hit[3])
+                _, _, hit_index, distance = min(hits, key=lambda hit: hit[3])
                 if distance <= HIT_OVER_NEAREST * nearest_distance:
                     found[i] = hit_index
-                    surface[i] = location[:]
                     continue
             if facing(face_normal, normal) < 0:
                 nearby = sorted(
@@ -289,10 +287,8 @@ def face_locator(positions, faces):
                     if facing(other_normal, normal) > 0:
                         index = other
                         break
-            # reading at the nearest point would pinch every bulge onto the crease
             found[i] = index
-            surface[i] = point
-        return found, surface
+        return found
 
     return nearest_faces
 

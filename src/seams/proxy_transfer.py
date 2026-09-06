@@ -71,6 +71,11 @@ class AffineMaps:
         )
         uv_edges = numpy.stack([uvs[:, 1] - uvs[:, 0], uvs[:, 2] - uvs[:, 0]], axis=2)
         self.jacobian = uv_edges @ numpy.linalg.pinv(edges)
+        area = numpy.linalg.norm(numpy.cross(edges[:, :, 0], edges[:, :, 1]), axis=1)
+        uv_cross = numpy.cross(uv_edges[:, :, 0], uv_edges[:, :, 1])
+        self.orientation = numpy.sign(uv_cross)
+        # uv length per 3d length over the whole proxy
+        self.scale = numpy.sqrt(numpy.abs(uv_cross).sum() / max(area.sum(), 1e-30))
 
     # face and positions paired
     def uv(self, face, positions):
@@ -283,6 +288,8 @@ class DenseMesh:
         self._ring_sorted = self.corners[self._ring_order]
         self._one_corner = numpy.zeros(len(positions), dtype=numpy.int64)
         self._one_corner[self.corners] = numpy.arange(len(self.corners))
+        # -1 where the proxy island is mirrored
+        self.orientation = numpy.ones(len(self.sizes))
 
     def face(self, f):
         start = int(self.starts[f])
@@ -333,18 +340,32 @@ def _twins(corners, following):
     return twin
 
 
+# a crease stretches a few times, a uv read across a cut a thousand
+STRETCH_TEAR = 10.0
+
+
+def _stretched(proxy_map, face_of_vertex, positions, uvs, tail, head):
+    gap = numpy.linalg.norm(uvs[tail] - uvs[head], axis=1)
+    length = numpy.linalg.norm(positions[tail] - positions[head], axis=1)
+    return (face_of_vertex[tail] != face_of_vertex[head]) & (
+        gap > STRETCH_TEAR * proxy_map.maps.scale * length
+    )
+
+
 # on a ridge the ends land inside both faces of the crease and no plane shows it
-def _torn(crossings, face_of_vertex, positions, tail, head):
+def _torn(proxy_map, face_of_vertex, positions, uvs, tail, head):
+    crossings = proxy_map.crossings
     faces_tail, faces_head = face_of_vertex[tail], face_of_vertex[head]
     return (
         _linked(crossings.pairs, faces_tail, faces_head)
         | crossings.crosses(faces_tail, faces_head, positions[tail], positions[head])
         | crossings.crosses(faces_head, faces_tail, positions[head], positions[tail])
+        | _stretched(proxy_map, face_of_vertex, positions, uvs, tail, head)
     )
 
 
 # the corner agreeing with the most others keeps its map
-def _redraw_torn_faces(proxy_map, face_of_vertex, surface, uvs, mesh, torn):
+def _redraw_torn_faces(proxy_map, face_of_vertex, positions, uvs, mesh, torn):
     corners = mesh.corners
     corner_uvs = uvs[corners].copy()
     drawn_by = face_of_vertex[corners].copy()
@@ -362,8 +383,11 @@ def _redraw_torn_faces(proxy_map, face_of_vertex, surface, uvs, mesh, torn):
         [numpy.tile(corners[mesh.face(f)], len(mesh.face(f))) for f in torn_faces]
     )
     crossed = crossings.crosses(
-        face_of_vertex[first], face_of_vertex[second], surface[first], surface[second]
-    )
+        face_of_vertex[first],
+        face_of_vertex[second],
+        positions[first],
+        positions[second],
+    ) | _stretched(proxy_map, face_of_vertex, positions, uvs, first, second)
     for f, pair_start in zip(torn_faces.tolist(), pair_starts.tolist()):
         ring = mesh.face(f)
         size = len(ring)
@@ -375,7 +399,7 @@ def _redraw_torn_faces(proxy_map, face_of_vertex, surface, uvs, mesh, torn):
         reference = int(agree.sum(axis=1).argmax())
         moved = numpy.flatnonzero(~agree[reference])
         corner_uvs[ring.start + moved] = proxy_map.maps.uv(
-            numpy.full(len(moved), faces[reference]), surface[verts[moved]]
+            numpy.full(len(moved), faces[reference]), positions[verts[moved]]
         )
         drawn_by[ring.start + moved] = faces[reference]
     return corner_uvs, drawn_by
@@ -499,6 +523,165 @@ def _draw_like_neighbour(corner_uvs, drawn_by, mesh, f, g):
         drawn_by[c] = drawn_by[int(mesh.starts[g])]
 
 
+def _face_areas(corner_uvs, mesh, faces):
+    zone = mesh.corners_of(faces)
+    sizes = mesh.sizes[faces]
+    starts = numpy.cumsum(sizes) - sizes
+    uv = corner_uvs[zone]
+    ahead = corner_uvs[mesh.following[zone]]
+    cross = uv[:, 0] * ahead[:, 1] - ahead[:, 0] * uv[:, 1]
+    return numpy.add.reduceat(cross, starts) * mesh.orientation[faces]
+
+
+RELAX_RING = 2
+# rounds past 10 remove almost nothing more
+RELAX_ROUNDS = 10
+
+
+# a tiny dense triangle lands across a proxy edge with its corners inconsistent
+def _relax_flips(corner_uvs, mesh):
+    every = numpy.arange(len(mesh.sizes))
+    flipped = numpy.flatnonzero(_face_areas(corner_uvs, mesh, every) < 0)
+    if not len(flipped):
+        return
+    _average_around_flips(corner_uvs, mesh, flipped)
+    _place_in_kernels(corner_uvs, mesh)
+
+
+def _average_around_flips(corner_uvs, mesh, flipped):
+    inner = _band(flipped, mesh, RELAX_RING)
+    free_verts = numpy.unique(mesh.corners[mesh.corners_of(inner)])
+    verts = numpy.unique(mesh.corners[mesh.corners_of(_band(inner, mesh, 1))])
+    ring_corners, of = mesh.rings(verts)
+    # every face a moved point can flip has a corner at these vertices
+    checked = numpy.unique(mesh.face_of[ring_corners])
+
+    # a uv point is the corners at one vertex sharing one uv
+    uv = corner_uvs[ring_corners]
+    order = numpy.lexsort((uv[:, 1], uv[:, 0], of))
+    joins = (of[order][1:] == of[order][:-1]) & numpy.all(
+        uv[order][1:] == uv[order][:-1], axis=1
+    )
+    new_point = numpy.ones(len(order), dtype=bool)
+    new_point[1:] = ~joins
+    point = numpy.empty(len(order), dtype=numpy.int64)
+    point[order] = numpy.cumsum(new_point) - 1
+    count = int(point.max()) + 1
+    positions = numpy.empty((count, 2))
+    positions[point] = uv
+    point_vert = numpy.empty(count, dtype=numpy.int64)
+    point_vert[point] = verts[of]
+
+    # moving a vertex with two uv points would warp the seam it sits on
+    free = numpy.isin(point_vert, free_verts)
+    free &= numpy.bincount(point_vert)[point_vert] == 1
+
+    corner_point = numpy.full(len(mesh.corners), -1, dtype=numpy.int64)
+    corner_point[ring_corners] = point
+    heads = mesh.following[ring_corners]
+    linked = corner_point[heads] >= 0
+    tails = point[linked]
+    heads = corner_point[heads[linked]]
+
+    for _ in range(RELAX_ROUNDS):
+        was_flipped = _face_areas(corner_uvs, mesh, checked) < 0
+        if not was_flipped.any():
+            return
+        before = positions.copy()
+        sums = numpy.zeros((count, 2))
+        edges = numpy.zeros(count)
+        numpy.add.at(sums, tails, positions[heads])
+        numpy.add.at(edges, tails, 1.0)
+        numpy.add.at(sums, heads, positions[tails])
+        numpy.add.at(edges, heads, 1.0)
+        averaged = sums / numpy.maximum(edges, 1.0)[:, None]
+        positions[free] = averaged[free]
+        # a point whose move flips a sound face goes back where it was
+        while True:
+            corner_uvs[ring_corners] = positions[point]
+            broken = (_face_areas(corner_uvs, mesh, checked) < 0) & ~was_flipped
+            if not broken.any():
+                break
+            held = corner_point[mesh.corners_of(checked[broken])]
+            held = held[held >= 0]
+            positions[held] = before[held]
+        if numpy.array_equal(positions, before):
+            return
+
+
+# how far from the kernel's centre toward the old position, 1 touches an edge
+KERNEL_INSET = 0.8
+# a third pass moves almost nothing more
+KERNEL_PASSES = 3
+
+
+# averaging cannot unflip a face hemmed in by thin sound ones
+def _place_in_kernels(corner_uvs, mesh):
+    every = numpy.arange(len(mesh.sizes))
+    open_corners = mesh.twin < 0
+    boundary = numpy.zeros(len(mesh.positions), dtype=bool)
+    boundary[mesh.corners[open_corners]] = True
+    boundary[mesh.corners[mesh.following[open_corners]]] = True
+    for _ in range(KERNEL_PASSES):
+        flipped = numpy.flatnonzero(_face_areas(corner_uvs, mesh, every) < 0)
+        if not len(flipped):
+            return
+        moved = False
+        for vertex in numpy.unique(mesh.corners[mesh.corners_of(flipped)]).tolist():
+            if boundary[vertex]:
+                continue
+            ring, _ = mesh.rings([vertex])
+            current = corner_uvs[ring[0]]
+            # two uv points at one vertex is a seam
+            if numpy.any(corner_uvs[ring] != current):
+                continue
+            placed = _kernel_point(corner_uvs, mesh, ring, current)
+            if placed is not None:
+                corner_uvs[ring] = placed
+                moved = True
+        if not moved:
+            return
+
+
+# each fan face's area is linear in the vertex
+def _kernel_point(corner_uvs, mesh, ring, current):
+    direction = corner_uvs[mesh.following[ring]] - corner_uvs[mesh.preceding[ring]]
+    normal = numpy.stack([direction[:, 1], -direction[:, 0]], axis=1)
+    areas = _face_areas(corner_uvs, mesh, mesh.face_of[ring])
+    offset = normal @ current - areas
+    if numpy.all(normal @ current - offset > 0):
+        return None
+    corners = []
+    for i in range(len(ring)):
+        for j in range(i + 1, len(ring)):
+            matrix = normal[[i, j]]
+            if abs(numpy.linalg.det(matrix)) < 1e-18:
+                continue
+            candidate = numpy.linalg.solve(matrix, offset[[i, j]])
+            if numpy.all(normal @ candidate - offset >= -1e-12):
+                corners.append(candidate)
+    if not corners:
+        return None
+    centre = numpy.mean(corners, axis=0)
+    inside = normal @ centre - offset
+    outside = normal @ current - offset
+    violated = outside <= 0
+    steps = inside[violated] / numpy.maximum(
+        inside[violated] - outside[violated], 1e-300
+    )
+    placed = centre + KERNEL_INSET * steps.min() * (current - centre)
+    if not numpy.all(normal @ placed - offset > 0):
+        return None
+    return placed
+
+
+# every face a move at these vertices can change
+def _guarded_faces(mesh, vertices):
+    ring_corners, _ = mesh.rings(vertices)
+    faces = numpy.unique(mesh.face_of[ring_corners])
+    return faces, mesh.corners_of(faces)
+
+
 # where a cut runs down a triangle strip the sides alternate and the seam zigzags
 def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
     corners, following, twin = mesh.corners, mesh.following, mesh.twin
@@ -560,6 +743,10 @@ def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
         if best is None:
             return False
         _, target, face, anchor = best
+        checked, checked_corners = _guarded_faces(mesh, numpy.unique(corners[ring]))
+        held_uvs = corner_uvs[checked_corners].copy()
+        held_drawn = drawn_by[checked_corners].copy()
+        flips = int((_face_areas(corner_uvs, mesh, checked) < 0).sum())
         at = _face_map(corner_uvs, mesh, int(mesh.face_of[twin[anchor]]))
         for c in ring:
             if c not in target:
@@ -568,6 +755,10 @@ def _absorb_stray_faces(corner_uvs, drawn_by, proxy_map, mesh):
             corner_uvs[corner] = uv
             drawn_by[corner] = face
         _weld_vertices(corner_uvs, drawn_by, proxy_map, mesh, corners[ring])
+        if int((_face_areas(corner_uvs, mesh, checked) < 0).sum()) > flips:
+            corner_uvs[checked_corners] = held_uvs
+            drawn_by[checked_corners] = held_drawn
+            return False
         # the weld can change every edge at the face's vertices
         ring_corners, _ = mesh.rings(corners[ring])
         touched = numpy.concatenate([ring_corners, mesh.preceding[ring_corners]])
@@ -826,6 +1017,12 @@ def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
         rims = [rim_face(cut, left), rim_face(cut, right)]
         if rims[0] is None or rims[1] is None or rims[0] == rims[1]:
             continue
+        checked, checked_corners = _guarded_faces(
+            mesh, numpy.unique(corners[mesh.corners_of(band.faces[moved])])
+        )
+        held_uvs = corner_uvs[checked_corners].copy()
+        held_drawn = drawn_by[checked_corners].copy()
+        flips = int((_face_areas(corner_uvs, mesh, checked) < 0).sum())
         # drawn like a neighbour already on the new side, outermost first
         same_side = {
             f: [g for g in band.neighbours(f).tolist() if g >= 0 and now[g] == now[f]]
@@ -860,6 +1057,9 @@ def _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh):
         _weld_vertices(
             corner_uvs, drawn_by, proxy_map, mesh, numpy.unique(corners[moved_corners])
         )
+        if int((_face_areas(corner_uvs, mesh, checked) < 0).sum()) > flips:
+            corner_uvs[checked_corners] = held_uvs
+            drawn_by[checked_corners] = held_drawn
         # the band's edges are the only ones whose seam state can have changed
         paired = band.corners[band.has_twin]
         seam[paired] = _torn_at_twin(corner_uvs, mesh, paired)
@@ -902,7 +1102,7 @@ def dense_subset(dense, faces):
     return subset, used
 
 
-# nearest_faces gives each dense vertex a proxy face and the point on it
+# nearest_faces gives each dense vertex the proxy face whose map it reads
 def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=None):
     done = 0.0
 
@@ -919,23 +1119,26 @@ def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=Non
     proxy_map = ProxyMap(proxy)
 
     face_of_vertex = numpy.empty(len(positions), dtype=numpy.int64)
-    surface = numpy.empty((len(positions), 3))
     for start in range(0, len(positions), LOOKUP_CHUNK):
         check_cancelled(cancelled)
         stop = start + LOOKUP_CHUNK
-        face_of_vertex[start:stop], surface[start:stop] = nearest_faces(
+        face_of_vertex[start:stop] = nearest_faces(
             positions[start:stop], normals[start:stop]
         )
         report(LOOKUP_SHARE * min(stop, len(positions)) / max(len(positions), 1))
     finished(LOOKUP_SHARE)
-    # a map continued off its face diverges at a crease
-    uvs = proxy_map.maps.uv(face_of_vertex, surface)
+    # the map is affine in 3d, a triangle facing its proxy face cannot flip
+    uvs = proxy_map.maps.uv(face_of_vertex, positions)
 
     mesh = DenseMesh(dense["corners"], dense["face_sizes"], positions)
+    mesh.orientation = proxy_map.maps.orientation[
+        face_of_vertex[mesh.corners[mesh.starts]]
+    ]
     torn_corner = _torn(
-        proxy_map.crossings,
+        proxy_map,
         face_of_vertex,
-        surface,
+        positions,
+        uvs,
         mesh.corners,
         mesh.corners[mesh.following],
     )
@@ -945,7 +1148,7 @@ def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=Non
 
     check_cancelled(cancelled)
     corner_uvs, drawn_by = _redraw_torn_faces(
-        proxy_map, face_of_vertex, surface, uvs, mesh, torn_face
+        proxy_map, face_of_vertex, positions, uvs, mesh, torn_face
     )
     finished(REDRAW_SHARE)
     corner_uvs = _weld(corner_uvs, drawn_by, uvs, proxy_map, mesh)
@@ -955,6 +1158,7 @@ def transfer_projected(dense, proxy, nearest_faces, progress=None, cancelled=Non
     finished(ABSORB_SHARE)
     check_cancelled(cancelled)
     corner_uvs = _straighten_seams(corner_uvs, drawn_by, proxy_map, mesh)
+    _relax_flips(corner_uvs, mesh)
     suspect = numpy.flatnonzero(mesh.suspect(corner_uvs))
     seams = _edge_tears(
         mesh.corners[suspect],
