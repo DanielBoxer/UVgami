@@ -71,8 +71,8 @@ bool topoLineSearch = true;
 int initCutOption = 0;
 // one cut per inverted piece per round about halves its depth
 const int MAX_DEEPEN_ROUNDS = 30;
-// below this 1 / area^2 exceeds the other energy terms' precision
-const double NEAR_ZERO_INIT_RATIO = 1e-16;
+// charts at 1e-20 unwrap fine, the ones that ran away sat at 1e-26
+const double NEAR_ZERO_INIT_RATIO = 1e-22;
 bool outerLoopFinished = false;
 double upperBound = 4.1;
 const double convTol_upperBound = 1.0e-3;
