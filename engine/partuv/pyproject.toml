@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "partuv"
-version = "0.1.4"
+version = "0.1.5"
 description = "UV unwrapping pipeline with pybind11 bindings and preprocessing utilities"
 requires-python = ">=3.9"
 authors = [{ name = "Zhaoning Wang" }, { name = "Daniel Boxer" }]
