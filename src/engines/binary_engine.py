@@ -198,9 +198,9 @@ class BinaryEngine(Engine):
 
     def describe(self):
         if get_local_engine_path(self.release.name) is not None:
-            return f"{self.label} {self.release.version} (local build)"
+            return f"{self.label} v{self.release.version} (local build)"
         version = self.release.installed_version() or self.release.version
-        return f"{self.label} {version}"
+        return f"{self.label} v{version}"
 
     def update_pending(self):
         if get_local_engine_path(self.release.name) is not None:
@@ -222,10 +222,12 @@ class BinaryEngine(Engine):
         _, error = self.validate(prefs)
         needs_download = error is not None
         update_pending = self.update_pending()
+        installed = release.installed_version()
+        change = f"v{installed} → v{release.version}"
         if release.install_too_old():
-            status = ("Engine update required", "ERROR")
+            status = (f"Engine update required: {change}", "ERROR")
         elif update_pending:
-            status = ("Engine update available", "FILE_REFRESH")
+            status = (f"Engine update available: {change}", "FILE_REFRESH")
         elif needs_download:
             status = ("Not downloaded", "X")
         elif error is not None:
@@ -233,7 +235,7 @@ class BinaryEngine(Engine):
         elif get_local_engine_path(release.name) is not None:
             status = ("Local build", "CHECKMARK")
         else:
-            status = ("Downloaded", "CHECKMARK")
+            status = (f"Downloaded v{installed}", "CHECKMARK")
 
         layout.row().label(text=status[0], icon=status[1])
 

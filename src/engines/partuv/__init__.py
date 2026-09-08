@@ -22,6 +22,7 @@ from ..install_task import (
 )
 from .install import (
     PARTUV_PLATFORMS,
+    PARTUV_VERSION,
     UVGAMI_OT_install_partuv,
     UVGAMI_OT_uninstall_partuv,
     get_installed_partuv_version,
@@ -178,7 +179,7 @@ class PartuvEngine(Engine):
         if find_partuv_dev_repo() is not None:
             return f"{self.label} (local build)"
         version = get_installed_partuv_version()
-        return f"{self.label} {version}" if version else self.label
+        return f"{self.label} v{version}" if version else self.label
 
     def update_pending(self):
         return find_partuv_dev_repo() is None and partuv_update_pending()
@@ -204,12 +205,19 @@ class PartuvEngine(Engine):
         installed = is_partuv_installed()
         ai_installed = is_partuv_ai_installed()
         update_pending = partuv_update_pending()
+        change = f"v{get_installed_partuv_version()} → v{PARTUV_VERSION}"
         if partuv_too_old():
-            layout.row().label(text="Engine update required", icon="ERROR")
+            layout.row().label(text=f"Engine update required: {change}", icon="ERROR")
         elif update_pending:
-            layout.row().label(text="Engine update available", icon=UPDATE_ICON)
+            layout.row().label(
+                text=f"Engine update available: {change}", icon=UPDATE_ICON
+            )
         elif not installed:
             layout.row().label(text="Not downloaded", icon="X")
+        else:
+            layout.row().label(
+                text=f"Downloaded v{get_installed_partuv_version()}", icon="CHECKMARK"
+            )
 
         # an update reinstalls the tier already there
         current_tier = "AI" if ai_installed else "GEOMETRIC"
