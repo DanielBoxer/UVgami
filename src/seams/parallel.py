@@ -75,6 +75,8 @@ def seam_edges_parallel(
                 worker.stdin.close()
             except OSError:
                 pass
+            # communicate flushes stdin on posix
+            worker.stdin = None
         for worker in workers:
             while True:
                 try:

@@ -1,3 +1,5 @@
+import pathlib
+
 import bpy
 import pytest
 from blender_fixtures import addon, manager, needs_engine, needs_partuv, needs_xatlas
@@ -43,12 +45,28 @@ def test_flipped_face_is_rewound_instead_of_refused(load_obj, unwrap, outputs):
     assert any(any(datum.uv) for datum in layer.data)
 
 
+# shade_auto_smooth cancels on headless 4.3
+def smooth_by_angle_node_group():
+    name = addon.src.utils.mesh.AUTO_SMOOTH_MODIFIER_NAME
+    assets = pathlib.Path(bpy.utils.system_resource("DATAFILES")) / "assets"
+    for path in sorted(assets.rglob("*.blend")):
+        with bpy.data.libraries.load(str(path)) as (source, target):
+            found = name in source.node_groups
+            if found:
+                target.node_groups = [name]
+        if found:
+            return bpy.data.node_groups[name]
+    raise LookupError(f"no bundled asset holds {name}")
+
+
 def test_shading_modifiers_carry_over(load_obj, unwrap, outputs):
     obj = load_obj("cylinder")[0]
     weighted = obj.modifiers.new("WeightedNormal", "WEIGHTED_NORMAL")
     weighted.keep_sharp = True
     angle = 0.5
-    bpy.ops.object.shade_auto_smooth(angle=angle)
+    smooth = obj.modifiers.new("Smooth by Angle", "NODES")
+    smooth.node_group = smooth_by_angle_node_group()
+    addon.src.utils.mesh._set_node_input_values(smooth, {"Input_1": angle})
     unwrap()
 
     assert manager.error_messages == []

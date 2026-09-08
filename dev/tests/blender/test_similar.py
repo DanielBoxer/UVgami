@@ -13,10 +13,15 @@ def add_cube(location=(0, 0, 0)):
     return bpy.context.active_object
 
 
+# transform_apply with a negative scale reverses the face loops on 5.2 only
 def mirrored_cube(location):
     obj = add_cube(location)
-    obj.scale.x = -1
-    bpy.ops.object.transform_apply(scale=True)
+    for vertex in obj.data.vertices:
+        vertex.co.x *= -1
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.flip_normals()
+    bpy.ops.object.mode_set(mode="OBJECT")
     return obj
 
 
